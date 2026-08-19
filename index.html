@@ -52,6 +52,12 @@
       padding-bottom: 5px;
     }
 
+    h2 {
+      font-size: 1.4rem;
+      color: #3a220f;
+      margin-bottom: 15px;
+    }
+
     .panel { display: none; }
     .active { display: block; }
 
@@ -102,6 +108,13 @@
     button:hover {
       background: #7a4e2c;
       box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+
+    .btn-cancel {
+      background: #800000;
+    }
+    .btn-cancel:hover {
+      background: #a00000;
     }
 
     .game-header {
@@ -193,21 +206,21 @@
   <div class="container">
     <h1>SELFO ONLINE</h1>
 
-    <!-- Selección de Modo -->
+    <!-- Selección de Modo Inicial -->
     <div id="modePanel" class="panel active">
-      <div class="form-group">
-        <label for="playerName">Tu Nombre / Nickname:</label>
-        <input type="text" id="playerName" value="Jugador 1">
-      </div>
       <div class="mode-buttons">
         <button onclick="showHostForm()">Crear Nueva Partida</button>
         <button onclick="showJoinForm()">Unirse a Partida</button>
       </div>
     </div>
 
-    <!-- Crear Partida (Host) -->
+    <!-- Crear Partida (Jugador 1) -->
     <div id="hostPanel" class="panel">
-      <h2>Configuración de Sala</h2>
+      <h2>Crear Partida (Jugador 1)</h2>
+      <div class="form-group">
+        <label for="hostName">Tu Nickname:</label>
+        <input type="text" id="hostName" value="Jugador 1">
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label for="boardRadius">Radio del tablero (1-6):</label>
@@ -219,7 +232,7 @@
         </div>
       </div>
       <button onclick="createRoom()">Generar Sala y Esperar Oponente</button>
-      <button onclick="showModePanel()" style="background:#800000;">Volver</button>
+      <button onclick="showModePanel()" class="btn-cancel">Volver</button>
     </div>
 
     <!-- Esperando Oponente -->
@@ -228,18 +241,22 @@
       <p style="margin: 15px 0;">Comparte este código o enlace con tu rival:</p>
       <p>Código: <span id="displayRoomCode" class="game-tag"></span></p>
       <button onclick="copyInviteLink()" style="margin: 15px 0;">Copiar Enlace Directo</button>
-      <p><i>Esperando a que se conecte el segundo jugador...</i></p>
+      <p><i>Esperando a que el Jugador 2 introduzca su nickname y se conecte...</i></p>
     </div>
 
-    <!-- Unirse a Partida -->
+    <!-- Unirse a Partida (Jugador 2) -->
     <div id="joinPanel" class="panel">
-      <h2>Unirse a Partida</h2>
+      <h2>Unirse a Partida (Jugador 2)</h2>
+      <div class="form-group">
+        <label for="guestName">Tu Nickname:</label>
+        <input type="text" id="guestName" value="Jugador 2">
+      </div>
       <div class="form-group">
         <label for="joinCode">Código de la Sala:</label>
         <input type="text" id="joinCode" placeholder="Ej: SELFO-1234">
       </div>
-      <button onclick="joinRoom()">Conectar</button>
-      <button onclick="showModePanel()" style="background:#800000;">Volver</button>
+      <button onclick="joinRoom()">Conectarse a la Partida</button>
+      <button onclick="showModePanel()" class="btn-cancel">Volver</button>
     </div>
 
     <!-- Panel de Juego -->
@@ -297,7 +314,7 @@
       gameEnded: false
     };
 
-    // Auto-detectar código en URL (#SELFO-XXXX)
+    // Auto-detectar código en URL Hash (#SELFO-XXXX)
     window.addEventListener('DOMContentLoaded', () => {
       const hash = window.location.hash.substring(1);
       if (hash.startsWith('SELFO-')) {
@@ -322,10 +339,10 @@
       return dirs.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
     }
 
-    // --- LÓGICA DE RED PEERJS ---
+    // --- CONEXIÓN Y RED PEERJS ---
 
     function createRoom() {
-      localPlayerName = document.getElementById('playerName').value.trim() || 'Jugador 1';
+      localPlayerName = document.getElementById('hostName').value.trim() || 'Jugador 1';
       config.radius = parseInt(document.getElementById('boardRadius').value);
       config.pieces = parseInt(document.getElementById('pieceCount').value);
 
@@ -342,16 +359,16 @@
 
       peer = new Peer(roomCode);
 
-      peer.on('open', () => {});
       peer.on('connection', (c) => {
         conn = c;
-        setupConnection();
+        setupHostConnection();
       });
+
       peer.on('error', (err) => alert('Error al crear sala: ' + err));
     }
 
     function joinRoom() {
-      localPlayerName = document.getElementById('playerName').value.trim() || 'Jugador 2';
+      localPlayerName = document.getElementById('guestName').value.trim() || 'Jugador 2';
       const code = document.getElementById('joinCode').value.trim().toUpperCase();
       if (!code) { alert('Introduce un código de sala válido.'); return; }
 
@@ -360,25 +377,36 @@
 
       peer.on('open', () => {
         conn = peer.connect(code);
-        setupConnection();
+        setupGuestConnection();
       });
+
       peer.on('error', (err) => alert('No se pudo conectar a la sala. Revisa el código.'));
     }
 
-    function setupConnection() {
-      conn.on('open', () => {
-        if (isHost) {
-          initHostGame();
+    function setupHostConnection() {
+      conn.on('data', (data) => {
+        if (data.type === 'JOIN_REQUEST') {
+          // El Jugador 2 se ha conectado enviando su nickname
+          initHostGame(data.guestName);
+        } else {
+          handleNetworkMessage(data);
         }
+      });
+
+      conn.on('close', () => alert('El otro jugador ha abandonado la partida.'));
+    }
+
+    function setupGuestConnection() {
+      conn.on('open', () => {
+        // Enviar handshake inicial con nuestro nickname
+        sendPayload('JOIN_REQUEST', { guestName: localPlayerName });
       });
 
       conn.on('data', (data) => {
         handleNetworkMessage(data);
       });
 
-      conn.on('close', () => {
-        alert('El otro jugador ha abandonado la partida.');
-      });
+      conn.on('close', () => alert('El otro jugador ha abandonado la partida.'));
     }
 
     function sendPayload(type, payload = {}) {
@@ -387,59 +415,8 @@
       }
     }
 
-    function handleNetworkMessage(data) {
-      switch (data.type) {
-        case 'INIT_GAME':
-          config = data.config;
-          gameState.board = data.board;
-          players = data.players;
-          gameState.currentTurn = 'B';
-          gameState.moveCount = 0;
-          gameState.pieRuleAvailable = false;
-          gameState.gameEnded = false;
-          myColor = isHost ? data.hostColor : (data.hostColor === 'B' ? 'W' : 'B');
-
-          document.getElementById('gameTag').innerText = data.roomCode;
-          showPanel('gamePanel');
-          updateUI();
-          renderBoard();
-          break;
-
-        case 'SYNC_MOVE':
-          gameState.board[data.fromKey] = null;
-          gameState.board[data.toKey] = data.piece;
-          gameState.currentTurn = data.nextTurn;
-          gameState.moveCount = data.moveCount;
-          gameState.pieRuleAvailable = data.pieRuleAvailable;
-          gameState.selectedCell = null;
-
-          renderBoard();
-          updateUI();
-
-          if (data.winner) {
-            gameState.gameEnded = true;
-            showWinModal(players[data.winner]);
-          }
-          break;
-
-        case 'SYNC_PIE_RULE':
-          // Intercambio de colores de los jugadores
-          const tempP = players.B;
-          players.B = players.W;
-          players.W = tempP;
-
-          myColor = (myColor === 'B') ? 'W' : 'B';
-          gameState.currentTurn = 'W';
-          gameState.pieRuleAvailable = false;
-
-          renderBoard();
-          updateUI();
-          break;
-      }
-    }
-
-    function initHostGame() {
-      // Inicializar tablero
+    function initHostGame(guestName) {
+      // Inicializar celdas
       gameState.board = {};
       const R = config.radius - 1;
       for (let q = -R; q <= R; q++) {
@@ -450,7 +427,7 @@
         }
       }
 
-      // Posicionamiento disperso (evitando 0,0)
+      // Posicionamiento disperso sin celda (0,0)
       const validCells = Object.keys(gameState.board).filter(k => k !== "0,0");
       
       function getDispersed(count, existing) {
@@ -490,29 +467,76 @@
       const guestColor = hostIsBlack ? 'W' : 'B';
 
       players[hostColor] = localPlayerName;
-      players[guestColor] = "Rival"; // El nombre se actualiza tras conectar
+      players[guestColor] = guestName;
 
       const roomCode = peer.id;
 
-      sendPayload('INIT_GAME', {
+      const payload = {
         config,
         board: gameState.board,
         players,
         hostColor,
         roomCode
-      });
+      };
 
-      handleNetworkMessage({
-        type: 'INIT_GAME',
-        config,
-        board: gameState.board,
-        players,
-        hostColor,
-        roomCode
-      });
+      // Enviar al invitado e iniciar localmente
+      sendPayload('INIT_GAME', payload);
+      handleNetworkMessage({ type: 'INIT_GAME', ...payload });
     }
 
-    // --- DIBUJO Y MOVIMIENTOS ---
+    function handleNetworkMessage(data) {
+      switch (data.type) {
+        case 'INIT_GAME':
+          config = data.config;
+          gameState.board = data.board;
+          players = data.players;
+          gameState.currentTurn = 'B';
+          gameState.moveCount = 0;
+          gameState.pieRuleAvailable = false;
+          gameState.gameEnded = false;
+          
+          myColor = isHost ? data.hostColor : (data.hostColor === 'B' ? 'W' : 'B');
+
+          document.getElementById('gameTag').innerText = data.roomCode;
+          showPanel('gamePanel');
+          updateUI();
+          renderBoard();
+          break;
+
+        case 'SYNC_MOVE':
+          gameState.board[data.fromKey] = null;
+          gameState.board[data.toKey] = data.piece;
+          gameState.currentTurn = data.nextTurn;
+          gameState.moveCount = data.moveCount;
+          gameState.pieRuleAvailable = data.pieRuleAvailable;
+          gameState.selectedCell = null;
+
+          renderBoard();
+          updateUI();
+
+          if (data.winner) {
+            gameState.gameEnded = true;
+            showWinModal(players[data.winner]);
+          }
+          break;
+
+        case 'SYNC_PIE_RULE':
+          // Intercambio de asignación de nombres por color
+          const tempP = players.B;
+          players.B = players.W;
+          players.W = tempP;
+
+          myColor = (myColor === 'B') ? 'W' : 'B';
+          gameState.currentTurn = 'W';
+          gameState.pieRuleAvailable = false;
+
+          renderBoard();
+          updateUI();
+          break;
+      }
+    }
+
+    // --- TABLERO Y LÓGICA DE JUEGO ---
 
     function renderBoard() {
       const svg = document.getElementById('hexBoard');
@@ -579,7 +603,6 @@
           const fromKey = gameState.selectedCell;
           const pieceColor = gameState.board[fromKey];
 
-          // Aplicar localmente
           gameState.board[fromKey] = null;
           gameState.board[key] = pieceColor;
           gameState.moveCount++;
@@ -655,7 +678,7 @@
       document.getElementById('turnStatus').innerText = `Turno: ${turnPlayer} (${colorText})`;
 
       const badge = document.getElementById('myRoleBadge');
-      badge.innerText = myColor === 'B' ? 'Negras' : 'Blancas';
+      badge.innerText = `${localPlayerName} (${myColor === 'B' ? 'Negras' : 'Blancas'})`;
       badge.className = `role-badge ${myColor === 'B' ? 'badge-black' : 'badge-white'}`;
 
       const pieBtn = document.getElementById('pieBtn');
