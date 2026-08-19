@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego de Mesa Selfo - Online</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg-wood: #2c1d11;
+      --panel-bg: #f4ebd0;
+      --board-bg: #3d2b1f;
+      --cell-gray: #808080;
+      --cell-stroke: #1a1a1a;
+      --accent-gold: #c5a059;
+      --text-dark: #2b2118;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      background-color: var(--bg-wood);
+      background-image: radial-gradient(circle at center, #3d2817 0%, #1a100a 100%);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 15px;
+    }
+
+    .container {
+      background: var(--panel-bg);
+      border: 8px solid var(--accent-gold);
+      border-radius: 12px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      max-width: 900px;
+      width: 100%;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+      color: #3a220f;
+      text-transform: uppercase;
+      border-bottom: 2px solid var(--accent-gold);
+      padding-bottom: 5px;
+    }
+
+    .panel { display: none; }
+    .active { display: block; }
+
+    .form-group {
+      margin: 15px 0;
+      text-align: left;
+    }
+
+    label { display: block; font-weight: bold; margin-bottom: 5px; }
+
+    input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #a89270;
+      border-radius: 4px;
+      background: #fffdf5;
+      font-family: inherit;
+      font-size: 1rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .mode-buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    button {
+      background: #5c3a21;
+      color: #f4ebd0;
+      border: 2px solid var(--accent-gold);
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: bold;
+      font-family: inherit;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 5px;
+    }
+
+    button:hover {
+      background: #7a4e2c;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+
+    .game-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      background: #e6d7b8;
+      padding: 10px 15px;
+      border-radius: 6px;
+      border: 1px solid #c8b48c;
+      margin-bottom: 15px;
+      gap: 10px;
+    }
+
+    .status-box { font-size: 1.1rem; font-weight: bold; }
+
+    .game-tag {
+      font-family: monospace;
+      background: #2b2118;
+      color: var(--accent-gold);
+      padding: 4px 8px;
+      border-radius: 4px;
+      user-select: all;
+    }
+
+    .board-container {
+      background: var(--board-bg);
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: inset 0 0 15px rgba(0,0,0,0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: auto;
+    }
+
+    svg { user-select: none; }
+
+    .hex {
+      fill: var(--cell-gray);
+      stroke: var(--cell-stroke);
+      stroke-width: 1.5px;
+      transition: fill 0.2s;
+      cursor: pointer;
+    }
+
+    .hex:hover { fill: #999999; }
+    .hex.selected { fill: #b39b4d; stroke: #fff; stroke-width: 2.5px; }
+    .hex.valid-move { fill: #728c69; stroke: #2e4d23; cursor: pointer; }
+
+    .piece { pointer-events: none; transition: all 0.3s ease; }
+    .piece-black { fill: url(#blackPieceGrad); stroke: #000; stroke-width: 1px; }
+    .piece-white { fill: url(#whitePieceGrad); stroke: #999; stroke-width: 1px; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .modal-content {
+      background: var(--panel-bg);
+      padding: 30px;
+      border-radius: 10px;
+      border: 4px solid var(--accent-gold);
+      text-align: center;
+      max-width: 400px;
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      margin-left: 5px;
+      font-weight: bold;
+    }
+    .badge-black { background: #000; color: #fff; }
+    .badge-white { background: #fff; color: #000; border: 1px solid #000; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>SELFO ONLINE</h1>
+
+    <!-- Selección de Modo -->
+    <div id="modePanel" class="panel active">
+      <div class="form-group">
+        <label for="playerName">Tu Nombre / Nickname:</label>
+        <input type="text" id="playerName" value="Jugador 1">
+      </div>
+      <div class="mode-buttons">
+        <button onclick="showHostForm()">Crear Nueva Partida</button>
+        <button onclick="showJoinForm()">Unirse a Partida</button>
+      </div>
+    </div>
+
+    <!-- Crear Partida (Host) -->
+    <div id="hostPanel" class="panel">
+      <h2>Configuración de Sala</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="boardRadius">Radio del tablero (1-6):</label>
+          <input type="number" id="boardRadius" min="1" max="6" value="3">
+        </div>
+        <div class="form-group">
+          <label for="pieceCount">Fichas por jugador:</label>
+          <input type="number" id="pieceCount" min="1" max="10" value="3">
+        </div>
+      </div>
+      <button onclick="createRoom()">Generar Sala y Esperar Oponente</button>
+      <button onclick="showModePanel()" style="background:#800000;">Volver</button>
+    </div>
+
+    <!-- Esperando Oponente -->
+    <div id="waitingPanel" class="panel">
+      <h2>Partida Creada</h2>
+      <p style="margin: 15px 0;">Comparte este código o enlace con tu rival:</p>
+      <p>Código: <span id="displayRoomCode" class="game-tag"></span></p>
+      <button onclick="copyInviteLink()" style="margin: 15px 0;">Copiar Enlace Directo</button>
+      <p><i>Esperando a que se conecte el segundo jugador...</i></p>
+    </div>
+
+    <!-- Unirse a Partida -->
+    <div id="joinPanel" class="panel">
+      <h2>Unirse a Partida</h2>
+      <div class="form-group">
+        <label for="joinCode">Código de la Sala:</label>
+        <input type="text" id="joinCode" placeholder="Ej: SELFO-1234">
+      </div>
+      <button onclick="joinRoom()">Conectar</button>
+      <button onclick="showModePanel()" style="background:#800000;">Volver</button>
+    </div>
+
+    <!-- Panel de Juego -->
+    <div id="gamePanel" class="panel">
+      <div class="game-header">
+        <div>ID: <span id="gameTag" class="game-tag"></span></div>
+        <div>
+          Tu Rol: <span id="myRoleBadge" class="role-badge"></span>
+        </div>
+        <div class="status-box" id="turnStatus"></div>
+        <button id="pieBtn" onclick="applyPieRule()" style="display:none;">Cambiar Color (Pastel)</button>
+      </div>
+      <div class="board-container">
+        <svg id="hexBoard" width="500" height="500">
+          <defs>
+            <radialGradient id="blackPieceGrad" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#555" />
+              <stop offset="100%" stop-color="#050505" />
+            </radialGradient>
+            <radialGradient id="whitePieceGrad" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#ffffff" />
+              <stop offset="100%" stop-color="#cccccc" />
+            </radialGradient>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Victoria -->
+  <div id="winModal" class="modal">
+    <div class="modal-content">
+      <h2 id="winTitle">¡Victoria!</h2>
+      <p id="winMessage"></p>
+      <button onclick="location.reload()">Jugar Otra Vez</button>
+    </div>
+  </div>
+
+  <script>
+    const HEX_SIZE = 32;
+    let peer = null;
+    let conn = null;
+    let isHost = false;
+    let myColor = null; // 'B' o 'W'
+    let localPlayerName = '';
+
+    let config = { radius: 3, pieces: 3 };
+    let players = { B: '', W: '' };
+    let gameState = {
+      board: {}, // "q,r" -> 'B' | 'W' | null
+      currentTurn: 'B',
+      selectedCell: null,
+      moveCount: 0,
+      pieRuleAvailable: false,
+      gameEnded: false
+    };
+
+    // Auto-detectar código en URL (#SELFO-XXXX)
+    window.addEventListener('DOMContentLoaded', () => {
+      const hash = window.location.hash.substring(1);
+      if (hash.startsWith('SELFO-')) {
+        showJoinForm();
+        document.getElementById('joinCode').value = hash;
+      }
+    });
+
+    function showPanel(panelId) {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById(panelId).classList.add('active');
+    }
+
+    function showModePanel() { showPanel('modePanel'); }
+    function showHostForm() { showPanel('hostPanel'); }
+    function showJoinForm() { showPanel('joinPanel'); }
+
+    function axialKey(q, r) { return `${q},${r}`; }
+
+    function getNeighbors(q, r) {
+      const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+      return dirs.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
+    }
+
+    // --- LÓGICA DE RED PEERJS ---
+
+    function createRoom() {
+      localPlayerName = document.getElementById('playerName').value.trim() || 'Jugador 1';
+      config.radius = parseInt(document.getElementById('boardRadius').value);
+      config.pieces = parseInt(document.getElementById('pieceCount').value);
+
+      const maxAvailable = (3 * config.radius * (config.radius - 1) + 1) - 1;
+      if (config.pieces * 2 > maxAvailable) {
+        alert(`Demasiadas fichas. Máximo: ${Math.floor(maxAvailable / 2)} por jugador.`);
+        return;
+      }
+
+      isHost = true;
+      const roomCode = 'SELFO-' + Math.floor(1000 + Math.random() * 9000);
+      document.getElementById('displayRoomCode').innerText = roomCode;
+      showPanel('waitingPanel');
+
+      peer = new Peer(roomCode);
+
+      peer.on('open', () => {});
+      peer.on('connection', (c) => {
+        conn = c;
+        setupConnection();
+      });
+      peer.on('error', (err) => alert('Error al crear sala: ' + err));
+    }
+
+    function joinRoom() {
+      localPlayerName = document.getElementById('playerName').value.trim() || 'Jugador 2';
+      const code = document.getElementById('joinCode').value.trim().toUpperCase();
+      if (!code) { alert('Introduce un código de sala válido.'); return; }
+
+      isHost = false;
+      peer = new Peer();
+
+      peer.on('open', () => {
+        conn = peer.connect(code);
+        setupConnection();
+      });
+      peer.on('error', (err) => alert('No se pudo conectar a la sala. Revisa el código.'));
+    }
+
+    function setupConnection() {
+      conn.on('open', () => {
+        if (isHost) {
+          initHostGame();
+        }
+      });
+
+      conn.on('data', (data) => {
+        handleNetworkMessage(data);
+      });
+
+      conn.on('close', () => {
+        alert('El otro jugador ha abandonado la partida.');
+      });
+    }
+
+    function sendPayload(type, payload = {}) {
+      if (conn && conn.open) {
+        conn.send({ type, ...payload });
+      }
+    }
+
+    function handleNetworkMessage(data) {
+      switch (data.type) {
+        case 'INIT_GAME':
+          config = data.config;
+          gameState.board = data.board;
+          players = data.players;
+          gameState.currentTurn = 'B';
+          gameState.moveCount = 0;
+          gameState.pieRuleAvailable = false;
+          gameState.gameEnded = false;
+          myColor = isHost ? data.hostColor : (data.hostColor === 'B' ? 'W' : 'B');
+
+          document.getElementById('gameTag').innerText = data.roomCode;
+          showPanel('gamePanel');
+          updateUI();
+          renderBoard();
+          break;
+
+        case 'SYNC_MOVE':
+          gameState.board[data.fromKey] = null;
+          gameState.board[data.toKey] = data.piece;
+          gameState.currentTurn = data.nextTurn;
+          gameState.moveCount = data.moveCount;
+          gameState.pieRuleAvailable = data.pieRuleAvailable;
+          gameState.selectedCell = null;
+
+          renderBoard();
+          updateUI();
+
+          if (data.winner) {
+            gameState.gameEnded = true;
+            showWinModal(players[data.winner]);
+          }
+          break;
+
+        case 'SYNC_PIE_RULE':
+          // Intercambio de colores de los jugadores
+          const tempP = players.B;
+          players.B = players.W;
+          players.W = tempP;
+
+          myColor = (myColor === 'B') ? 'W' : 'B';
+          gameState.currentTurn = 'W';
+          gameState.pieRuleAvailable = false;
+
+          renderBoard();
+          updateUI();
+          break;
+      }
+    }
+
+    function initHostGame() {
+      // Inicializar tablero
+      gameState.board = {};
+      const R = config.radius - 1;
+      for (let q = -R; q <= R; q++) {
+        const r1 = Math.max(-R, -q - R);
+        const r2 = Math.min(R, -q + R);
+        for (let r = r1; r <= r2; r++) {
+          gameState.board[axialKey(q, r)] = null;
+        }
+      }
+
+      // Posicionamiento disperso (evitando 0,0)
+      const validCells = Object.keys(gameState.board).filter(k => k !== "0,0");
+      
+      function getDispersed(count, existing) {
+        let pool = validCells.filter(k => !existing.includes(k));
+        let selected = [];
+        for (let i = 0; i < count; i++) {
+          if (!pool.length) break;
+          if (!selected.length) {
+            let idx = Math.floor(Math.random() * pool.length);
+            selected.push(pool.splice(idx, 1)[0]);
+          } else {
+            let bestKey = pool[0], maxDist = -1;
+            for (let cand of pool) {
+              let [cq, cr] = cand.split(',').map(Number);
+              let minD = Math.min(...selected.map(s => {
+                let [sq, sr] = s.split(',').map(Number);
+                return (Math.abs(cq - sq) + Math.abs(cq + cr - sq - sr) + Math.abs(cr - sr)) / 2;
+              }));
+              if (minD > maxDist) { maxDist = minD; bestKey = cand; }
+            }
+            selected.push(bestKey);
+            pool = pool.filter(k => k !== bestKey);
+          }
+        }
+        return selected;
+      }
+
+      const blackKeys = getDispersed(config.pieces, []);
+      const whiteKeys = getDispersed(config.pieces, blackKeys);
+
+      blackKeys.forEach(k => gameState.board[k] = 'B');
+      whiteKeys.forEach(k => gameState.board[k] = 'W');
+
+      // Asignar colores aleatoriamente
+      const hostIsBlack = Math.random() < 0.5;
+      const hostColor = hostIsBlack ? 'B' : 'W';
+      const guestColor = hostIsBlack ? 'W' : 'B';
+
+      players[hostColor] = localPlayerName;
+      players[guestColor] = "Rival"; // El nombre se actualiza tras conectar
+
+      const roomCode = peer.id;
+
+      sendPayload('INIT_GAME', {
+        config,
+        board: gameState.board,
+        players,
+        hostColor,
+        roomCode
+      });
+
+      handleNetworkMessage({
+        type: 'INIT_GAME',
+        config,
+        board: gameState.board,
+        players,
+        hostColor,
+        roomCode
+      });
+    }
+
+    // --- DIBUJO Y MOVIMIENTOS ---
+
+    function renderBoard() {
+      const svg = document.getElementById('hexBoard');
+      svg.querySelectorAll('.hex, .piece').forEach(e => e.remove());
+
+      const R = config.radius;
+      const width = (R * 2 + 1) * HEX_SIZE * 1.75;
+      const height = (R * 2 + 1) * HEX_SIZE * 1.5;
+      svg.setAttribute('viewBox', `-${width/2} -${height/2} ${width} ${height}`);
+
+      const validMoves = gameState.selectedCell ? getValidMoves(gameState.selectedCell) : [];
+
+      Object.keys(gameState.board).forEach(key => {
+        const [q, r] = key.split(',').map(Number);
+        const { x, y } = hexToPixel(q, r);
+
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        polygon.setAttribute('points', getHexPoints(x, y, HEX_SIZE));
+
+        let className = 'hex';
+        if (gameState.selectedCell === key) className += ' selected';
+        else if (validMoves.includes(key)) className += ' valid-move';
+
+        polygon.setAttribute('class', className);
+        polygon.onclick = () => handleCellClick(key);
+        svg.appendChild(polygon);
+
+        const piece = gameState.board[key];
+        if (piece) {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', x);
+          circle.setAttribute('cy', y);
+          circle.setAttribute('r', HEX_SIZE * 0.65);
+          circle.setAttribute('class', `piece piece-${piece === 'B' ? 'black' : 'white'}`);
+          svg.appendChild(circle);
+        }
+      });
+    }
+
+    function hexToPixel(q, r) {
+      return {
+        x: HEX_SIZE * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r),
+        y: HEX_SIZE * (3/2 * r)
+      };
+    }
+
+    function getHexPoints(cx, cy, size) {
+      let points = [];
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 180) * (60 * i - 30);
+        points.push(`${cx + size * Math.cos(angle)},${cy + size * Math.sin(angle)}`);
+      }
+      return points.join(' ');
+    }
+
+    function handleCellClick(key) {
+      if (gameState.gameEnded || gameState.currentTurn !== myColor) return;
+
+      const piece = gameState.board[key];
+
+      if (gameState.selectedCell) {
+        const validMoves = getValidMoves(gameState.selectedCell);
+        if (validMoves.includes(key)) {
+          const fromKey = gameState.selectedCell;
+          const pieceColor = gameState.board[fromKey];
+
+          // Aplicar localmente
+          gameState.board[fromKey] = null;
+          gameState.board[key] = pieceColor;
+          gameState.moveCount++;
+          
+          const isPieAvail = (gameState.moveCount === 1);
+          const winner = checkWin(pieceColor) ? pieceColor : null;
+          const nextTurn = gameState.currentTurn === 'B' ? 'W' : 'B';
+
+          const moveData = {
+            fromKey,
+            toKey: key,
+            piece: pieceColor,
+            nextTurn,
+            moveCount: gameState.moveCount,
+            pieRuleAvailable: isPieAvail,
+            winner
+          };
+
+          sendPayload('SYNC_MOVE', moveData);
+          handleNetworkMessage({ type: 'SYNC_MOVE', ...moveData });
+          return;
+        }
+      }
+
+      if (piece === myColor) {
+        gameState.selectedCell = (gameState.selectedCell === key) ? null : key;
+        renderBoard();
+      }
+    }
+
+    function getValidMoves(key) {
+      const [q, r] = key.split(',').map(Number);
+      return getNeighbors(q, r)
+        .map(n => axialKey(n.q, n.r))
+        .filter(k => gameState.board[k] === null);
+    }
+
+    function applyPieRule() {
+      if (gameState.currentTurn !== myColor || !gameState.pieRuleAvailable) return;
+
+      sendPayload('SYNC_PIE_RULE');
+      handleNetworkMessage({ type: 'SYNC_PIE_RULE' });
+    }
+
+    function checkWin(color) {
+      const colorPieces = Object.keys(gameState.board).filter(k => gameState.board[k] === color);
+      if (colorPieces.length === 0) return false;
+
+      const visited = new Set();
+      const queue = [colorPieces[0]];
+      visited.add(colorPieces[0]);
+
+      while (queue.length > 0) {
+        const currentKey = queue.shift();
+        const [q, r] = currentKey.split(',').map(Number);
+
+        for (let n of getNeighbors(q, r)) {
+          const nKey = axialKey(n.q, n.r);
+          if (gameState.board[nKey] === color && !visited.has(nKey)) {
+            visited.add(nKey);
+            queue.push(nKey);
+          }
+        }
+      }
+
+      return visited.size === colorPieces.length;
+    }
+
+    function updateUI() {
+      const turnPlayer = players[gameState.currentTurn] || 'Jugador';
+      const colorText = gameState.currentTurn === 'B' ? 'Negras' : 'Blancas';
+
+      document.getElementById('turnStatus').innerText = `Turno: ${turnPlayer} (${colorText})`;
+
+      const badge = document.getElementById('myRoleBadge');
+      badge.innerText = myColor === 'B' ? 'Negras' : 'Blancas';
+      badge.className = `role-badge ${myColor === 'B' ? 'badge-black' : 'badge-white'}`;
+
+      const pieBtn = document.getElementById('pieBtn');
+      if (gameState.pieRuleAvailable && gameState.currentTurn === myColor && myColor === 'W') {
+        pieBtn.style.display = 'inline-block';
+      } else {
+        pieBtn.style.display = 'none';
+      }
+    }
+
+    function showWinModal(winnerName) {
+      document.getElementById('winTitle').innerText = '¡Partida Concluida!';
+      document.getElementById('winMessage').innerText = `¡${winnerName} ha conectado exitosamente todas sus fichas y gana!`;
+      document.getElementById('winModal').style.display = 'flex';
+    }
+
+    function copyInviteLink() {
+      const code = document.getElementById('displayRoomCode').innerText;
+      const url = `${window.location.origin}${window.location.pathname}#${code}`;
+      navigator.clipboard.writeText(url).then(() => alert('¡Enlace directo copiado al portapapeles!'));
+    }
+  </script>
+</body>
+</html>
