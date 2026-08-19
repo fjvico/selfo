@@ -110,6 +110,19 @@
       box-shadow: 0 4px 8px rgba(0,0,0,0.3);
     }
 
+    .btn-action {
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      margin-top: 0;
+    }
+
+    .btn-draw {
+      background: #2b547e;
+    }
+    .btn-draw:hover {
+      background: #3a6898;
+    }
+
     .btn-secondary {
       background: #4a5d4e;
     }
@@ -137,6 +150,13 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 10px;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
     .players-list {
@@ -305,7 +325,11 @@
         <div class="header-top">
           <div>ID: <span id="gameTag" class="game-tag"></span></div>
           <div class="status-box" id="turnStatus"></div>
-          <button id="pieBtn" onclick="applyPieRule()" style="display:none;">Cambiar Color (Pastel)</button>
+          <div class="action-buttons">
+            <button id="pieBtn" onclick="applyPieRule()" style="display:none;" class="btn-action">Cambiar Color (Pastel)</button>
+            <button id="drawBtn" onclick="offerDraw()" style="display:none;" class="btn-action btn-draw">Ofrecer Tablas</button>
+            <button id="resignBtn" onclick="resignGame()" style="display:none;" class="btn-action btn-cancel">Abandonar</button>
+          </div>
         </div>
         <div class="players-list">
           <span id="blackBadge" class="player-badge badge-black"></span>
@@ -329,7 +353,7 @@
     </div>
   </div>
 
-  <!-- Modal de Victoria -->
+  <!-- Modal de Fin de Partida -->
   <div id="winModal" class="modal">
     <div class="modal-content">
       <h2 id="winTitle">¡Partida Concluida!</h2>
@@ -337,6 +361,18 @@
       <div class="modal-buttons">
         <button onclick="closeModal()" class="btn-secondary">Ver Tablero</button>
         <button onclick="location.reload()">Nueva Partida</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Oferta de Tablas -->
+  <div id="drawOfferModal" class="modal">
+    <div class="modal-content">
+      <h2>Oferta de Tablas</h2>
+      <p id="drawOfferMessage" style="font-size: 1.15rem; margin: 15px 0; color: #2b2118;"></p>
+      <div class="modal-buttons">
+        <button onclick="respondDraw(true)">Aceptar Tablas</button>
+        <button onclick="respondDraw(false)" class="btn-cancel">Rechazar</button>
       </div>
     </div>
   </div>
@@ -441,7 +477,7 @@
         }
       });
 
-      conn.on('close', () => alert('El otro jugador ha abandonado la partida.'));
+      conn.on('close', () => alert('El otro jugador ha abandonado la conexión.'));
     }
 
     function setupGuestConnection() {
@@ -453,7 +489,7 @@
         handleNetworkMessage(data);
       });
 
-      conn.on('close', () => alert('El otro jugador ha abandonado la partida.'));
+      conn.on('close', () => alert('El otro jugador ha abandonado la conexión.'));
     }
 
     function sendPayload(type, payload = {}) {
@@ -586,7 +622,67 @@
           renderBoard();
           updateUI();
           break;
+
+        case 'RESIGN':
+          gameState.gameEnded = true;
+          const winnerColor = data.color === 'B' ? 'W' : 'B';
+          const winnerName = players[winnerColor] || 'Jugador';
+          const winnerColorText = winnerColor === 'B' ? 'Negras' : 'Blancas';
+          
+          gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText}) por abandono!`;
+          
+          renderBoard();
+          updateUI();
+          showWinModal(gameState.winMessageText);
+          break;
+
+        case 'OFFER_DRAW':
+          if (data.color !== myColor) {
+            const offererName = players[data.color] || 'El otro jugador';
+            const offererColorText = data.color === 'B' ? 'Negras' : 'Blancas';
+            document.getElementById('drawOfferMessage').innerText = `¡${offererName} (${offererColorText}) te ha ofrecido tablas! ¿Aceptas?`;
+            document.getElementById('drawOfferModal').style.display = 'flex';
+          }
+          break;
+
+        case 'RESPOND_DRAW':
+          if (data.accepted) {
+            gameState.gameEnded = true;
+            gameState.winMessageText = '¡Partida finalizada en Tablas (Empate)!';
+            renderBoard();
+            updateUI();
+            showWinModal(gameState.winMessageText);
+          } else {
+            if (data.responderColor !== myColor) {
+              alert('El otro jugador ha rechazado la oferta de tablas.');
+            }
+          }
+          break;
       }
+    }
+
+    // --- ACCIONES DE JUGADOR ---
+
+    function resignGame() {
+      if (gameState.gameEnded) return;
+      if (!confirm('¿Estás seguro de que deseas abandonar la partida? Se le dará la victoria al otro jugador.')) return;
+
+      const data = { type: 'RESIGN', color: myColor };
+      sendPayload('RESIGN', { color: myColor });
+      handleNetworkMessage(data);
+    }
+
+    function offerDraw() {
+      if (gameState.gameEnded) return;
+      sendPayload('OFFER_DRAW', { color: myColor });
+      alert('Has ofrecido tablas. Esperando respuesta del otro jugador...');
+    }
+
+    function respondDraw(accepted) {
+      document.getElementById('drawOfferModal').style.display = 'none';
+      const data = { type: 'RESPOND_DRAW', accepted, responderColor: myColor };
+      sendPayload('RESPOND_DRAW', { accepted, responderColor: myColor });
+      handleNetworkMessage(data);
     }
 
     // --- TABLERO Y LÓGICA DE JUEGO ---
@@ -735,10 +831,15 @@
       document.getElementById('whiteBadge').innerText = `⬜ Blancas: ${whiteText}`;
 
       const turnStatusEl = document.getElementById('turnStatus');
+      const pieBtn = document.getElementById('pieBtn');
+      const drawBtn = document.getElementById('drawBtn');
+      const resignBtn = document.getElementById('resignBtn');
 
       if (gameState.gameEnded) {
         turnStatusEl.innerHTML = `<span style="color: #2e7d32;">🏆 ${gameState.winMessageText}</span>`;
-        document.getElementById('pieBtn').style.display = 'none';
+        pieBtn.style.display = 'none';
+        drawBtn.style.display = 'none';
+        resignBtn.style.display = 'none';
         return;
       }
 
@@ -747,7 +848,10 @@
 
       turnStatusEl.innerText = `Turno: ${currentTurnPlayer} (${colorText})`;
 
-      const pieBtn = document.getElementById('pieBtn');
+      // Mostrar botones de acción
+      drawBtn.style.display = 'inline-block';
+      resignBtn.style.display = 'inline-block';
+
       if (gameState.pieRuleAvailable && gameState.currentTurn === myColor && myColor === 'W') {
         pieBtn.style.display = 'inline-block';
       } else {
