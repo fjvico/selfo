@@ -521,7 +521,9 @@
       config.radius = parseInt(document.getElementById('aiBoardRadius').value);
       config.pieces = parseInt(document.getElementById('aiPieceCount').value);
       aiDepth = parseInt(document.getElementById('aiDepthInput').value);
-      
+      if (!Number.isInteger(aiDepth) || aiDepth < 1) aiDepth = 4;
+      if (aiDepth > 8) aiDepth = 8; // evita profundidades desproporcionadas que disparen el tiempo de cálculo
+
       const seconds = parseFloat(document.getElementById('aiTimeInput').value) || 5;
       maxAiTimeMs = Math.max(200, seconds * 1000);
 
@@ -667,7 +669,9 @@
 
     function minimaxSync(boardState, depth, isMaximizing, alpha, beta, currentTurnColor, targetAiColor, searchId) {
       aiNodeCount++;
-      if ((aiNodeCount & 255) === 0) {
+      // Comprobamos el reloj con más frecuencia (cada 32 nodos en vez de 256)
+      // para reaccionar antes si el límite de tiempo se supera.
+      if ((aiNodeCount & 31) === 0) {
         if (Date.now() - aiStartTime > maxAiTimeMs || searchId !== currentAiSearchId) {
           aiTimedOut = true;
         }
@@ -809,6 +813,44 @@
       return absoluteBestMove;
     }
 
+    // Watchdog externo: garantiza que, ocurra lo que ocurra dentro del motor
+    // de búsqueda (una excepción, un cuelgue, un bucle que no corta a
+    // tiempo...), la IA siempre termine moviendo. Si el cálculo "real" no
+    // resuelve antes de maxAiTimeMs + un margen de seguridad, se cancela esa
+    // búsqueda (incrementando currentAiSearchId, lo que hace que minimaxSync
+    // se detenga en su siguiente comprobación) y se elige la mejor jugada
+    // "rápida" disponible como red de seguridad.
+    function getBestMoveWithWatchdog(boardCopy, depth, color, timeMs) {
+      const searchPromise = (async () => {
+        try {
+          return await getBestMoveAIAsync(boardCopy, depth, color, timeMs);
+        } catch (err) {
+          console.error('Error durante el cálculo de la IA:', err);
+          return null;
+        }
+      })();
+
+      const watchdogPromise = new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({ __watchdog: true });
+        }, timeMs + 2000); // margen de seguridad de 2s sobre el límite configurado
+      });
+
+      return Promise.race([searchPromise, watchdogPromise]).then((result) => {
+        if (result && result.__watchdog) {
+          // El cálculo "real" no volvió a tiempo: lo cancelamos y usamos un
+          // movimiento rápido (heurística sin profundidad) como último recurso.
+          currentAiSearchId++;
+          aiTimedOut = true;
+          const fallbackMoves = getValidMovesForColor(boardCopy, color);
+          if (fallbackMoves.length === 0) return null;
+          fallbackMoves.sort((a, b) => quickMoveScore(boardCopy, b, color) - quickMoveScore(boardCopy, a, color));
+          return fallbackMoves[0];
+        }
+        return result;
+      });
+    }
+
     async function triggerCPUTurn() {
       if (gameState.gameEnded || gameState.currentTurn !== aiColor) return;
 
@@ -824,7 +866,7 @@
       }
 
       const boardCopy = { ...gameState.board };
-      const bestMove = await getBestMoveAIAsync(boardCopy, aiDepth, aiColor, maxAiTimeMs);
+      const bestMove = await getBestMoveWithWatchdog(boardCopy, aiDepth, aiColor, maxAiTimeMs);
 
       if (gameState.gameEnded) return;
 
@@ -854,6 +896,15 @@
           renderBoard();
           updateUI();
         }
+      } else {
+        // La IA no tiene ningún movimiento legal disponible: en vez de
+        // quedarse mostrando "Pensando..." para siempre, se declara la
+        // partida sin más jugadas posibles para ese color.
+        gameState.gameEnded = true;
+        gameState.winMessageText = `${players[aiColor]} no tiene movimientos disponibles. ¡Partida finalizada!`;
+        renderBoard();
+        updateUI();
+        showWinModal(gameState.winMessageText);
       }
     }
 
