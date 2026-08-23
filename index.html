@@ -755,6 +755,11 @@
 
       const validMoves = getValidMovesForColor(boardState, targetColor);
       if (validMoves.length === 0) return null;
+      // Ordenamos por la heurística rápida para que, incluso en el caso
+      // extremo de que el tiempo se agote antes de completar la evaluación
+      // de un solo movimiento en la profundidad 1, el "fallback" ya sea una
+      // opción razonable y no un movimiento arbitrario.
+      validMoves.sort((a, b) => quickMoveScore(boardState, b, targetColor) - quickMoveScore(boardState, a, targetColor));
       let absoluteBestMove = validMoves[0];
 
       for (let currDepth = 1; currDepth <= maxTargetDepth; currDepth++) {
@@ -793,10 +798,17 @@
           alpha = Math.max(alpha, evalVal);
         }
 
-        if (!aiTimedOut && searchId === currentAiSearchId) {
+        // Si esta profundidad llegó a evaluar al menos un movimiento por
+        // completo (maxEval ya no es -Infinity), ese resultado es válido
+        // aunque el tiempo se haya agotado a mitad del resto de movimientos:
+        // es una búsqueda más profunda que la de la iteración anterior y
+        // debe conservarse en lugar de descartarse.
+        if (searchId === currentAiSearchId && maxEval > -Infinity) {
           absoluteBestMove = depthBestMove;
-          if (maxEval >= 9000) break;
+          if (!aiTimedOut && maxEval >= 9000) break;
         }
+
+        if (aiTimedOut || searchId !== currentAiSearchId) break;
       }
 
       return absoluteBestMove;
