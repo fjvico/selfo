@@ -54,6 +54,7 @@ const Game = {
     white: { name: "Player 2", isLocal: true },
   },
   localColor: null, // in online mode, which color this browser controls
+  humanColor: "black", // in vscomputer mode, which color the human plays
 
   // online play
   gameId: null,
@@ -98,6 +99,9 @@ const dom = {
 
   nicknameBlock: document.getElementById("nicknameBlock"),
   nicknameInput: document.getElementById("nicknameInput"),
+
+  colorChoiceBlock: document.getElementById("colorChoiceBlock"),
+  colorButtons: Array.from(document.querySelectorAll(".color-btn")),
 
   paramsBlock: document.getElementById("paramsBlock"),
   radiusRange: document.getElementById("radiusRange"),
@@ -472,6 +476,9 @@ function currentPositions() {
 
 function isMyTurnLocally() {
   if (Game.mode === "online2p") return Game.turn === Game.localColor;
+  if (Game.mode === "vscomputer" || Game.mode === "computerself") {
+    return Boolean(Game.players[Game.turn] && Game.players[Game.turn].isLocal);
+  }
   return true; // local2p: both colors are played on this device
 }
 
@@ -504,9 +511,11 @@ function performMove(fromKey, toKey, opts = {}) {
 
   Game.turn = opponentOf(color);
   updateStatusUI();
+  maybeTriggerCpuMove();
 }
 
 function endGame(winnerColor, reason) {
+  cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = winnerColor;
   renderBoard();
@@ -521,13 +530,17 @@ function endGame(winnerColor, reason) {
     dom.winnerOverlay.hidden = false;
     updateStatusUI();
     return;
+  } else if (reason === "no-moves") {
+    dom.winnerTitle.textContent = "No legal moves";
   } else {
     dom.winnerTitle.textContent = "Connection complete!";
   }
   const name = Game.players[winnerColor].name;
   dom.winnerText.textContent = reason === "resign"
     ? `${name} (${winnerColor}) wins — their opponent resigned.`
-    : `${name} (${winnerColor}) connected all of their pieces.`;
+    : reason === "no-moves"
+      ? `${name} (${winnerColor}) wins — their opponent had no legal moves.`
+      : `${name} (${winnerColor}) connected all of their pieces.`;
   showMessage("Game finished. Press \u201cNew game\u201d to play again.");
   updateStatusUI();
 }
@@ -570,6 +583,7 @@ function swapColors() {
   renderBoard();
   updateStatusUI();
   updatePlayersUI();
+  maybeTriggerCpuMove();
 }
 
 // =======================================================================
@@ -579,14 +593,22 @@ function swapColors() {
 function resign() {
   if (Game.phase !== "playing") return;
   if (!confirm("Resign this game?")) return;
-  const resigningColor = isMyTurnLocally() ? Game.turn : opponentOf(Game.turn);
-  const localPlayerColor = Game.mode === "online2p" ? Game.localColor : Game.turn;
+  cancelScheduledCpuMove();
+  let resigningColor;
   if (Game.mode === "online2p") {
-    sendToRemote({ type: "resign", color: localPlayerColor });
-    endGame(opponentOf(localPlayerColor), "resign");
+    resigningColor = Game.localColor;
+  } else if (Game.mode === "vscomputer") {
+    // find whichever color the human currently controls (a pie-rule swap
+    // may have changed this since the game started), and resign as them
+    // regardless of whose turn it currently is
+    resigningColor = Game.players.black.isLocal ? "black" : "white";
   } else {
-    endGame(opponentOf(resigningColor), "resign");
+    resigningColor = isMyTurnLocally() ? Game.turn : opponentOf(Game.turn);
   }
+  if (Game.mode === "online2p") {
+    sendToRemote({ type: "resign", color: resigningColor });
+  }
+  endGame(opponentOf(resigningColor), "resign");
 }
 
 function offerDraw() {
@@ -595,11 +617,124 @@ function offerDraw() {
     Game.drawOffered = Game.localColor;
     sendToRemote({ type: "draw-offer" });
     showMessage("Draw offer sent. Waiting for opponent...");
+  } else if (Game.mode === "vscomputer" || Game.mode === "computerself") {
+    return; // draw offers don't apply against/between computer players
   } else {
     if (confirm("Both players agree to a draw?")) {
       endGameDraw();
     }
   }
+}
+
+// =======================================================================
+// Computer play (vs computer / computer vs computer)
+// -----------------------------------------------------------------------
+// The actual alpha-beta search runs off the main thread in a Web Worker
+// (aistrategies.js doubles as the worker script — see its bottom
+// section), so a slow/deep search never freezes the page — the board,
+// buttons, and "New game"/"Resign" controls all stay responsive while
+// the CPU thinks.
+// =======================================================================
+
+let cpuWorker = null;          // the Worker instance, created lazily
+let cpuRequestId = 0;          // bumped on every dispatch/cancel so stale
+                                // worker replies (e.g. after New game) are
+                                // detected and ignored
+let cpuAwaitingColor = null;   // color the outstanding request is for
+let cpuThinkDelayId = null;    // setTimeout id for the pre-dispatch pause
+
+function ensureCpuWorker() {
+  if (!cpuWorker) {
+    cpuWorker = new Worker("aistrategies.js");
+    cpuWorker.onmessage = onCpuWorkerMessage;
+    cpuWorker.onerror = onCpuWorkerError;
+  }
+  return cpuWorker;
+}
+
+function onCpuWorkerMessage(e) {
+  const { requestId, ok, move, error } = e.data || {};
+  if (requestId !== cpuRequestId) return; // reply to a since-cancelled request
+  const color = cpuAwaitingColor;
+  cpuAwaitingColor = null;
+
+  if (!ok) {
+    console.error("CPU search failed:", error);
+    showMessage("The computer player hit an error \u2014 check the console.");
+    return;
+  }
+  if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
+
+  if (move) {
+    performMove(move.from, move.to);
+  } else {
+    // no legal move for this color (shouldn't normally happen on a
+    // freshly-generated board, but handle it rather than freezing)
+    endGame(opponentOf(color), "no-moves");
+  }
+}
+
+function onCpuWorkerError(err) {
+  console.error("CPU worker error:", err);
+  showMessage("The computer player hit an error \u2014 check the console.");
+}
+
+/** Stops any pending or in-flight CPU move: cancels the pre-dispatch
+ *  delay, invalidates the current request id (so a late worker reply is
+ *  ignored), and terminates the worker so an actually-running search
+ *  stops burning CPU right away. Used whenever the game state is reset
+ *  or ended out from under a scheduled move (new game, resign, back to
+ *  mode select, etc.). A fresh worker is created on the next request. */
+function cancelScheduledCpuMove() {
+  if (cpuThinkDelayId !== null) {
+    clearTimeout(cpuThinkDelayId);
+    cpuThinkDelayId = null;
+  }
+  cpuRequestId += 1;
+  cpuAwaitingColor = null;
+  if (cpuWorker) {
+    cpuWorker.terminate();
+    cpuWorker = null;
+  }
+}
+
+/** Call after any turn change: schedules a CPU move if the color now on
+ *  the move is computer-controlled. No-op for human-controlled turns or
+ *  outside vscomputer/computerself. */
+function maybeTriggerCpuMove() {
+  if (Game.phase !== "playing") return;
+  if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
+  if (Game.players[Game.turn] && Game.players[Game.turn].isLocal) return;
+  scheduleCpuMove();
+}
+
+function scheduleCpuMove() {
+  const color = Game.turn;
+  showMessage(`${Game.players[color].name} is thinking...`);
+
+  // small delay so the "thinking" message paints and moves don't feel
+  // instantaneous/robotic; the actual search then runs in the worker,
+  // off the main thread, so this is purely cosmetic pacing
+  cpuThinkDelayId = setTimeout(() => {
+    cpuThinkDelayId = null;
+    // guard: game state may have moved on while we were waiting
+    // (new game started, resign, mode switch, etc.)
+    if (Game.phase !== "playing" || Game.turn !== color) return;
+    if (Game.players[color] && Game.players[color].isLocal) return;
+
+    const maxDepth = Number(dom.cpuDepthRange.value);
+    const maxTimeSeconds = Number(dom.cpuTimeRange.value);
+    const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color };
+
+    cpuRequestId += 1;
+    cpuAwaitingColor = color;
+    try {
+      ensureCpuWorker().postMessage({ requestId: cpuRequestId, state, options: { maxDepth, maxTimeSeconds } });
+    } catch (err) {
+      console.error("Failed to start CPU worker:", err);
+      showMessage("Couldn't start the computer player (Web Workers may be unavailable here).");
+    }
+  }, 350);
 }
 
 // =======================================================================
@@ -610,6 +745,7 @@ function setPhase(phase) {
   Game.phase = phase;
   dom.modeSelectBlock.hidden = phase !== "mode-select";
   dom.onlineBlock.hidden = !(phase === "setup" && Game.mode === "online2p");
+  dom.colorChoiceBlock.hidden = !(phase === "setup" && Game.mode === "vscomputer");
   dom.nicknameBlock.hidden = phase === "mode-select";
   dom.paramsBlock.hidden = phase === "mode-select";
   dom.startBlock.hidden = phase === "mode-select";
@@ -625,8 +761,8 @@ function setPhase(phase) {
 function updateButtonsForPhase() {
   const playing = Game.phase === "playing";
   dom.swapColorBtn.disabled = !(playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally());
-  dom.offerDrawBtn.disabled = !playing;
-  dom.resignBtn.disabled = !playing;
+  dom.offerDrawBtn.disabled = !playing || Game.mode === "vscomputer" || Game.mode === "computerself";
+  dom.resignBtn.disabled = !playing || Game.mode === "computerself";
   // "New game" only makes sense once a game is actually running or over —
   // during mode-select/setup there is nothing to abandon, and having it
   // active then reads as competing with the "Start game" button.
@@ -717,6 +853,7 @@ function selectMode(mode) {
   dom.onlineStatus.textContent = "";
   dom.onlineStatus.className = "online-status";
   dom.joinCodeWrap.hidden = true;
+  dom.cpuParamsBlock.disabled = !(mode === "vscomputer" || mode === "computerself");
 
   refreshPieceRangeUI();
   dom.radiusValue.textContent = String(Game.radius);
@@ -730,11 +867,27 @@ function selectMode(mode) {
     dom.nicknameBlock.hidden = false;
     dom.nicknameInput.placeholder = "Your nickname";
     dom.startGameBtn.disabled = true; // enabled once connected
+  } else if (mode === "vscomputer") {
+    dom.nicknameBlock.hidden = false;
+    dom.nicknameInput.placeholder = "Your nickname";
+    dom.startGameBtn.disabled = false;
+  } else if (mode === "computerself") {
+    dom.nicknameBlock.hidden = true; // no human players in this mode
+    dom.startGameBtn.disabled = false;
   }
   updateButtonsForPhase();
 }
 
+dom.colorButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    dom.colorButtons.forEach((b) => b.classList.remove("selected"));
+    btn.classList.add("selected");
+    Game.humanColor = btn.dataset.color;
+  });
+});
+
 dom.backToModeBtn.addEventListener("click", () => {
+  cancelScheduledCpuMove();
   teardownOnline();
   dom.modeButtons.forEach((b) => b.classList.remove("selected"));
   Game.mode = null;
@@ -744,6 +897,7 @@ dom.backToModeBtn.addEventListener("click", () => {
 
 dom.newGameBtn.addEventListener("click", () => {
   if (Game.phase === "playing" && !confirm("Abandon the current game?")) return;
+  cancelScheduledCpuMove();
   teardownOnline();
   dom.winnerOverlay.hidden = true;
   dom.modeButtons.forEach((b) => b.classList.remove("selected"));
@@ -785,10 +939,23 @@ dom.startGameBtn.addEventListener("click", () => {
       players: Game.players,
       hostColor: Game.localColor,
     });
+  } else if (Game.mode === "vscomputer") {
+    const human = Game.humanColor || "black";
+    const cpu = opponentOf(human);
+    Game.players[human] = { name: nick || "You", isLocal: true };
+    Game.players[cpu] = { name: "CPU", isLocal: false };
+    Game.gameId = randomGameId();
+    startNewGame();
+  } else if (Game.mode === "computerself") {
+    Game.players.black = { name: "CPU \u00b7 Black", isLocal: false };
+    Game.players.white = { name: "CPU \u00b7 White", isLocal: false };
+    Game.gameId = randomGameId();
+    startNewGame();
   }
 });
 
 function startNewGame() {
+  cancelScheduledCpuMove();
   Game.radius = Number(dom.radiusRange.value);
   Game.piecesPerColor = Number(dom.piecesRange.value);
   const built = buildBoard(Game.radius, Game.piecesPerColor);
@@ -810,8 +977,13 @@ function startNewGame() {
   showMessage(
     Game.mode === "local2p"
       ? "Black moves first. White may swap colors instead of moving, on their first turn only."
-      : "Game started."
+      : Game.mode === "vscomputer"
+        ? `You are playing ${Game.humanColor}. Black moves first.`
+        : Game.mode === "computerself"
+          ? "Two computer players will play automatically."
+          : "Game started."
   );
+  maybeTriggerCpuMove();
 }
 
 // =======================================================================

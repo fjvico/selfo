@@ -79,8 +79,8 @@
         <div class="mode-grid">
           <button class="mode-btn" data-mode="local2p">2 players<br /><small>same device</small></button>
           <button class="mode-btn" data-mode="online2p">2 players<br /><small>online (code)</small></button>
-          <button class="mode-btn" data-mode="vscomputer" disabled title="Coming soon">Vs computer<br /><small>coming soon</small></button>
-          <button class="mode-btn" data-mode="computerself" disabled title="Coming soon">Computer vs computer<br /><small>coming soon</small></button>
+          <button class="mode-btn" data-mode="vscomputer">Vs computer<br /><small>you vs CPU</small></button>
+          <button class="mode-btn" data-mode="computerself">Computer vs computer<br /><small>watch CPU play</small></button>
         </div>
       </div>
 
@@ -104,6 +104,15 @@
         <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
       </div>
 
+      <!-- color choice (vs computer only) -->
+      <div class="setup-block" id="colorChoiceBlock" hidden>
+        <label class="setup-label">Play as</label>
+        <div class="mode-grid">
+          <button class="mode-btn color-btn selected" data-color="black">Black<br /><small>moves first</small></button>
+          <button class="mode-btn color-btn" data-color="white">White<br /><small>pie rule</small></button>
+        </div>
+      </div>
+
       <!-- board parameters -->
       <div class="setup-block" id="paramsBlock" hidden>
         <label class="setup-label" for="radiusRange">
@@ -117,7 +126,7 @@
         <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" />
 
         <fieldset class="cpu-params" id="cpuParamsBlock" disabled>
-          <legend>Computer (future)</legend>
+          <legend>Computer</legend>
           <label class="setup-label" for="cpuTimeRange">
             Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
           </label>

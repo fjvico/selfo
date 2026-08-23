@@ -294,3 +294,34 @@ const AiStrategies = (() => {
     evaluatePosition,
   };
 })();
+
+// =========================================================================
+// Worker entry point
+// -------------------------------------------------------------------------
+// This file is loaded two different ways:
+//   1. `<script src="aistrategies.js">` on the main page — just defines
+//      AiStrategies, nothing below this point runs.
+//   2. `new Worker("aistrategies.js")` from script.js — runs inside a
+//      dedicated Web Worker, so the (possibly slow, time-boxed) search
+//      never blocks the page's main thread. `importScripts` only exists
+//      in worker contexts, so it doubles as the "am I in a worker?" check
+//      and lets one file serve both roles instead of needing a second
+//      wrapper file.
+//
+// Message protocol (plain postMessage — Map/Array/Object are all
+// structured-cloneable, no transferables needed):
+//   in  -> { requestId, state: { cells, neighborKeys, color }, options }
+//   out -> { requestId, ok: true,  move, score }
+//        | { requestId, ok: false, error }
+// =========================================================================
+if (typeof importScripts === "function") {
+  self.onmessage = function (e) {
+    const { requestId, state, options } = e.data || {};
+    try {
+      const result = AiStrategies.pickMove(state, options);
+      self.postMessage({ requestId, ok: true, move: result.move, score: result.score });
+    } catch (err) {
+      self.postMessage({ requestId, ok: false, error: (err && err.message) || String(err) });
+    }
+  };
+}
