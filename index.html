@@ -338,21 +338,14 @@
       <div class="form-row">
         <div class="form-group">
           <label for="aiDepthInput">Evaluación N (Profundidad):</label>
-          <input type="number" id="aiDepthInput" min="1" max="5" value="4">
+          <input type="number" id="aiDepthInput" min="1" max="5" value="5">
         </div>
         <div class="form-group">
           <label for="aiTimeInput">Tiempo máx. por turno (seg):</label>
-          <input type="number" id="aiTimeInput" min="0.5" max="30" step="0.5" value="5">
+          <input type="number" id="aiTimeInput" min="0.5" max="30" step="0.5" value="10">
         </div>
       </div>
-      <div class="form-group">
-        <label for="aiColorChoice">Jugar con:</label>
-        <select id="aiColorChoice">
-          <option value="B">Negras (Empiezas tú)</option>
-          <option value="W">Blancas (Empieza el ordenador)</option>
-          <option value="R">Aleatorio</option>
-        </select>
-      </div>
+      <p style="font-size: 0.9em; color: #666;">El color de las Negras (que siempre empiezan) se asigna al azar entre tú y el ordenador. Quien juegue con Blancas podrá pedir el cambio de color (regla del pastel) en el primer turno.</p>
       <button onclick="startAIGame()" class="btn-ai">Empezar Partida contra el Ordenador</button>
       <button onclick="showModePanel()" class="btn-cancel">Volver</button>
     </div>
@@ -538,8 +531,10 @@
         return;
       }
 
-      let choice = document.getElementById('aiColorChoice').value;
-      if (choice === 'R') choice = Math.random() < 0.5 ? 'B' : 'W';
+      // Las Negras siempre empiezan; a quién le tocan Negras se decide al azar.
+      // Quien juegue con Blancas podrá pedir el cambio de color (regla del
+      // pastel) en su primer turno, igual que en las partidas humano vs humano.
+      const choice = Math.random() < 0.5 ? 'B' : 'W';
 
       myColor = choice;
       aiColor = (myColor === 'B') ? 'W' : 'B';
