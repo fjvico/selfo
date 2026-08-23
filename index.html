@@ -339,13 +339,17 @@
           <input type="number" id="aiDepthInput" min="1" max="5" value="2">
         </div>
         <div class="form-group">
-          <label for="aiColorChoice">Jugar con:</label>
-          <select id="aiColorChoice">
-            <option value="B">Negras (Empiezas tú)</option>
-            <option value="W">Blancas (Empieza el ordenador)</option>
-            <option value="R">Aleatorio</option>
-          </select>
+          <label for="aiTimeInput">Tiempo máx. por turno (seg):</label>
+          <input type="number" id="aiTimeInput" min="0.5" max="15" step="0.5" value="2.5">
         </div>
+      </div>
+      <div class="form-group">
+        <label for="aiColorChoice">Jugar con:</label>
+        <select id="aiColorChoice">
+          <option value="B">Negras (Empiezas tú)</option>
+          <option value="W">Blancas (Empieza el ordenador)</option>
+          <option value="R">Aleatorio</option>
+        </select>
       </div>
       <button onclick="startAIGame()" class="btn-ai">Empezar Partida contra el Ordenador</button>
       <button onclick="showModePanel()" class="btn-cancel">Volver</button>
@@ -411,7 +415,7 @@
 
   <script>
     const HEX_SIZE = 32;
-    const MAX_AI_TIME_MS = 2500; // Máximo tiempo permitido para pensar (2.5s)
+    let maxAiTimeMs = 2500; // Parámetro configurable dinámicamente
     let peer = null;
     let conn = null;
     let isHost = false;
@@ -422,6 +426,8 @@
     let localPlayerName = '';
     let NEIGHBORS_MAP = {}; // Precálculo de adyacencias
     let aiStartTime = 0;
+    let aiTimedOut = false;
+    let aiNodeCount = 0;
 
     let config = { radius: 3, pieces: 3 };
     let players = { B: 'Jugador 1', W: 'Jugador 2' };
@@ -467,16 +473,6 @@
       });
     }
 
-    function getNeighbors(q, r) {
-      const key = axialKey(q, r);
-      if (NEIGHBORS_MAP[key]) return NEIGHBORS_MAP[key].map(k => {
-        const [nq, nr] = k.split(',').map(Number);
-        return { q: nq, r: nr };
-      });
-      const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
-      return dirs.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
-    }
-
     function getDispersed(count, existing, poolCells) {
       let pool = poolCells.filter(k => !existing.includes(k));
       let selected = [];
@@ -512,6 +508,9 @@
       config.radius = parseInt(document.getElementById('aiBoardRadius').value);
       config.pieces = parseInt(document.getElementById('aiPieceCount').value);
       aiDepth = parseInt(document.getElementById('aiDepthInput').value);
+      
+      const seconds = parseFloat(document.getElementById('aiTimeInput').value) || 2.5;
+      maxAiTimeMs = Math.max(200, seconds * 1000); // Mínimo 200ms de margen
 
       const maxAvailable = (3 * config.radius * (config.radius - 1) + 1) - 1;
       if (config.pieces * 2 > maxAvailable) {
@@ -637,11 +636,18 @@
     function minimaxAI(boardState, depth, isMaximizing, alpha, beta, currentTurnColor, targetAiColor) {
       const oppColor = (targetAiColor === 'B') ? 'W' : 'B';
 
-      // Control de tiempo para evitar cuelgues
-      if (Date.now() - aiStartTime > MAX_AI_TIME_MS) {
-        const aiGoodness = evaluateGoodness(boardState, targetAiColor);
-        const oppGoodness = evaluateGoodness(boardState, oppColor);
-        return { score: aiGoodness - oppGoodness };
+      // Control de tiempo dinámico según el parámetro maxAiTimeMs
+      aiNodeCount++;
+      if (aiNodeCount % 200 === 0) {
+        if (Date.now() - aiStartTime > maxAiTimeMs) {
+          aiTimedOut = true;
+        }
+      }
+
+      if (aiTimedOut) {
+        const aiG = evaluateGoodness(boardState, targetAiColor);
+        const oppG = evaluateGoodness(boardState, oppColor);
+        return { score: aiG - oppG };
       }
 
       const aiGoodness = evaluateGoodness(boardState, targetAiColor);
@@ -655,7 +661,6 @@
       const moves = getValidMovesForColor(boardState, currentTurnColor);
       if (moves.length === 0) return { score: aiGoodness - oppGoodness };
 
-      // Ordenación de movimientos para maximizar la poda Alpha-Beta
       moves.sort((a, b) => quickMoveScore(boardState, b, currentTurnColor) - quickMoveScore(boardState, a, currentTurnColor));
 
       let bestMove = moves[0];
@@ -663,6 +668,7 @@
       if (isMaximizing) {
         let maxEval = -Infinity;
         for (let i = 0; i < moves.length; i++) {
+          if (aiTimedOut) break;
           const move = moves[i];
           boardState[move.fromKey] = null;
           boardState[move.toKey] = currentTurnColor;
@@ -683,6 +689,7 @@
       } else {
         let minEval = Infinity;
         for (let i = 0; i < moves.length; i++) {
+          if (aiTimedOut) break;
           const move = moves[i];
           boardState[move.fromKey] = null;
           boardState[move.toKey] = currentTurnColor;
@@ -708,7 +715,6 @@
 
       document.getElementById('turnStatus').innerText = `Turno: ${players[aiColor]} (Pensando...)`;
 
-      // Permitir renderizado de la UI antes de iniciar el cálculo pesado
       setTimeout(() => {
         if (gameState.pieRuleAvailable && gameState.moveCount === 1) {
           const blackScore = evaluateGoodness(gameState.board, 'B');
@@ -720,8 +726,18 @@
         }
 
         aiStartTime = Date.now();
+        aiTimedOut = false;
+        aiNodeCount = 0;
+
         const boardCopy = { ...gameState.board };
-        const result = minimaxAI(boardCopy, aiDepth, true, -Infinity, Infinity, aiColor, aiColor);
+        let result = minimaxAI(boardCopy, aiDepth, true, -Infinity, Infinity, aiColor, aiColor);
+
+        if (!result || !result.move) {
+          const fallbackMoves = getValidMovesForColor(gameState.board, aiColor);
+          if (fallbackMoves.length > 0) {
+            result = { move: fallbackMoves[0] };
+          }
+        }
 
         if (result && result.move) {
           const { fromKey, toKey } = result.move;
