@@ -411,6 +411,7 @@
 
   <script>
     const HEX_SIZE = 32;
+    const MAX_AI_TIME_MS = 2500; // Máximo tiempo permitido para pensar (2.5s)
     let peer = null;
     let conn = null;
     let isHost = false;
@@ -419,6 +420,8 @@
     let aiColor = null; // 'B' o 'W'
     let aiDepth = 2; // Parámetro N
     let localPlayerName = '';
+    let NEIGHBORS_MAP = {}; // Precálculo de adyacencias
+    let aiStartTime = 0;
 
     let config = { radius: 3, pieces: 3 };
     let players = { B: 'Jugador 1', W: 'Jugador 2' };
@@ -432,7 +435,6 @@
       winMessageText: ''
     };
 
-    // Auto-detectar código en URL Hash (#SELFO-XXXX)
     window.addEventListener('DOMContentLoaded', () => {
       const hash = window.location.hash.substring(1);
       if (hash.startsWith('SELFO-')) {
@@ -453,7 +455,24 @@
 
     function axialKey(q, r) { return `${q},${r}`; }
 
+    function initNeighborsMap() {
+      NEIGHBORS_MAP = {};
+      const keys = Object.keys(gameState.board);
+      const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+      keys.forEach(k => {
+        const [q, r] = k.split(',').map(Number);
+        NEIGHBORS_MAP[k] = dirs
+          .map(([dq, dr]) => axialKey(q + dq, r + dr))
+          .filter(nk => gameState.board.hasOwnProperty(nk));
+      });
+    }
+
     function getNeighbors(q, r) {
+      const key = axialKey(q, r);
+      if (NEIGHBORS_MAP[key]) return NEIGHBORS_MAP[key].map(k => {
+        const [nq, nr] = k.split(',').map(Number);
+        return { q: nq, r: nr };
+      });
       const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
       return dirs.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
     }
@@ -483,7 +502,7 @@
       return selected;
     }
 
-    // --- MODO VS ORDENADOR (IA - ALGORITMO MINIMAX N) ---
+    // --- MODO VS ORDENADOR (IA) ---
 
     function startAIGame() {
       gameMode = 'CPU';
@@ -501,9 +520,7 @@
       }
 
       let choice = document.getElementById('aiColorChoice').value;
-      if (choice === 'R') {
-        choice = Math.random() < 0.5 ? 'B' : 'W';
-      }
+      if (choice === 'R') choice = Math.random() < 0.5 ? 'B' : 'W';
 
       myColor = choice;
       aiColor = (myColor === 'B') ? 'W' : 'B';
@@ -520,6 +537,8 @@
           gameState.board[axialKey(q, r)] = null;
         }
       }
+
+      initNeighborsMap();
 
       const validCells = Object.keys(gameState.board).filter(k => k !== "0,0");
       const blackKeys = getDispersed(config.pieces, [], validCells);
@@ -540,9 +559,7 @@
       updateUI();
       renderBoard();
 
-      if (aiColor === 'B') {
-        triggerCPUTurn();
-      }
+      if (aiColor === 'B') triggerCPUTurn();
     }
 
     function getConnectedGroups(boardState, color) {
@@ -550,57 +567,56 @@
       if (keys.length === 0) return [];
       const visited = new Set();
       const groups = [];
-      for (const k of keys) {
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
         if (!visited.has(k)) {
-          const group = [];
+          let size = 0;
           const queue = [k];
           visited.add(k);
           while (queue.length > 0) {
             const curr = queue.shift();
-            group.push(curr);
-            const [cq, cr] = curr.split(',').map(Number);
-            for (const n of getNeighbors(cq, cr)) {
-              const nk = axialKey(n.q, n.r);
+            size++;
+            const neighbors = NEIGHBORS_MAP[curr] || [];
+            for (let j = 0; j < neighbors.length; j++) {
+              const nk = neighbors[j];
               if (boardState[nk] === color && !visited.has(nk)) {
                 visited.add(nk);
                 queue.push(nk);
               }
             }
           }
-          groups.push(group);
+          groups.push(size);
         }
       }
       return groups;
     }
 
     function evaluateGoodness(boardState, playerColor) {
-      // Bondad de la configuración = número de sus fichas conectadas en el grupo mayoritario
       const groups = getConnectedGroups(boardState, playerColor);
       if (groups.length === 0) return 0;
-      const maxGroupSize = groups.reduce((max, g) => Math.max(max, g.length), 0);
+      const maxGroupSize = Math.max(...groups);
       
-      // Bonificación secundaria para desempate (fichas adyacentes cercanas)
       let adjacencyBonus = 0;
       const keys = Object.keys(boardState).filter(k => boardState[k] === playerColor);
-      for (const k of keys) {
-        const [q, r] = k.split(',').map(Number);
-        for (const n of getNeighbors(q, r)) {
-          if (boardState[axialKey(n.q, n.r)] === playerColor) {
-            adjacencyBonus += 0.1;
+      for (let i = 0; i < keys.length; i++) {
+        const neighbors = NEIGHBORS_MAP[keys[i]] || [];
+        for (let j = 0; j < neighbors.length; j++) {
+          if (boardState[neighbors[j]] === playerColor) {
+            adjacencyBonus += 0.05;
           }
         }
       }
-      
       return maxGroupSize + adjacencyBonus;
     }
 
     function getValidMovesForColor(boardState, color) {
       const moves = [];
       const keys = Object.keys(boardState).filter(k => boardState[k] === color);
-      for (const fromKey of keys) {
-        const [q, r] = fromKey.split(',').map(Number);
-        for (const n of getNeighbors(q, r)) {
-          const toKey = axialKey(n.q, n.r);
+      for (let i = 0; i < keys.length; i++) {
+        const fromKey = keys[i];
+        const neighbors = NEIGHBORS_MAP[fromKey] || [];
+        for (let j = 0; j < neighbors.length; j++) {
+          const toKey = neighbors[j];
           if (boardState[toKey] === null) {
             moves.push({ fromKey, toKey });
           }
@@ -609,36 +625,45 @@
       return moves;
     }
 
+    function quickMoveScore(boardState, move, color) {
+      let score = 0;
+      const neighbors = NEIGHBORS_MAP[move.toKey] || [];
+      for (let i = 0; i < neighbors.length; i++) {
+        if (boardState[neighbors[i]] === color) score += 1;
+      }
+      return score;
+    }
+
     function minimaxAI(boardState, depth, isMaximizing, alpha, beta, currentTurnColor, targetAiColor) {
       const oppColor = (targetAiColor === 'B') ? 'W' : 'B';
-      const totalAIPieces = Object.values(boardState).filter(v => v === targetAiColor).length;
-      const totalOppPieces = Object.values(boardState).filter(v => v === oppColor).length;
+
+      // Control de tiempo para evitar cuelgues
+      if (Date.now() - aiStartTime > MAX_AI_TIME_MS) {
+        const aiGoodness = evaluateGoodness(boardState, targetAiColor);
+        const oppGoodness = evaluateGoodness(boardState, oppColor);
+        return { score: aiGoodness - oppGoodness };
+      }
 
       const aiGoodness = evaluateGoodness(boardState, targetAiColor);
       const oppGoodness = evaluateGoodness(boardState, oppColor);
 
-      // Si se ha alcanzado la victoria para algún jugador
-      if (Math.floor(aiGoodness) === totalAIPieces && totalAIPieces > 0) {
-        return { score: 10000 + depth };
-      }
-      if (Math.floor(oppGoodness) === totalOppPieces && totalOppPieces > 0) {
-        return { score: -10000 - depth };
-      }
+      if (Math.floor(aiGoodness) === config.pieces) return { score: 10000 + depth };
+      if (Math.floor(oppGoodness) === config.pieces) return { score: -10000 - depth };
 
-      // Profundidad N alcanzada
-      if (depth === 0) {
-        return { score: aiGoodness - oppGoodness };
-      }
+      if (depth === 0) return { score: aiGoodness - oppGoodness };
 
       const moves = getValidMovesForColor(boardState, currentTurnColor);
-      if (moves.length === 0) {
-        return { score: aiGoodness - oppGoodness };
-      }
+      if (moves.length === 0) return { score: aiGoodness - oppGoodness };
+
+      // Ordenación de movimientos para maximizar la poda Alpha-Beta
+      moves.sort((a, b) => quickMoveScore(boardState, b, currentTurnColor) - quickMoveScore(boardState, a, currentTurnColor));
+
+      let bestMove = moves[0];
 
       if (isMaximizing) {
         let maxEval = -Infinity;
-        let bestMove = moves[0];
-        for (const move of moves) {
+        for (let i = 0; i < moves.length; i++) {
+          const move = moves[i];
           boardState[move.fromKey] = null;
           boardState[move.toKey] = currentTurnColor;
 
@@ -657,8 +682,8 @@
         return { score: maxEval, move: bestMove };
       } else {
         let minEval = Infinity;
-        let bestMove = moves[0];
-        for (const move of moves) {
+        for (let i = 0; i < moves.length; i++) {
+          const move = moves[i];
           boardState[move.fromKey] = null;
           boardState[move.toKey] = currentTurnColor;
 
@@ -683,8 +708,8 @@
 
       document.getElementById('turnStatus').innerText = `Turno: ${players[aiColor]} (Pensando...)`;
 
+      // Permitir renderizado de la UI antes de iniciar el cálculo pesado
       setTimeout(() => {
-        // Evaluar Regla del Pastel si aplica
         if (gameState.pieRuleAvailable && gameState.moveCount === 1) {
           const blackScore = evaluateGoodness(gameState.board, 'B');
           const whiteScore = evaluateGoodness(gameState.board, 'W');
@@ -694,10 +719,11 @@
           }
         }
 
+        aiStartTime = Date.now();
         const boardCopy = { ...gameState.board };
         const result = minimaxAI(boardCopy, aiDepth, true, -Infinity, Infinity, aiColor, aiColor);
 
-        if (result.move) {
+        if (result && result.move) {
           const { fromKey, toKey } = result.move;
           gameState.board[fromKey] = null;
           gameState.board[toKey] = aiColor;
@@ -724,10 +750,10 @@
             updateUI();
           }
         }
-      }, 300);
+      }, 50);
     }
 
-    // --- CONEXIÓN Y RED PEERJS (MODO ONLINE) ---
+    // --- MODO ONLINE ---
 
     function createRoom() {
       gameMode = 'ONLINE';
@@ -748,12 +774,7 @@
       showPanel('waitingPanel');
 
       peer = new Peer(roomCode);
-
-      peer.on('connection', (c) => {
-        conn = c;
-        setupHostConnection();
-      });
-
+      peer.on('connection', (c) => { conn = c; setupHostConnection(); });
       peer.on('error', (err) => alert('Error al crear sala: ' + err));
     }
 
@@ -766,43 +787,26 @@
 
       isHost = false;
       peer = new Peer();
-
-      peer.on('open', () => {
-        conn = peer.connect(code);
-        setupGuestConnection();
-      });
-
+      peer.on('open', () => { conn = peer.connect(code); setupGuestConnection(); });
       peer.on('error', (err) => alert('No se pudo conectar a la sala. Revisa el código.'));
     }
 
     function setupHostConnection() {
       conn.on('data', (data) => {
-        if (data.type === 'JOIN_REQUEST') {
-          initHostGame(data.guestName || 'Jugador 2');
-        } else {
-          handleNetworkMessage(data);
-        }
+        if (data.type === 'JOIN_REQUEST') initHostGame(data.guestName || 'Jugador 2');
+        else handleNetworkMessage(data);
       });
-
-      conn.on('close', () => alert('El otro jugador ha abandonado la conexión.'));
+      conn.on('close', () => alert('El otro jugador se ha desconectado.'));
     }
 
     function setupGuestConnection() {
-      conn.on('open', () => {
-        sendPayload('JOIN_REQUEST', { guestName: localPlayerName });
-      });
-
-      conn.on('data', (data) => {
-        handleNetworkMessage(data);
-      });
-
-      conn.on('close', () => alert('El otro jugador ha abandonado la conexión.'));
+      conn.on('open', () => sendPayload('JOIN_REQUEST', { guestName: localPlayerName }));
+      conn.on('data', (data) => handleNetworkMessage(data));
+      conn.on('close', () => alert('El otro jugador se ha desconectado.'));
     }
 
     function sendPayload(type, payload = {}) {
-      if (conn && conn.open) {
-        conn.send({ type, ...payload });
-      }
+      if (conn && conn.open) conn.send({ type, ...payload });
     }
 
     function initHostGame(guestName) {
@@ -816,6 +820,8 @@
         }
       }
 
+      initNeighborsMap();
+
       const validCells = Object.keys(gameState.board).filter(k => k !== "0,0");
       const blackKeys = getDispersed(config.pieces, [], validCells);
       const whiteKeys = getDispersed(config.pieces, blackKeys, validCells);
@@ -827,22 +833,10 @@
       const hostColor = hostIsBlack ? 'B' : 'W';
       const guestColor = hostIsBlack ? 'W' : 'B';
 
-      const hostFinalName = localPlayerName || 'Jugador 1';
-      const guestFinalName = guestName || 'Jugador 2';
+      players[hostColor] = localPlayerName || 'Jugador 1';
+      players[guestColor] = guestName || 'Jugador 2';
 
-      players[hostColor] = hostFinalName;
-      players[guestColor] = guestFinalName;
-
-      const roomCode = peer.id;
-
-      const payload = {
-        config,
-        board: gameState.board,
-        players,
-        hostColor,
-        roomCode
-      };
-
+      const payload = { config, board: gameState.board, players, hostColor, roomCode: peer.id };
       sendPayload('INIT_GAME', payload);
       handleNetworkMessage({ type: 'INIT_GAME', ...payload });
     }
@@ -858,8 +852,8 @@
           gameState.pieRuleAvailable = false;
           gameState.gameEnded = false;
           gameState.winMessageText = '';
-          
           myColor = isHost ? data.hostColor : (data.hostColor === 'B' ? 'W' : 'B');
+          initNeighborsMap();
 
           document.getElementById('gameTag').innerText = data.roomCode;
           showPanel('gamePanel');
@@ -879,9 +873,7 @@
             gameState.gameEnded = true;
             const winnerName = players[data.winner] || 'Jugador';
             const winnerColorText = data.winner === 'B' ? 'Negras' : 'Blancas';
-            
             gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText})!`;
-            
             renderBoard();
             updateUI();
             showWinModal(gameState.winMessageText);
@@ -895,11 +887,9 @@
           const tempP = players.B;
           players.B = players.W;
           players.W = tempP;
-
           myColor = (myColor === 'B') ? 'W' : 'B';
           gameState.currentTurn = 'W';
           gameState.pieRuleAvailable = false;
-
           renderBoard();
           updateUI();
           break;
@@ -909,9 +899,7 @@
           const winnerColor = data.color === 'B' ? 'W' : 'B';
           const winnerName = players[winnerColor] || 'Jugador';
           const winnerColorText = winnerColor === 'B' ? 'Negras' : 'Blancas';
-          
           gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText}) por abandono!`;
-          
           renderBoard();
           updateUI();
           showWinModal(gameState.winMessageText);
@@ -934,15 +922,13 @@
             updateUI();
             showWinModal(gameState.winMessageText);
           } else {
-            if (data.responderColor !== myColor) {
-              alert('El otro jugador ha rechazado la oferta de tablas.');
-            }
+            if (data.responderColor !== myColor) alert('El otro jugador ha rechazado la oferta de tablas.');
           }
           break;
       }
     }
 
-    // --- ACCIONES DE JUGADOR ---
+    // --- ACCIONES DEL JUGADOR ---
 
     function resignGame() {
       if (gameState.gameEnded) return;
@@ -957,9 +943,8 @@
         updateUI();
         showWinModal(gameState.winMessageText);
       } else {
-        const data = { type: 'RESIGN', color: myColor };
         sendPayload('RESIGN', { color: myColor });
-        handleNetworkMessage(data);
+        handleNetworkMessage({ type: 'RESIGN', color: myColor });
       }
     }
 
@@ -969,9 +954,7 @@
       if (gameMode === 'CPU') {
         const aiGoodness = evaluateGoodness(gameState.board, aiColor);
         const humanGoodness = evaluateGoodness(gameState.board, myColor);
-        const diff = Math.abs(aiGoodness - humanGoodness);
-
-        if (diff <= 0.5) {
+        if (Math.abs(aiGoodness - humanGoodness) <= 0.5) {
           gameState.gameEnded = true;
           gameState.winMessageText = '¡Partida finalizada en Tablas por acuerdo con el Ordenador!';
           renderBoard();
@@ -988,9 +971,8 @@
 
     function respondDraw(accepted) {
       document.getElementById('drawOfferModal').style.display = 'none';
-      const data = { type: 'RESPOND_DRAW', accepted, responderColor: myColor };
       sendPayload('RESPOND_DRAW', { accepted, responderColor: myColor });
-      handleNetworkMessage(data);
+      handleNetworkMessage({ type: 'RESPOND_DRAW', accepted, responderColor: myColor });
     }
 
     function applyPieRule() {
@@ -1011,16 +993,14 @@
         renderBoard();
         updateUI();
 
-        if (gameState.currentTurn === aiColor) {
-          triggerCPUTurn();
-        }
+        if (gameState.currentTurn === aiColor) triggerCPUTurn();
       } else {
         sendPayload('SYNC_PIE_RULE');
         handleNetworkMessage({ type: 'SYNC_PIE_RULE' });
       }
     }
 
-    // --- TABLERO Y LÓGICA DE JUEGO ---
+    // --- RENDERIZADO Y TABLERO ---
 
     function renderBoard() {
       const svg = document.getElementById('hexBoard');
@@ -1111,9 +1091,7 @@
             } else {
               renderBoard();
               updateUI();
-              if (gameState.currentTurn === aiColor) {
-                triggerCPUTurn();
-              }
+              if (gameState.currentTurn === aiColor) triggerCPUTurn();
             }
           } else {
             const moveData = {
@@ -1125,7 +1103,6 @@
               pieRuleAvailable: isPieAvail,
               winner
             };
-
             sendPayload('SYNC_MOVE', moveData);
             handleNetworkMessage({ type: 'SYNC_MOVE', ...moveData });
           }
@@ -1140,17 +1117,15 @@
     }
 
     function getValidMoves(key) {
-      const [q, r] = key.split(',').map(Number);
-      return getNeighbors(q, r)
-        .map(n => axialKey(n.q, n.r))
-        .filter(k => gameState.board[k] === null);
+      const neighbors = NEIGHBORS_MAP[key] || [];
+      return neighbors.filter(k => gameState.board[k] === null);
     }
 
     function checkWin(color) {
       const colorPieces = Object.keys(gameState.board).filter(k => gameState.board[k] === color);
       if (colorPieces.length === 0) return false;
       const groups = getConnectedGroups(gameState.board, color);
-      return groups.length === 1 && groups[0].length === colorPieces.length;
+      return groups.length === 1 && groups[0] === colorPieces.length;
     }
 
     function updateUI() {
