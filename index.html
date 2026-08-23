@@ -874,7 +874,7 @@
         const blackScore = evaluateGoodness(gameState.board, 'B');
         const whiteScore = evaluateGoodness(gameState.board, 'W');
         if (blackScore > whiteScore) {
-          applyPieRule();
+          applyPieRuleSwap();
           return;
         }
       }
@@ -1156,25 +1156,37 @@
       if (gameState.currentTurn !== myColor || !gameState.pieRuleAvailable) return;
 
       if (gameMode === 'CPU') {
-        const tempName = players.B;
-        players.B = players.W;
-        players.W = tempName;
-
-        const tempColor = myColor;
-        myColor = aiColor;
-        aiColor = tempColor;
-
-        gameState.currentTurn = 'W';
-        gameState.pieRuleAvailable = false;
-
-        renderBoard();
-        updateUI();
-
-        if (gameState.currentTurn === aiColor) triggerCPUTurn();
+        applyPieRuleSwap();
       } else {
         sendPayload('SYNC_PIE_RULE');
         handleNetworkMessage({ type: 'SYNC_PIE_RULE' });
       }
+    }
+
+    // Ejecuta el intercambio de color de la regla del pastel en modo CPU.
+    // A diferencia de applyPieRule(), esta función no exige que sea el turno
+    // de "myColor": la usa tanto el humano (a través de applyPieRule, cuando
+    // pulsa el botón en su propio turno) como la propia IA cuando decide
+    // acogerse a la regla en su turno (currentTurn === aiColor). Antes, la IA
+    // llamaba directamente a applyPieRule(), cuya comprobación de guarda
+    // asumía siempre currentTurn === myColor y bloqueaba el intercambio
+    // quedándose la partida congelada sin mover ni avisar.
+    function applyPieRuleSwap() {
+      const tempName = players.B;
+      players.B = players.W;
+      players.W = tempName;
+
+      const tempColor = myColor;
+      myColor = aiColor;
+      aiColor = tempColor;
+
+      gameState.currentTurn = 'W';
+      gameState.pieRuleAvailable = false;
+
+      renderBoard();
+      updateUI();
+
+      if (gameState.currentTurn === aiColor) triggerCPUTurn();
     }
 
     // --- RENDERIZADO Y TABLERO ---
