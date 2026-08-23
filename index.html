@@ -123,9 +123,6 @@
     .btn-draw { background: #2b547e; }
     .btn-draw:hover { background: #3a6898; }
 
-    .btn-secondary { background: #4a5d4e; }
-    .btn-secondary:hover { background: #5c7462; }
-
     .btn-cancel { background: #800000; }
     .btn-cancel:hover { background: #a00000; }
 
@@ -230,29 +227,34 @@
     .modal {
       display: none;
       position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.65);
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 500px;
+      background: transparent;
       justify-content: center;
-      align-items: center;
+      align-items: flex-start;
       z-index: 100;
+      pointer-events: none;
     }
 
     .modal-content {
+      pointer-events: auto;
       background: var(--panel-bg);
-      padding: 30px;
+      padding: 20px;
       border-radius: 10px;
       border: 4px solid var(--accent-gold);
       text-align: center;
-      max-width: 450px;
-      width: 90%;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      width: 100%;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.7);
     }
 
     .modal-buttons {
       display: flex;
       gap: 10px;
       justify-content: center;
-      margin-top: 20px;
+      margin-top: 15px;
       flex-wrap: wrap;
     }
   </style>
@@ -336,11 +338,11 @@
       <div class="form-row">
         <div class="form-group">
           <label for="aiDepthInput">Evaluación N (Profundidad):</label>
-          <input type="number" id="aiDepthInput" min="1" max="5" value="5">
+          <input type="number" id="aiDepthInput" min="1" max="5" value="4">
         </div>
         <div class="form-group">
           <label for="aiTimeInput">Tiempo máx. por turno (seg):</label>
-          <input type="number" id="aiTimeInput" min="0.5" max="30" step="0.5" value="10">
+          <input type="number" id="aiTimeInput" min="0.5" max="30" step="0.5" value="5">
         </div>
       </div>
       <div class="form-group">
@@ -389,21 +391,21 @@
     </div>
   </div>
 
-  <!-- Modal de Fin de Partida -->
+  <!-- Modal de Fin de Partida Superior -->
   <div id="winModal" class="modal">
     <div class="modal-content">
       <h2 id="winTitle">¡Partida Concluida!</h2>
-      <p id="winMessage" style="font-size: 1.25rem; font-weight: bold; margin: 15px 0; color: #2b2118;"></p>
+      <p id="winMessage" style="font-size: 1.15rem; font-weight: bold; margin: 10px 0; color: #2b2118;"></p>
       <div class="modal-buttons">
-        <button onclick="closeModal()" class="btn-secondary">Ver Tablero</button>
         <button onclick="location.reload()">Nueva Partida</button>
+        <button onclick="restartGameWithSameConfig()" class="btn-ai">Repetir Configuración</button>
       </div>
     </div>
   </div>
 
   <!-- Modal de Oferta de Tablas -->
-  <div id="drawOfferModal" class="modal">
-    <div class="modal-content">
+  <div id="drawOfferModal" class="modal" style="top: 0; background: rgba(0,0,0,0.65); height: 100%; align-items: center; pointer-events: auto;">
+    <div class="modal-content" style="max-width: 450px;">
       <h2>Oferta de Tablas</h2>
       <p id="drawOfferMessage" style="font-size: 1.15rem; margin: 15px 0; color: #2b2118;"></p>
       <div class="modal-buttons">
@@ -415,16 +417,17 @@
 
   <script>
     const HEX_SIZE = 32;
-    let maxAiTimeMs = 10000;
+    let maxAiTimeMs = 5000;
     let peer = null;
     let conn = null;
     let isHost = false;
     let gameMode = 'ONLINE'; // 'ONLINE' o 'CPU'
     let myColor = null; // 'B' o 'W'
     let aiColor = null; // 'B' o 'W'
-    let aiDepth = 5; // Parámetro N
+    let aiDepth = 4;
     let localPlayerName = '';
-    let NEIGHBORS_MAP = {}; // Precálculo de adyacencias
+    let NEIGHBORS_MAP = {};
+    let currentAiSearchId = 0;
     let aiStartTime = 0;
     let aiTimedOut = false;
     let aiNodeCount = 0;
@@ -432,7 +435,7 @@
     let config = { radius: 3, pieces: 4 };
     let players = { B: 'Jugador 1', W: 'Jugador 2' };
     let gameState = {
-      board: {}, // "q,r" -> 'B' | 'W' | null
+      board: {},
       currentTurn: 'B',
       selectedCell: null,
       moveCount: 0,
@@ -498,9 +501,26 @@
       return selected;
     }
 
-    // --- MODO VS ORDENADOR (IA REEVALUADA ASÍNCRONA) ---
+    function restartGameWithSameConfig() {
+      closeModal();
+      currentAiSearchId++;
+      if (gameMode === 'CPU') {
+        startAIGame();
+      } else if (gameMode === 'ONLINE') {
+        if (isHost) {
+          const guestName = (players.B === localPlayerName) ? players.W : players.B;
+          initHostGame(guestName);
+        } else {
+          alert('Solo el anfitrión (Host) puede reiniciar la partida online.');
+        }
+      }
+    }
+
+    // --- MODO VS ORDENADOR (IA) ---
 
     function startAIGame() {
+      closeModal();
+      currentAiSearchId++;
       gameMode = 'CPU';
       const nameInput = document.getElementById('aiHumanName').value.trim();
       localPlayerName = nameInput || 'Jugador';
@@ -509,7 +529,7 @@
       config.pieces = parseInt(document.getElementById('aiPieceCount').value);
       aiDepth = parseInt(document.getElementById('aiDepthInput').value);
       
-      const seconds = parseFloat(document.getElementById('aiTimeInput').value) || 10;
+      const seconds = parseFloat(document.getElementById('aiTimeInput').value) || 5;
       maxAiTimeMs = Math.max(200, seconds * 1000);
 
       const maxAvailable = (3 * config.radius * (config.radius - 1) + 1) - 1;
@@ -562,25 +582,33 @@
     }
 
     function getConnectedGroups(boardState, color) {
-      const keys = Object.keys(boardState).filter(k => boardState[k] === color);
+      const keys = [];
+      for (const k in boardState) {
+        if (boardState[k] === color) keys.push(k);
+      }
       if (keys.length === 0) return [];
+
       const visited = new Set();
       const groups = [];
+
       for (let i = 0; i < keys.length; i++) {
         const k = keys[i];
         if (!visited.has(k)) {
           let size = 0;
           const queue = [k];
           visited.add(k);
-          while (queue.length > 0) {
-            const curr = queue.shift();
+          let head = 0;
+          while (head < queue.length) {
+            const curr = queue[head++];
             size++;
-            const neighbors = NEIGHBORS_MAP[curr] || [];
-            for (let j = 0; j < neighbors.length; j++) {
-              const nk = neighbors[j];
-              if (boardState[nk] === color && !visited.has(nk)) {
-                visited.add(nk);
-                queue.push(nk);
+            const neighbors = NEIGHBORS_MAP[curr];
+            if (neighbors) {
+              for (let j = 0; j < neighbors.length; j++) {
+                const nk = neighbors[j];
+                if (boardState[nk] === color && !visited.has(nk)) {
+                  visited.add(nk);
+                  queue.push(nk);
+                }
               }
             }
           }
@@ -590,18 +618,27 @@
       return groups;
     }
 
+    function checkWinForBoard(boardState, color) {
+      const groups = getConnectedGroups(boardState, color);
+      return groups.length === 1 && groups[0] === config.pieces;
+    }
+
     function evaluateGoodness(boardState, playerColor) {
       const groups = getConnectedGroups(boardState, playerColor);
       if (groups.length === 0) return 0;
-      const maxGroupSize = Math.max(...groups);
+      let maxGroupSize = 0;
+      for (let i = 0; i < groups.length; i++) {
+        if (groups[i] > maxGroupSize) maxGroupSize = groups[i];
+      }
       
       let adjacencyBonus = 0;
-      const keys = Object.keys(boardState).filter(k => boardState[k] === playerColor);
-      for (let i = 0; i < keys.length; i++) {
-        const neighbors = NEIGHBORS_MAP[keys[i]] || [];
-        for (let j = 0; j < neighbors.length; j++) {
-          if (boardState[neighbors[j]] === playerColor) {
-            adjacencyBonus += 0.05;
+      for (const k in boardState) {
+        if (boardState[k] === playerColor) {
+          const neighbors = NEIGHBORS_MAP[k] || [];
+          for (let j = 0; j < neighbors.length; j++) {
+            if (boardState[neighbors[j]] === playerColor) {
+              adjacencyBonus += 0.05;
+            }
           }
         }
       }
@@ -610,14 +647,14 @@
 
     function getValidMovesForColor(boardState, color) {
       const moves = [];
-      const keys = Object.keys(boardState).filter(k => boardState[k] === color);
-      for (let i = 0; i < keys.length; i++) {
-        const fromKey = keys[i];
-        const neighbors = NEIGHBORS_MAP[fromKey] || [];
-        for (let j = 0; j < neighbors.length; j++) {
-          const toKey = neighbors[j];
-          if (boardState[toKey] === null) {
-            moves.push({ fromKey, toKey });
+      for (const fromKey in boardState) {
+        if (boardState[fromKey] === color) {
+          const neighbors = NEIGHBORS_MAP[fromKey] || [];
+          for (let j = 0; j < neighbors.length; j++) {
+            const toKey = neighbors[j];
+            if (boardState[toKey] === null) {
+              moves.push({ fromKey, toKey });
+            }
           }
         }
       }
@@ -633,96 +670,37 @@
       return score;
     }
 
-    // --- ALGORITMO ASÍNCRONO NO BLOQUEANTE CON PROFUNDIZACIÓN ITERATIVA ---
-
-    async function getBestMoveAIAsync(boardState, maxTargetDepth, targetColor, maxTimeMs) {
-      aiStartTime = Date.now();
-      aiTimedOut = false;
-      aiNodeCount = 0;
-
-      let absoluteBestMove = null;
-      const validMoves = getValidMovesForColor(boardState, targetColor);
-      if (validMoves.length === 0) return null;
-      absoluteBestMove = validMoves[0]; // Respaldo por defecto
-
-      // Profundización iterativa: evalúa nivel 1, luego 2, 3... hasta maxTargetDepth
-      for (let currDepth = 1; currDepth <= maxTargetDepth; currDepth++) {
-        if (aiTimedOut) break;
-
-        let alpha = -Infinity;
-        let beta = Infinity;
-        let moves = getValidMovesForColor(boardState, targetColor);
-        moves.sort((a, b) => quickMoveScore(boardState, b, targetColor) - quickMoveScore(boardState, a, targetColor));
-
-        let depthBestMove = moves[0];
-        let maxEval = -Infinity;
-
-        for (let i = 0; i < moves.length; i++) {
-          // Desahogo periódico del navegador (evita que la pestaña marque 'Sin respuesta')
-          aiNodeCount++;
-          if (aiNodeCount % 150 === 0) {
-            if (Date.now() - aiStartTime > maxTimeMs) aiTimedOut = true;
-            await new Promise(resolve => setTimeout(resolve, 0));
-          }
-
-          if (aiTimedOut) break;
-
-          const move = moves[i];
-          boardState[move.fromKey] = null;
-          boardState[move.toKey] = targetColor;
-
-          const oppColor = (targetColor === 'B') ? 'W' : 'B';
-          const evalRes = await minimaxRecursiveAsync(boardState, currDepth - 1, false, alpha, beta, oppColor, targetColor, maxTimeMs);
-
-          boardState[move.fromKey] = targetColor;
-          boardState[move.toKey] = null;
-
-          if (aiTimedOut) break;
-
-          if (evalRes.score > maxEval) {
-            maxEval = evalRes.score;
-            depthBestMove = move;
-          }
-          alpha = Math.max(alpha, evalRes.score);
-        }
-
-        // Si la profundidad actual terminó sin agotamiento de tiempo, guardamos el resultado como definitivo
-        if (!aiTimedOut) {
-          absoluteBestMove = depthBestMove;
-          if (maxEval >= 9000) break; // Victoria garantizada encontrada
+    function minimaxSync(boardState, depth, isMaximizing, alpha, beta, currentTurnColor, targetAiColor, searchId) {
+      aiNodeCount++;
+      if ((aiNodeCount & 255) === 0) {
+        if (Date.now() - aiStartTime > maxAiTimeMs || searchId !== currentAiSearchId) {
+          aiTimedOut = true;
         }
       }
 
-      return absoluteBestMove;
-    }
-
-    async function minimaxRecursiveAsync(boardState, depth, isMaximizing, alpha, beta, currentTurnColor, targetAiColor, maxTimeMs) {
-      aiNodeCount++;
-      if (aiNodeCount % 150 === 0) {
-        if (Date.now() - aiStartTime > maxTimeMs) {
-          aiTimedOut = true;
-        }
-        await new Promise(resolve => setTimeout(resolve, 0));
+      if (aiTimedOut || searchId !== currentAiSearchId) {
+        return 0;
       }
 
       const oppColor = (targetAiColor === 'B') ? 'W' : 'B';
+      const lastMovedColor = isMaximizing ? oppColor : targetAiColor;
 
-      if (aiTimedOut) {
-        const aiG = evaluateGoodness(boardState, targetAiColor);
-        const oppG = evaluateGoodness(boardState, oppColor);
-        return { score: aiG - oppG };
+      if (checkWinForBoard(boardState, lastMovedColor)) {
+        return lastMovedColor === targetAiColor ? (10000 + depth) : (-10000 - depth);
       }
 
-      const aiGoodness = evaluateGoodness(boardState, targetAiColor);
-      const oppGoodness = evaluateGoodness(boardState, oppColor);
-
-      if (Math.floor(aiGoodness) === config.pieces) return { score: 10000 + depth };
-      if (Math.floor(oppGoodness) === config.pieces) return { score: -10000 - depth };
-
-      if (depth === 0) return { score: aiGoodness - oppGoodness };
+      if (depth === 0) {
+        const aiG = evaluateGoodness(boardState, targetAiColor);
+        const oppG = evaluateGoodness(boardState, oppColor);
+        return aiG - oppG;
+      }
 
       const moves = getValidMovesForColor(boardState, currentTurnColor);
-      if (moves.length === 0) return { score: aiGoodness - oppGoodness };
+      if (moves.length === 0) {
+        const aiG = evaluateGoodness(boardState, targetAiColor);
+        const oppG = evaluateGoodness(boardState, oppColor);
+        return aiG - oppG;
+      }
 
       moves.sort((a, b) => quickMoveScore(boardState, b, currentTurnColor) - quickMoveScore(boardState, a, currentTurnColor));
 
@@ -734,20 +712,18 @@
           boardState[move.fromKey] = null;
           boardState[move.toKey] = currentTurnColor;
 
-          const evalRes = await minimaxRecursiveAsync(boardState, depth - 1, false, alpha, beta, oppColor, targetAiColor, maxTimeMs);
+          const evalVal = minimaxSync(boardState, depth - 1, false, alpha, beta, oppColor, targetAiColor, searchId);
 
           boardState[move.fromKey] = currentTurnColor;
           boardState[move.toKey] = null;
 
           if (aiTimedOut) break;
 
-          if (evalRes.score > maxEval) {
-            maxEval = evalRes.score;
-          }
-          alpha = Math.max(alpha, evalRes.score);
+          if (evalVal > maxEval) maxEval = evalVal;
+          alpha = Math.max(alpha, evalVal);
           if (beta <= alpha) break;
         }
-        return { score: maxEval };
+        return maxEval;
       } else {
         let minEval = Infinity;
         for (let i = 0; i < moves.length; i++) {
@@ -756,30 +732,80 @@
           boardState[move.fromKey] = null;
           boardState[move.toKey] = currentTurnColor;
 
-          const evalRes = await minimaxRecursiveAsync(boardState, depth - 1, true, alpha, beta, targetAiColor, targetAiColor, maxTimeMs);
+          const evalVal = minimaxSync(boardState, depth - 1, true, alpha, beta, targetAiColor, targetAiColor, searchId);
 
           boardState[move.fromKey] = currentTurnColor;
           boardState[move.toKey] = null;
 
           if (aiTimedOut) break;
 
-          if (evalRes.score < minEval) {
-            minEval = evalRes.score;
-          }
-          beta = Math.min(beta, evalRes.score);
+          if (evalVal < minEval) minEval = evalVal;
+          beta = Math.min(beta, evalVal);
           if (beta <= alpha) break;
         }
-        return { score: minEval };
+        return minEval;
       }
+    }
+
+    async function getBestMoveAIAsync(boardState, maxTargetDepth, targetColor, maxTimeMs) {
+      aiStartTime = Date.now();
+      aiTimedOut = false;
+      aiNodeCount = 0;
+      const searchId = ++currentAiSearchId;
+
+      const validMoves = getValidMovesForColor(boardState, targetColor);
+      if (validMoves.length === 0) return null;
+      let absoluteBestMove = validMoves[0];
+
+      for (let currDepth = 1; currDepth <= maxTargetDepth; currDepth++) {
+        if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+        if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+        let alpha = -Infinity;
+        let beta = Infinity;
+        let moves = getValidMovesForColor(boardState, targetColor);
+        moves.sort((a, b) => quickMoveScore(boardState, b, targetColor) - quickMoveScore(boardState, a, targetColor));
+
+        let depthBestMove = moves[0];
+        let maxEval = -Infinity;
+
+        for (let i = 0; i < moves.length; i++) {
+          if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+          const move = moves[i];
+          boardState[move.fromKey] = null;
+          boardState[move.toKey] = targetColor;
+
+          const oppColor = (targetColor === 'B') ? 'W' : 'B';
+          const evalVal = minimaxSync(boardState, currDepth - 1, false, alpha, beta, oppColor, targetColor, searchId);
+
+          boardState[move.fromKey] = targetColor;
+          boardState[move.toKey] = null;
+
+          if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+          if (evalVal > maxEval) {
+            maxEval = evalVal;
+            depthBestMove = move;
+          }
+          alpha = Math.max(alpha, evalVal);
+        }
+
+        if (!aiTimedOut && searchId === currentAiSearchId) {
+          absoluteBestMove = depthBestMove;
+          if (maxEval >= 9000) break;
+        }
+      }
+
+      return absoluteBestMove;
     }
 
     async function triggerCPUTurn() {
       if (gameState.gameEnded || gameState.currentTurn !== aiColor) return;
 
       document.getElementById('turnStatus').innerText = `Turno: ${players[aiColor]} (Pensando...)`;
-
-      // Pausa ligera para permitir el renderizado del texto "Pensando..."
-      await new Promise(resolve => setTimeout(resolve, 50));
 
       if (gameState.pieRuleAvailable && gameState.moveCount === 1) {
         const blackScore = evaluateGoodness(gameState.board, 'B');
@@ -792,6 +818,8 @@
 
       const boardCopy = { ...gameState.board };
       const bestMove = await getBestMoveAIAsync(boardCopy, aiDepth, aiColor, maxAiTimeMs);
+
+      if (gameState.gameEnded) return;
 
       if (bestMove) {
         const { fromKey, toKey } = bestMove;
@@ -879,6 +907,7 @@
     }
 
     function initHostGame(guestName) {
+      closeModal();
       gameState.board = {};
       const R = config.radius - 1;
       for (let q = -R; q <= R; q++) {
@@ -913,6 +942,7 @@
     function handleNetworkMessage(data) {
       switch (data.type) {
         case 'INIT_GAME':
+          closeModal();
           config = data.config;
           gameState.board = data.board;
           players = data.players;
@@ -1005,6 +1035,7 @@
 
       if (gameMode === 'CPU') {
         gameState.gameEnded = true;
+        currentAiSearchId++;
         const winnerName = players[aiColor];
         const winnerColorText = aiColor === 'B' ? 'Negras' : 'Blancas';
         gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText}) por abandono!`;
@@ -1025,6 +1056,7 @@
         const humanGoodness = evaluateGoodness(gameState.board, myColor);
         if (Math.abs(aiGoodness - humanGoodness) <= 0.5) {
           gameState.gameEnded = true;
+          currentAiSearchId++;
           gameState.winMessageText = '¡Partida finalizada en Tablas por acuerdo con el Ordenador!';
           renderBoard();
           updateUI();
@@ -1151,6 +1183,7 @@
 
             if (winner) {
               gameState.gameEnded = true;
+              currentAiSearchId++;
               const winnerName = players[winner];
               const winnerColorText = winner === 'B' ? 'Negras' : 'Blancas';
               gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText})!`;
@@ -1191,10 +1224,7 @@
     }
 
     function checkWin(color) {
-      const colorPieces = Object.keys(gameState.board).filter(k => gameState.board[k] === color);
-      if (colorPieces.length === 0) return false;
-      const groups = getConnectedGroups(gameState.board, color);
-      return groups.length === 1 && groups[0] === colorPieces.length;
+      return checkWinForBoard(gameState.board, color);
     }
 
     function updateUI() {
