@@ -22,6 +22,8 @@ const CONFIG = {
   MAX_RADIUS: 6,
   DEFAULT_RADIUS: 3,
   CELL_SIZE: 30, // px, constant regardless of board radius
+  DEFAULT_CPU_TIME_SECONDS: 5,
+  DEFAULT_CPU_DEPTH: 2,
 };
 
 const RULES = {
@@ -503,14 +505,17 @@ function performMove(fromKey, toKey, opts = {}) {
     sendToRemote({ type: "move", from: fromKey, to: toKey });
   }
 
-  renderBoard();
-
   if (isFullyConnected(color)) {
-    endGame(color, "connection");
+    endGame(color, "connection"); // endGame() renders the finished board itself
     return;
   }
 
+  // Advance the turn *before* re-rendering: renderPieces() decides which
+  // pieces get drag handlers based on Game.turn, so rendering while it
+  // still held the color that just moved left the wrong pieces draggable
+  // (and the pieces that should now be draggable never got the handler).
   Game.turn = opponentOf(color);
+  renderBoard();
   updateStatusUI();
   maybeTriggerCpuMove();
 }
@@ -568,17 +573,21 @@ function swapColors() {
   if (Game.phase !== "playing" || !Game.pieRuleAvailable) return;
   if (Game.turn !== "white") return;
 
-  for (const cell of Game.cells.values()) {
-    if (cell.color === "black") cell.color = "white";
-    else if (cell.color === "white") cell.color = "black";
-  }
+  // The pie rule reassigns *who controls which color*, not the pieces
+  // already on the board: the player who was "white" takes over the
+  // black pieces/position exactly as they stand right now, and the
+  // player who was "black" becomes "white" for the rest of the game.
+  // The board itself (Game.cells) must NOT be touched.
   const tmp = Game.players.black;
   Game.players.black = Game.players.white;
   Game.players.white = tmp;
-  if (Game.localColor) Game.localColor = opponentOf(Game.localColor === "black" ? "white" : "black");
+  if (Game.localColor) Game.localColor = opponentOf(Game.localColor);
 
   Game.pieRuleAvailable = false;
-  Game.turn = "black"; // after the swap, it's black's (formerly white's opponent) turn
+  // swapping takes the place of white's move, so the turn slot that's
+  // next is still "white" — now played by whoever was just reassigned
+  // to that seat (the original black player).
+  Game.turn = "white";
 
   if (Game.mode === "online2p" && Game.isHost) {
     sendToRemote({ type: "swap" });
@@ -1154,12 +1163,8 @@ function handleRemoteMessage(msg) {
       Game.players.black = Game.players.white;
       Game.players.white = tmp;
       Game.localColor = opponentOf(Game.localColor);
-      for (const cell of Game.cells.values()) {
-        if (cell.color === "black") cell.color = "white";
-        else if (cell.color === "white") cell.color = "black";
-      }
       Game.pieRuleAvailable = false;
-      Game.turn = "black";
+      Game.turn = "white";
       renderBoard();
       updateStatusUI();
       updatePlayersUI();
@@ -1321,8 +1326,7 @@ dom.downloadBtn.addEventListener("click", () => {
 // =======================================================================
 
 function boot() {
-  refreshPieceRangeUI();
-  dom.radiusValue.textContent = String(Game.radius);
+  resetAllRangeInputs();
   setPhase("mode-select");
   updateStatusUI();
 
@@ -1336,6 +1340,29 @@ function boot() {
     dom.modeButtons.find((b) => b.dataset.mode === "online2p")?.click();
     dom.joinGameBtn.click();
   }
+}
+
+/** Forces every slider's actual DOM value (not just its number label) back
+ *  to its intended default, and syncs the label from that same value.
+ *
+ * Why this is needed: browsers can restore <input type="range"> values
+ * left over from a previous visit/reload (form/session restoration),
+ * independently of the page's own JS state. Without this, the on-screen
+ * number (set from a hardcoded JS default) could disagree with the
+ * slider's real, browser-restored position — showing e.g. "3" while the
+ * thumb actually sits at 4, which then visibly "jumps" the moment the
+ * user first touches it. Setting both the DOM value and the label here,
+ * together, from the same source, guarantees they start in sync. */
+function resetAllRangeInputs() {
+  Game.radius = CONFIG.DEFAULT_RADIUS;
+  dom.radiusRange.value = String(Game.radius);
+  dom.radiusValue.textContent = String(Game.radius);
+  refreshPieceRangeUI(); // also forces piecesRange's value + label together, from Game.radius
+
+  dom.cpuTimeRange.value = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
+  dom.cpuTimeValue.textContent = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
+  dom.cpuDepthRange.value = String(CONFIG.DEFAULT_CPU_DEPTH);
+  dom.cpuDepthValue.textContent = String(CONFIG.DEFAULT_CPU_DEPTH);
 }
 
 boot();

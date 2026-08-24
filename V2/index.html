@@ -40,7 +40,6 @@
       <div class="setup-block start-row" id="startBlock" hidden>
         <button id="startGameBtn" class="btn btn-metal-accent" disabled>Start game</button>
         <div class="nickname-inline" id="nicknameBlock" hidden>
-          <label class="setup-label" for="nicknameInput">Your nickname</label>
           <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
         </div>
       </div>
@@ -84,24 +83,24 @@
         <label class="setup-label" for="radiusRange">
           Board radius <span class="value-pill" id="radiusValue">3</span>
         </label>
-        <input type="range" id="radiusRange" min="2" max="6" step="1" value="3" class="range-input" />
+        <input type="range" id="radiusRange" min="2" max="6" step="1" value="3" class="range-input" autocomplete="off" />
 
         <label class="setup-label" for="piecesRange">
           Pieces per player <span class="value-pill" id="piecesValue">&mdash;</span>
         </label>
-        <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" />
+        <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
 
         <fieldset class="cpu-params" id="cpuParamsBlock" disabled>
           <legend>Computer</legend>
           <label class="setup-label" for="cpuTimeRange">
             Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
           </label>
-          <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" />
+          <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" autocomplete="off" />
 
           <label class="setup-label" for="cpuDepthRange">
             Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
           </label>
-          <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" />
+          <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" autocomplete="off" />
         </fieldset>
       </div>
     </section>

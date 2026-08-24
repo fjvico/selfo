@@ -315,7 +315,6 @@ body {
 }
 .start-row .btn { flex-shrink: 0; }
 .nickname-inline { flex: 1; min-width: 140px; }
-.nickname-inline .setup-label { margin-bottom: 4px; }
 .nickname-inline .text-input { width: 100%; }
 .setup-label {
   display: block;
