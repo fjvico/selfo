@@ -216,7 +216,10 @@ body {
   flex-shrink: 0;
   border: 1px solid var(--metal-line);
 }
-.swatch-black { background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b)); }
+.swatch-black {
+  background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b));
+  border: 1px solid var(--metal-mid);
+}
 .swatch-white { background: radial-gradient(circle at 35% 30%, var(--piece-white-a), var(--piece-white-b)); }
 .player-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-you { font-size: 11px; color: var(--accent); }
@@ -310,11 +313,11 @@ body {
 .start-row {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
 }
 .start-row .btn { flex-shrink: 0; }
-.nickname-inline { flex: 1; min-width: 140px; }
+.nickname-inline { flex: 1 1 auto; min-width: 0; }
 .nickname-inline .text-input { width: 100%; }
 .setup-label {
   display: block;

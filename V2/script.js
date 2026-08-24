@@ -24,6 +24,9 @@ const CONFIG = {
   CELL_SIZE: 30, // px, constant regardless of board radius
   DEFAULT_CPU_TIME_SECONDS: 5,
   DEFAULT_CPU_DEPTH: 2,
+  TOUCH_LONG_PRESS_MS: 220,   // touch: hold-still time before a drag is "armed" (and page panning gets locked)
+  TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
+  MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
 };
 
 const RULES = {
@@ -306,6 +309,7 @@ function renderBoard() {
     poly.setAttribute("class", "hex-cell");
     poly.dataset.key = k;
     poly.addEventListener("click", () => onCellClick(k));
+    attachHoverDwellClick(poly, k);
     cellsGroup.appendChild(poly);
   }
 
@@ -337,6 +341,7 @@ function renderPieces(positions) {
       circle.addEventListener("pointerdown", (ev) => onPieceDragStart(ev, k));
     }
     circle.addEventListener("click", (ev) => { ev.stopPropagation(); onCellClick(k); });
+    attachHoverDwellClick(circle, k);
 
     piecesGroup.appendChild(circle);
   }
@@ -407,6 +412,21 @@ function onCellClick(key) {
 // =======================================================================
 // Interaction: drag & drop move
 // =======================================================================
+//
+// Mouse/pen: drag starts immediately on pointerdown (no scrolling to
+// conflict with on a desktop).
+//
+// Touch: starting the drag immediately — and locking page panning for
+// it — made any touch that merely swept across a piece while scrolling
+// get hijacked into a drag, which fought with the page's own scroll
+// gesture (worse on a diagonal swipe, since the vertical component kept
+// racing the native scroll). Instead, a touch on a piece "arms" a
+// possible drag; if the finger lifts or moves more than a few pixels
+// before a short hold completes, it's treated as an ordinary
+// scroll/tap and nothing about page panning is touched. Only once the
+// hold is confirmed does the drag actually begin — from that moment
+// page panning is locked (via touch-action) until the piece is
+// dropped, at which point it's unlocked immediately.
 
 let dragState = null;
 
@@ -421,17 +441,75 @@ function svgUserPoint(svg, clientX, clientY) {
 
 function onPieceDragStart(ev, key) {
   if (Game.phase !== "playing" || !isMyTurnLocally()) return;
+  if (dragState) return; // a drag is already in progress
   const cell = Game.cells.get(key);
   if (cell.color !== Game.turn) return;
-  ev.preventDefault();
 
+  const circle = ev.currentTarget;
+
+  if (ev.pointerType !== "touch") {
+    // mouse / pen: no page-scroll conflict, so start dragging right away
+    ev.preventDefault();
+    beginDrag(ev, key, circle);
+    return;
+  }
+
+  armTouchDrag(ev, key, circle);
+}
+
+/** Touch only: waits for a short, still hold before treating the touch as
+ *  a drag. A quick tap or a swipe that moves before the hold completes
+ *  is left completely alone — the browser scrolls the page as normal,
+ *  since nothing here ever called preventDefault() or touched
+ *  touch-action for it. */
+function armTouchDrag(ev, key, circle) {
+  const pointerId = ev.pointerId;
+  const startX = ev.clientX;
+  const startY = ev.clientY;
+  let settled = false;
+
+  const cleanup = () => {
+    settled = true;
+    clearTimeout(armTimer);
+    circle.removeEventListener("pointermove", onEarlyMove);
+    circle.removeEventListener("pointerup", onEarlyEnd);
+    circle.removeEventListener("pointercancel", onEarlyEnd);
+  };
+
+  const onEarlyMove = (mv) => {
+    if (mv.pointerId !== pointerId || settled) return;
+    const dx = mv.clientX - startX;
+    const dy = mv.clientY - startY;
+    if (Math.hypot(dx, dy) > CONFIG.TOUCH_LONG_PRESS_TOLERANCE_PX) {
+      cleanup(); // moved too much before the hold completed: let it scroll
+    }
+  };
+  const onEarlyEnd = () => cleanup(); // lifted (or interrupted) before the hold completed
+
+  const armTimer = setTimeout(() => {
+    if (settled) return;
+    cleanup();
+    // Hold confirmed and the finger hasn't wandered: safe to lock page
+    // panning now and hand off to the normal drag flow.
+    beginDrag(ev, key, circle);
+  }, CONFIG.TOUCH_LONG_PRESS_MS);
+
+  circle.addEventListener("pointermove", onEarlyMove);
+  circle.addEventListener("pointerup", onEarlyEnd);
+  circle.addEventListener("pointercancel", onEarlyEnd);
+}
+
+/** Shared by both entry points above: actually engages the drag. For
+ *  touch, this is also the moment page panning gets locked (via
+ *  touch-action on the dragged piece), released again in onUp. */
+function beginDrag(ev, key, circle) {
   Game.selectedKey = key;
   applyHighlights();
 
   const svg = dom.boardSvg;
-  const circle = ev.currentTarget;
   circle.setPointerCapture(ev.pointerId);
   circle.classList.add("dragging");
+  circle.style.touchAction = "none"; // lock page panning for the duration of this drag
 
   dragState = { key, circle, pointerId: ev.pointerId };
 
@@ -444,7 +522,9 @@ function onPieceDragStart(ev, key) {
   const onUp = (up) => {
     circle.removeEventListener("pointermove", onMove);
     circle.removeEventListener("pointerup", onUp);
+    circle.removeEventListener("pointercancel", onUp);
     circle.classList.remove("dragging");
+    circle.style.touchAction = ""; // unlock page panning again, right away
 
     const p = svgUserPoint(svg, up.clientX, up.clientY);
     const axial = HexGeometry.pixelToAxial(p.x, p.y, CONFIG.CELL_SIZE);
@@ -462,6 +542,31 @@ function onPieceDragStart(ev, key) {
 
   circle.addEventListener("pointermove", onMove);
   circle.addEventListener("pointerup", onUp);
+  circle.addEventListener("pointercancel", onUp);
+}
+
+// =======================================================================
+// Interaction: hover-to-click (desktop mouse only)
+// -----------------------------------------------------------------------
+// Resting the mouse over a piece or cell for a short dwell acts exactly
+// like clicking it — so hovering a piece selects it, then hovering an
+// adjacent cell completes the move, all without pressing a button.
+// Scoped to pointerType "mouse" only: touch devices don't have a real
+// hover, and this must never interfere with the touch drag logic above.
+// =======================================================================
+
+function attachHoverDwellClick(el, key) {
+  let timer = null;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+
+  el.addEventListener("pointerenter", (ev) => {
+    if (ev.pointerType !== "mouse") return;
+    if (Game.phase !== "playing" || !isMyTurnLocally()) return;
+    cancel();
+    timer = setTimeout(() => { timer = null; onCellClick(key); }, CONFIG.MOUSE_HOVER_MOVE_MS);
+  });
+  el.addEventListener("pointerleave", cancel);
+  el.addEventListener("pointerdown", cancel); // an actual click/drag shouldn't also fire the pending hover timer
 }
 
 function currentPositions() {
