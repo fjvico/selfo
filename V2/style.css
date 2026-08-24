@@ -206,7 +206,8 @@ body {
   padding: 8px 10px;
   transition: box-shadow 0.2s, border-color 0.2s;
 }
-.player-row.active-turn {
+.player-row.active-turn,
+.player-row.winner {
   border-color: var(--accent);
   box-shadow: 0 0 12px var(--accent-glow);
 }
@@ -219,6 +220,18 @@ body {
 .swatch-white { background: radial-gradient(circle at 35% 30%, var(--piece-white-a), var(--piece-white-b)); }
 .player-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-you { font-size: 11px; color: var(--accent); }
+.player-badge {
+  font-family: var(--font-display), sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #04222a;
+  background: var(--accent);
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+.player-badge:empty { display: none; }
 
 .btn-stack {
   display: flex;

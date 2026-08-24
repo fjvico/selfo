@@ -77,6 +77,8 @@ const dom = {
   playerNameWhite: document.getElementById("playerNameWhite"),
   playerYouBlack: document.getElementById("playerYouBlack"),
   playerYouWhite: document.getElementById("playerYouWhite"),
+  playerBadgeBlack: document.getElementById("playerBadgeBlack"),
+  playerBadgeWhite: document.getElementById("playerBadgeWhite"),
   playerRowBlack: document.getElementById("playerRowBlack"),
   playerRowWhite: document.getElementById("playerRowWhite"),
 
@@ -89,7 +91,7 @@ const dom = {
   boardSvg: document.getElementById("boardSvg"),
 
   modeSelectBlock: document.getElementById("modeSelectBlock"),
-  modeButtons: Array.from(document.querySelectorAll(".mode-btn")),
+  modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
 
   onlineBlock: document.getElementById("onlineBlock"),
   createGameBtn: document.getElementById("createGameBtn"),
@@ -524,14 +526,7 @@ function endGame(winnerColor, reason) {
   updateStatusUI();
   flashBoardEnd();
   dom.downloadBtn.disabled = false;
-
-  const name = Game.players[winnerColor].name;
-  const outcome = reason === "resign"
-    ? `${name} (${winnerColor}) wins \u2014 their opponent resigned.`
-    : reason === "no-moves"
-      ? `${name} (${winnerColor}) wins \u2014 their opponent had no legal moves.`
-      : `${name} (${winnerColor}) wins by connecting all of their pieces!`;
-  showMessage(`${outcome} Press \u201cStop\u201d to play again.`);
+  showMessage("");
 }
 
 function endGameDraw() {
@@ -545,7 +540,7 @@ function endGameDraw() {
   updateStatusUI();
   flashBoardEnd();
   dom.downloadBtn.disabled = false;
-  showMessage("Draw agreed. Press \u201cStop\u201d to play again.");
+  showMessage("");
 }
 
 /** Brief, non-blocking glow across the board to mark that the game just
@@ -844,16 +839,18 @@ function updateButtonsForPhase() {
   dom.newGameBtn.disabled = Game.phase === "mode-select";
 
   // The start/stop button is enabled in "setup" once ready to start, and
-  // stays enabled through "playing"/"ended" so it can be used to stop.
-  dom.startGameBtn.disabled = Game.phase === "setup" ? !canStartGame() : Game.phase === "mode-select";
+  // stays enabled through "playing" so it can be used to stop. Once the
+  // game has ended it reverts to an inactive "Start game" — there's no
+  // more running game to stop, and "New game" is the way back to setup.
+  dom.startGameBtn.disabled = Game.phase === "setup" ? !canStartGame() : Game.phase !== "playing";
   updateStartStopLabel();
 }
 
 /** Toggles the single start/stop control's label and styling: "Start
- *  game" (accent) before/while configuring, "Stop" (danger) once a game
- *  is actually running or has just ended. */
+ *  game" (accent) before configuring or once a game has ended, "Stop"
+ *  (danger) only while a game is actually running. */
 function updateStartStopLabel() {
-  const isStopMode = Game.phase === "playing" || Game.phase === "ended";
+  const isStopMode = Game.phase === "playing";
   dom.startGameBtn.textContent = isStopMode ? "Stop" : "Start game";
   dom.startGameBtn.classList.toggle("btn-danger", isStopMode);
   dom.startGameBtn.classList.toggle("btn-metal-accent", !isStopMode);
@@ -896,6 +893,14 @@ function updatePlayersUI() {
   dom.playerYouWhite.textContent = Game.mode === "online2p" && Game.localColor === "white" ? "(you)" : "";
   dom.playerRowBlack.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "black");
   dom.playerRowWhite.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "white");
+
+  const blackWon = Game.phase === "ended" && Game.winner === "black";
+  const whiteWon = Game.phase === "ended" && Game.winner === "white";
+  const isDraw = Game.phase === "ended" && Game.winner === null;
+  dom.playerRowBlack.classList.toggle("winner", blackWon);
+  dom.playerRowWhite.classList.toggle("winner", whiteWon);
+  dom.playerBadgeBlack.textContent = blackWon ? "Wins" : isDraw ? "Draw" : "";
+  dom.playerBadgeWhite.textContent = whiteWon ? "Wins" : isDraw ? "Draw" : "";
 }
 
 // =======================================================================
@@ -1006,7 +1011,7 @@ dom.resignBtn.addEventListener("click", resign);
 // =======================================================================
 
 dom.startGameBtn.addEventListener("click", () => {
-  if (Game.phase === "playing" || Game.phase === "ended") {
+  if (Game.phase === "playing") {
     abandonToModeSelect(true); // acting as "Stop"
     return;
   }

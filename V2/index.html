@@ -20,7 +20,6 @@
       <div class="game-id-wrap">
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
         <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">COPY LINK</button>
-        <button id="downloadBtn" class="chip-btn" disabled title="Download game summary">DOWNLOAD</button>
       </div>
     </div>
     <div class="status-wrap">
@@ -123,11 +122,13 @@
           <span class="player-swatch swatch-black"></span>
           <span class="player-name" id="playerNameBlack">&mdash;</span>
           <span class="player-you" id="playerYouBlack"></span>
+          <span class="player-badge" id="playerBadgeBlack"></span>
         </div>
         <div class="player-row" id="playerRowWhite">
           <span class="player-swatch swatch-white"></span>
           <span class="player-name" id="playerNameWhite">&mdash;</span>
           <span class="player-you" id="playerYouWhite"></span>
+          <span class="player-badge" id="playerBadgeWhite"></span>
         </div>
       </div>
 
@@ -139,6 +140,7 @@
 
       <div class="btn-stack">
         <button id="newGameBtn" class="btn btn-metal-accent">New game</button>
+        <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
       </div>
 
       <div id="messageBox" class="message-box" aria-live="polite"></div>
