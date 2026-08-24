@@ -48,10 +48,8 @@ const Game = {
   lastMove: null,          // { from, to } for highlight
   winner: null,             // 'black' | 'white' | null
   drawOffered: null,        // color that offered a draw, or null
-
-  moveHistory: [],          // full move/event log for the current game, used to build the downloadable record when the game ends
-  startedAt: null,          // ISO timestamp, set when the current game began
-  saveRecordsEnabled: true, // whether a finished game auto-downloads a JSON record; loaded from localStorage at boot
+  endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | null
+  moveLog: [],              // [{ color, from, to }, ...] for the download button
 
   players: {
     black: { name: "Player 1", isLocal: true },
@@ -73,15 +71,12 @@ const Game = {
 const dom = {
   gameIdValue: document.getElementById("gameIdValue"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
-  saveRecordsToggleInput: document.getElementById("saveRecordsToggleInput"),
   turnIndicator: document.getElementById("turnIndicator"),
 
   playerNameBlack: document.getElementById("playerNameBlack"),
   playerNameWhite: document.getElementById("playerNameWhite"),
   playerYouBlack: document.getElementById("playerYouBlack"),
   playerYouWhite: document.getElementById("playerYouWhite"),
-  playerWinnerBlack: document.getElementById("playerWinnerBlack"),
-  playerWinnerWhite: document.getElementById("playerWinnerWhite"),
   playerRowBlack: document.getElementById("playerRowBlack"),
   playerRowWhite: document.getElementById("playerRowWhite"),
 
@@ -129,7 +124,7 @@ const dom = {
   onboardingOverlay: document.getElementById("onboardingOverlay"),
   onboardingDontShow: document.getElementById("onboardingDontShow"),
   onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
-  helpBtn: document.getElementById("helpBtn"),
+  downloadBtn: document.getElementById("downloadBtn"),
 };
 
 // =======================================================================
@@ -496,14 +491,7 @@ function performMove(fromKey, toKey, opts = {}) {
   fromCell.color = null;
   Game.selectedKey = null;
   Game.lastMove = { from: fromKey, to: toKey };
-  Game.moveHistory.push({
-    type: "move",
-    moveNumber: Game.moveHistory.filter((e) => e.type === "move").length + 1,
-    color,
-    from: fromKey,
-    to: toKey,
-    at: new Date().toISOString(),
-  });
+  Game.moveLog.push({ color, from: fromKey, to: toKey });
   // the pie-rule swap is only ever offered on white's very first move, so a
   // black move must never cancel it — only white moving normally does.
   if (color === "white") Game.pieRuleAvailable = false;
@@ -529,87 +517,35 @@ function endGame(winnerColor, reason) {
   cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = winnerColor;
+  Game.endReason = reason;
   Game.lastMove = null; // the finished board doesn't need the last-move trail highlighted anymore
   renderBoard();
   updateButtonsForPhase();
   updateStatusUI();
   flashBoardEnd();
-  downloadGameRecord({ outcome: "win", winner: winnerColor, reason });
+  dom.downloadBtn.disabled = false;
 
   const name = Game.players[winnerColor].name;
-  const verb = name.trim().toLowerCase() === "you" ? "win" : "wins";
   const outcome = reason === "resign"
-    ? `${name} (${winnerColor}) ${verb} \u2014 their opponent resigned.`
+    ? `${name} (${winnerColor}) wins \u2014 their opponent resigned.`
     : reason === "no-moves"
-      ? `${name} (${winnerColor}) ${verb} \u2014 their opponent had no legal moves.`
-      : `${name} (${winnerColor}) ${verb} by connecting all of their pieces!`;
-  const savedNote = Game.saveRecordsEnabled ? " A record of the game was downloaded." : "";
-  showMessage(`${outcome}${savedNote} Press \u201cNew game\u201d to play again.`);
+      ? `${name} (${winnerColor}) wins \u2014 their opponent had no legal moves.`
+      : `${name} (${winnerColor}) wins by connecting all of their pieces!`;
+  showMessage(`${outcome} Press \u201cStop\u201d to play again.`);
 }
 
 function endGameDraw() {
   cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = null;
+  Game.endReason = "draw";
   Game.lastMove = null;
   renderBoard();
   updateButtonsForPhase();
   updateStatusUI();
   flashBoardEnd();
-  downloadGameRecord({ outcome: "draw", winner: null, reason: "draw-agreed" });
-  const savedNote = Game.saveRecordsEnabled ? " A record of the game was downloaded." : "";
-  showMessage(`Draw agreed.${savedNote} Press \u201cNew game\u201d to play again.`);
-}
-
-/** Builds a plain-object summary of the just-finished game (mode, board
- *  size, players, full move list, and how it ended) and triggers a
- *  browser download of it as a JSON file. This is the entire "save
- *  history" feature: since the game is hosted as a static site (e.g.
- *  GitHub Pages) with no server or database of its own, each browser
- *  saves its own copy of each game it finishes, as a file the player
- *  keeps — there's no server-side game log to maintain. */
-function buildGameRecord(result) {
-  const startedAt = Game.startedAt || new Date().toISOString();
-  const endedAt = new Date().toISOString();
-  const moveCount = Game.moveHistory.filter((e) => e.type === "move").length;
-  return {
-    schemaVersion: 1,
-    game: "Selfo",
-    gameId: Game.gameId || null,
-    mode: Game.mode,
-    board: { radius: Game.radius, piecesPerColor: Game.piecesPerColor },
-    players: {
-      black: { name: Game.players.black.name, controlledLocally: Boolean(Game.players.black.isLocal) },
-      white: { name: Game.players.white.name, controlledLocally: Boolean(Game.players.white.isLocal) },
-    },
-    result,
-    startedAt,
-    endedAt,
-    durationMs: Date.parse(endedAt) - Date.parse(startedAt),
-    moveCount,
-    moves: Game.moveHistory,
-  };
-}
-
-function downloadGameRecord(result) {
-  if (!Game.saveRecordsEnabled) return;
-  try {
-    const record = buildGameRecord(result);
-    const json = JSON.stringify(record, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `selfo-game-${Game.mode || "game"}-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  } catch (err) {
-    console.error("Failed to save game record:", err);
-  }
+  dom.downloadBtn.disabled = false;
+  showMessage("Draw agreed. Press \u201cStop\u201d to play again.");
 }
 
 /** Brief, non-blocking glow across the board to mark that the game just
@@ -648,7 +584,6 @@ function swapColors() {
 
   Game.pieRuleAvailable = false;
   Game.turn = "black"; // after the swap, it's black's (formerly white's opponent) turn
-  Game.moveHistory.push({ type: "pie-swap", at: new Date().toISOString() });
 
   if (Game.mode === "online2p" && Game.isHost) {
     sendToRemote({ type: "swap" });
@@ -908,10 +843,20 @@ function updateButtonsForPhase() {
   // there's actually a mode/game to step back from.
   dom.newGameBtn.disabled = Game.phase === "mode-select";
 
-  // Start game is only actionable during setup; once the game is running
-  // (or has ended) it's simply disabled — "New game" is the one control
-  // for leaving/restarting a game.
-  dom.startGameBtn.disabled = Game.phase === "setup" ? !canStartGame() : true;
+  // The start/stop button is enabled in "setup" once ready to start, and
+  // stays enabled through "playing"/"ended" so it can be used to stop.
+  dom.startGameBtn.disabled = Game.phase === "setup" ? !canStartGame() : Game.phase === "mode-select";
+  updateStartStopLabel();
+}
+
+/** Toggles the single start/stop control's label and styling: "Start
+ *  game" (accent) before/while configuring, "Stop" (danger) once a game
+ *  is actually running or has just ended. */
+function updateStartStopLabel() {
+  const isStopMode = Game.phase === "playing" || Game.phase === "ended";
+  dom.startGameBtn.textContent = isStopMode ? "Stop" : "Start game";
+  dom.startGameBtn.classList.toggle("btn-danger", isStopMode);
+  dom.startGameBtn.classList.toggle("btn-metal-accent", !isStopMode);
 }
 
 function canStartGame() {
@@ -937,15 +882,8 @@ function updateStatusUI() {
     ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
     ind.classList.add(Game.turn === "black" ? "turn-black" : "turn-white");
   } else if (Game.phase === "ended") {
-    ind.hidden = false;
-    if (Game.winner) {
-      const winnerName = Game.players[Game.winner].name;
-      const verb = winnerName.trim().toLowerCase() === "you" ? "WIN" : "WINS";
-      ind.textContent = `${winnerName.toUpperCase()} ${verb}`;
-    } else {
-      ind.textContent = "DRAW";
-    }
-    ind.classList.add("turn-over");
+    ind.hidden = true;
+    ind.textContent = "";
   }
   updatePlayersUI();
   updateButtonsForPhase();
@@ -958,13 +896,6 @@ function updatePlayersUI() {
   dom.playerYouWhite.textContent = Game.mode === "online2p" && Game.localColor === "white" ? "(you)" : "";
   dom.playerRowBlack.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "black");
   dom.playerRowWhite.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "white");
-
-  const blackWon = Game.phase === "ended" && Game.winner === "black";
-  const whiteWon = Game.phase === "ended" && Game.winner === "white";
-  dom.playerRowBlack.classList.toggle("winner-row", blackWon);
-  dom.playerRowWhite.classList.toggle("winner-row", whiteWon);
-  dom.playerWinnerBlack.hidden = !blackWon;
-  dom.playerWinnerWhite.hidden = !whiteWon;
 }
 
 // =======================================================================
@@ -1048,8 +979,9 @@ dom.colorButtons.forEach((btn) => {
 });
 
 /** Tears down whatever's running (scheduled CPU move, online connection)
- *  and returns to mode selection. Used by "New game". Set `confirmIfPlaying`
- *  to ask before abandoning an in-progress game. */
+ *  and returns to mode selection. Shared by "New game" and the start/stop
+ *  control when it's acting as "Stop". Set `confirmIfPlaying` to ask
+ *  before abandoning an in-progress game. */
 function abandonToModeSelect(confirmIfPlaying) {
   if (confirmIfPlaying && Game.phase === "playing" && !confirm("Abandon the current game?")) return;
   cancelScheduledCpuMove();
@@ -1057,6 +989,7 @@ function abandonToModeSelect(confirmIfPlaying) {
   dom.modeButtons.forEach((b) => b.classList.remove("selected"));
   Game.mode = null;
   Game.winner = null;
+  dom.downloadBtn.disabled = true;
   setPhase("mode-select");
   updateStatusUI();
   showMessage("");
@@ -1069,10 +1002,15 @@ dom.offerDrawBtn.addEventListener("click", offerDraw);
 dom.resignBtn.addEventListener("click", resign);
 
 // =======================================================================
-// Starting a game
+// Starting / stopping a game — one button, two roles depending on phase
 // =======================================================================
 
 dom.startGameBtn.addEventListener("click", () => {
+  if (Game.phase === "playing" || Game.phase === "ended") {
+    abandonToModeSelect(true); // acting as "Stop"
+    return;
+  }
+
   if (!canStartGame()) return;
   const nick = dom.nicknameInput.value.trim();
 
@@ -1121,11 +1059,12 @@ function startNewGame() {
   Game.lastMove = null;
   Game.winner = null;
   Game.drawOffered = null;
-  Game.moveHistory = [];
-  Game.startedAt = new Date().toISOString();
+  Game.endReason = null;
+  Game.moveLog = [];
 
   dom.gameIdValue.textContent = Game.gameId || "\u2014";
   dom.copyLinkBtn.disabled = !Game.gameId;
+  dom.downloadBtn.disabled = true;
 
   setPhase("playing");
   renderBoard();
@@ -1195,8 +1134,6 @@ function handleRemoteMessage(msg) {
       Game.lastMove = null;
       Game.winner = null;
       Game.players = msg.players;
-      Game.moveHistory = [];
-      Game.startedAt = new Date().toISOString();
       setPhase("playing");
       renderBoard();
       updateStatusUI();
@@ -1218,7 +1155,6 @@ function handleRemoteMessage(msg) {
       }
       Game.pieRuleAvailable = false;
       Game.turn = "black";
-      Game.moveHistory.push({ type: "pie-swap", at: new Date().toISOString() });
       renderBoard();
       updateStatusUI();
       updatePlayersUI();
@@ -1339,29 +1275,40 @@ function closeOnboarding() {
 }
 
 dom.onboardingCloseBtn.addEventListener("click", closeOnboarding);
-dom.helpBtn.addEventListener("click", showOnboarding);
 
 // =======================================================================
-// "Save game records" toggle
-// -----------------------------------------------------------------------
-// A simple on/off switch, persisted in localStorage, for the automatic
-// JSON-download-on-game-end feature (see downloadGameRecord()). Lives in
-// the topbar since it's a standing preference, not tied to any one game.
+// Download finished game summary
 // =======================================================================
 
-const SAVE_RECORDS_KEY = "selfo_save_records";
+dom.downloadBtn.addEventListener("click", () => {
+  if (dom.downloadBtn.disabled || Game.phase !== "ended") return;
 
-function updateSaveRecordsToggleUI() {
-  dom.saveRecordsToggleInput.checked = Game.saveRecordsEnabled;
-}
+  const summary = {
+    game: "Selfo",
+    gameId: Game.gameId,
+    mode: Game.mode,
+    radius: Game.radius,
+    piecesPerColor: Game.piecesPerColor,
+    players: {
+      black: Game.players.black.name,
+      white: Game.players.white.name,
+    },
+    result: Game.winner ? `${Game.winner} wins` : "draw",
+    endReason: Game.endReason,
+    moveCount: Game.moveLog.length,
+    moves: Game.moveLog,
+    finishedAt: new Date().toISOString(),
+  };
 
-// "change" fires reliably for both mouse clicks (anywhere on the <label>,
-// which natively toggles the checkbox it's bound to via "for") and
-// keyboard activation — unlike a plain <button>, this doesn't depend on
-// a click listener being correctly wired up to visibly work.
-dom.saveRecordsToggleInput.addEventListener("change", () => {
-  Game.saveRecordsEnabled = dom.saveRecordsToggleInput.checked;
-  try { localStorage.setItem(SAVE_RECORDS_KEY, Game.saveRecordsEnabled ? "1" : "0"); } catch (e) { /* file:// or private mode: ignore */ }
+  const blob = new Blob([JSON.stringify(summary, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `selfo-game-${Game.gameId || "summary"}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 });
 
 // =======================================================================
@@ -1373,12 +1320,6 @@ function boot() {
   dom.radiusValue.textContent = String(Game.radius);
   setPhase("mode-select");
   updateStatusUI();
-
-  try {
-    const saved = localStorage.getItem(SAVE_RECORDS_KEY);
-    if (saved !== null) Game.saveRecordsEnabled = saved === "1";
-  } catch (e) { /* file:// or private mode: keep the default (on) */ }
-  updateSaveRecordsToggleUI();
 
   let hideOnboarding = false;
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }

@@ -16,18 +16,12 @@
       <div class="brand">
         <span class="brand-hex">&#x2B22;</span>
         <span class="brand-text">SELF<span class="brand-accent">O</span></span>
-        <button id="helpBtn" class="chip-btn" title="How to play">?</button>
       </div>
       <div class="game-id-wrap">
-        <span class="game-id-label">GAME ID</span>
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
         <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">COPY LINK</button>
+        <button id="downloadBtn" class="chip-btn" disabled title="Download game summary">DOWNLOAD</button>
       </div>
-      <label class="chip-btn save-toggle-chip" for="saveRecordsToggleInput" title="When on, a JSON record of each finished game is downloaded automatically">
-        <input type="checkbox" id="saveRecordsToggleInput" class="save-toggle-input" checked />
-        <span class="save-on-text">SAVE RECORDS: ON</span>
-        <span class="save-off-text">SAVE RECORDS: OFF</span>
-      </label>
     </div>
     <div class="status-wrap">
       <span id="turnIndicator" class="turn-indicator"></span>
@@ -41,11 +35,15 @@
 
     <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup">
-      <h2 class="panel-title">Setup</h2>
 
-      <!-- start / stop — always the top control in this panel -->
-      <div class="setup-block" id="startBlock" hidden>
+      <!-- start / stop, with the nickname field alongside it — always the
+           top control in this panel -->
+      <div class="setup-block start-row" id="startBlock" hidden>
         <button id="startGameBtn" class="btn btn-metal-accent" disabled>Start game</button>
+        <div class="nickname-inline" id="nicknameBlock" hidden>
+          <label class="setup-label" for="nicknameInput">Your nickname</label>
+          <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
+        </div>
       </div>
 
       <!-- mode selection -->
@@ -71,12 +69,6 @@
           <button id="joinCodeSubmit" class="btn btn-metal-sm">Connect</button>
         </div>
         <div id="onlineStatus" class="online-status"></div>
-      </div>
-
-      <!-- nickname -->
-      <div class="setup-block" id="nicknameBlock" hidden>
-        <label class="setup-label" for="nicknameInput">Your nickname</label>
-        <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
       </div>
 
       <!-- color choice (vs computer only) -->
@@ -125,20 +117,17 @@
 
     <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
     <section class="panel panel-options" aria-label="Game options">
-      <h2 class="panel-title">Options</h2>
 
       <div class="players-box">
         <div class="player-row" id="playerRowBlack">
           <span class="player-swatch swatch-black"></span>
           <span class="player-name" id="playerNameBlack">&mdash;</span>
           <span class="player-you" id="playerYouBlack"></span>
-          <span class="player-winner-badge" id="playerWinnerBlack" hidden>&#127942; WINNER</span>
         </div>
         <div class="player-row" id="playerRowWhite">
           <span class="player-swatch swatch-white"></span>
           <span class="player-name" id="playerNameWhite">&mdash;</span>
           <span class="player-you" id="playerYouWhite"></span>
-          <span class="player-winner-badge" id="playerWinnerWhite" hidden>&#127942; WINNER</span>
         </div>
       </div>
 
@@ -163,7 +152,6 @@
   <div id="onboardingOverlay" class="overlay" hidden>
     <div class="overlay-card">
       <h2>Welcome to Selfo</h2>
-      <p class="onboarding-goal">Conecta todas tus piezas en un grupo.</p>
       <p class="onboarding-sub">Connect all of your pieces into a single group to win. Move one piece per turn to an empty neighboring cell — click it, then click (or drag to) the cell you want to move it to.</p>
       <label class="onboarding-check">
         <input type="checkbox" id="onboardingDontShow" />

@@ -24,9 +24,6 @@
   --danger: #ff5c6c;
   --danger-glow: rgba(255, 92, 108, 0.5);
 
-  --gold: #ffd35c;
-  --gold-glow: rgba(255, 211, 92, 0.55);
-
   --piece-black-a: #3a3f45;
   --piece-black-b: #06070a;
   --piece-white-a: #ffffff;
@@ -104,11 +101,6 @@ body {
   gap: 8px;
   font-size: 13px;
 }
-.game-id-label {
-  color: var(--metal-mid);
-  letter-spacing: 1.5px;
-  font-size: 11px;
-}
 .game-id-value {
   font-family: "Courier New", monospace;
   background: #0e1114;
@@ -154,17 +146,6 @@ body {
   box-shadow: 0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
   overflow-y: auto;
   padding: 16px;
-}
-
-.panel-title {
-  font-family: var(--font-display), sans-serif;
-  font-size: 13px;
-  letter-spacing: 2px;
-  color: var(--accent);
-  text-transform: uppercase;
-  margin: 0 0 14px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--metal-line);
 }
 
 .panel-board {
@@ -219,7 +200,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--metal-dark);
+  background: #3a4046;
   border: 1px solid var(--metal-line);
   border-radius: 8px;
   padding: 8px 10px;
@@ -229,38 +210,15 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 12px var(--accent-glow);
 }
-.player-row.winner-row {
-  border-color: var(--gold);
-  background: linear-gradient(180deg, rgba(255, 211, 92, 0.16) 0%, var(--metal-dark) 70%);
-  box-shadow: 0 0 16px var(--gold-glow), inset 0 0 0 1px rgba(255, 211, 92, 0.4);
-  animation: winnerRowPulse 1.4s ease-out;
-}
-@keyframes winnerRowPulse {
-  0%   { box-shadow: 0 0 0 rgba(255, 211, 92, 0); }
-  30%  { box-shadow: 0 0 22px var(--gold-glow), inset 0 0 0 1px rgba(255, 211, 92, 0.4); }
-  100% { box-shadow: 0 0 16px var(--gold-glow), inset 0 0 0 1px rgba(255, 211, 92, 0.4); }
-}
 .player-swatch {
   width: 16px; height: 16px; border-radius: 50%;
   flex-shrink: 0;
   border: 1px solid var(--metal-line);
 }
-.swatch-black {
-  background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b));
-  border-color: var(--metal-mid);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
+.swatch-black { background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b)); }
 .swatch-white { background: radial-gradient(circle at 35% 30%, var(--piece-white-a), var(--piece-white-b)); }
 .player-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-you { font-size: 11px; color: var(--accent); }
-.player-winner-badge {
-  font-family: var(--font-display), sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--gold);
-  white-space: nowrap;
-}
 
 .btn-stack {
   display: flex;
@@ -331,47 +289,21 @@ body {
 .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* "Save records" toggle: a real checkbox behind a <label>, so clicking
-   anywhere on the label (native browser behavior, not dependent on any
-   JS event listener) flips it. All ON/OFF visuals are driven purely by
-   the :checked pseudo-class — even if a script error ever broke the
-   JS on this page, the switch itself would still visibly toggle. */
-.save-toggle-chip {
-  display: inline-flex;
-  align-items: center;
-  user-select: none;
-}
-.save-toggle-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.save-off-text { display: inline; }
-.save-on-text { display: none; }
-.save-toggle-input:checked ~ .save-on-text { display: inline; }
-.save-toggle-input:checked ~ .save-off-text { display: none; }
-
-.save-toggle-chip:has(.save-toggle-input:checked) {
-  color: var(--accent);
-  border-color: var(--accent-dim);
-  box-shadow: 0 0 8px var(--accent-glow) inset;
-}
-.save-toggle-chip:not(:has(.save-toggle-input:checked)) {
-  color: var(--danger);
-  border-color: #7a2a32;
-}
-/* focus-visible fallback for keyboard users, and for browsers without :has() support */
-.save-toggle-input:focus-visible ~ * {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 /* ---------------------------------------------------------------
    Setup panel
    --------------------------------------------------------------- */
 .setup-block { margin-bottom: 18px; }
+
+.start-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.start-row .btn { flex-shrink: 0; }
+.nickname-inline { flex: 1; min-width: 140px; }
+.nickname-inline .setup-label { margin-bottom: 4px; }
+.nickname-inline .text-input { width: 100%; }
 .setup-label {
   display: block;
   font-size: 12px;
@@ -515,13 +447,6 @@ body {
   margin: 0 0 10px 0;
 }
 .overlay-card p { color: var(--metal-light); margin: 0 0 20px 0; }
-.onboarding-goal {
-  font-family: var(--font-display), sans-serif;
-  font-size: 18px;
-  color: var(--accent);
-  letter-spacing: 0.5px;
-  margin-bottom: 14px !important;
-}
 .onboarding-sub {
   font-size: 13px;
   color: var(--metal-mid);
@@ -547,6 +472,9 @@ body {
   html, body { overflow: auto; }
 
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px; }
+  .topbar-left { gap: 10px; flex-wrap: wrap; row-gap: 6px; }
+  .game-id-wrap { gap: 6px; }
+  .chip-btn { padding: 4px 7px; font-size: 9px; letter-spacing: 0.5px; }
   .status-wrap { text-align: left; min-width: 0; }
 
   .layout {
