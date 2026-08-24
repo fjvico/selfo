@@ -49,6 +49,10 @@ const Game = {
   winner: null,             // 'black' | 'white' | null
   drawOffered: null,        // color that offered a draw, or null
 
+  moveHistory: [],          // full move/event log for the current game, used to build the downloadable record when the game ends
+  startedAt: null,          // ISO timestamp, set when the current game began
+  saveRecordsEnabled: true, // whether a finished game auto-downloads a JSON record; loaded from localStorage at boot
+
   players: {
     black: { name: "Player 1", isLocal: true },
     white: { name: "Player 2", isLocal: true },
@@ -69,12 +73,16 @@ const Game = {
 const dom = {
   gameIdValue: document.getElementById("gameIdValue"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
+  saveRecordsToggleBtn: document.getElementById("saveRecordsToggleBtn"),
+  saveRecordsStateLabel: document.getElementById("saveRecordsStateLabel"),
   turnIndicator: document.getElementById("turnIndicator"),
 
   playerNameBlack: document.getElementById("playerNameBlack"),
   playerNameWhite: document.getElementById("playerNameWhite"),
   playerYouBlack: document.getElementById("playerYouBlack"),
   playerYouWhite: document.getElementById("playerYouWhite"),
+  playerWinnerBlack: document.getElementById("playerWinnerBlack"),
+  playerWinnerWhite: document.getElementById("playerWinnerWhite"),
   playerRowBlack: document.getElementById("playerRowBlack"),
   playerRowWhite: document.getElementById("playerRowWhite"),
 
@@ -116,12 +124,8 @@ const dom = {
 
   startBlock: document.getElementById("startBlock"),
   startGameBtn: document.getElementById("startGameBtn"),
-  backToModeBtn: document.getElementById("backToModeBtn"),
 
-  winnerOverlay: document.getElementById("winnerOverlay"),
-  winnerTitle: document.getElementById("winnerTitle"),
-  winnerText: document.getElementById("winnerText"),
-  winnerCloseBtn: document.getElementById("winnerCloseBtn"),
+  boardFlash: document.getElementById("boardFlash"),
 
   onboardingOverlay: document.getElementById("onboardingOverlay"),
   onboardingDontShow: document.getElementById("onboardingDontShow"),
@@ -493,6 +497,14 @@ function performMove(fromKey, toKey, opts = {}) {
   fromCell.color = null;
   Game.selectedKey = null;
   Game.lastMove = { from: fromKey, to: toKey };
+  Game.moveHistory.push({
+    type: "move",
+    moveNumber: Game.moveHistory.filter((e) => e.type === "move").length + 1,
+    color,
+    from: fromKey,
+    to: toKey,
+    at: new Date().toISOString(),
+  });
   // the pie-rule swap is only ever offered on white's very first move, so a
   // black move must never cancel it — only white moving normally does.
   if (color === "white") Game.pieRuleAvailable = false;
@@ -518,42 +530,104 @@ function endGame(winnerColor, reason) {
   cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = winnerColor;
+  Game.lastMove = null; // the finished board doesn't need the last-move trail highlighted anymore
   renderBoard();
   updateButtonsForPhase();
-
-  dom.winnerOverlay.hidden = false;
-  if (reason === "resign") {
-    dom.winnerTitle.textContent = "Victory by resignation";
-  } else if (reason === "draw") {
-    dom.winnerTitle.textContent = "Draw agreed";
-    dom.winnerText.textContent = "Both players agreed to end the game.";
-    dom.winnerOverlay.hidden = false;
-    updateStatusUI();
-    return;
-  } else if (reason === "no-moves") {
-    dom.winnerTitle.textContent = "No legal moves";
-  } else {
-    dom.winnerTitle.textContent = "Connection complete!";
-  }
-  const name = Game.players[winnerColor].name;
-  dom.winnerText.textContent = reason === "resign"
-    ? `${name} (${winnerColor}) wins — their opponent resigned.`
-    : reason === "no-moves"
-      ? `${name} (${winnerColor}) wins — their opponent had no legal moves.`
-      : `${name} (${winnerColor}) connected all of their pieces.`;
-  showMessage("Game finished. Press \u201cNew game\u201d to play again.");
   updateStatusUI();
+  flashBoardEnd();
+  downloadGameRecord({ outcome: "win", winner: winnerColor, reason });
+
+  const name = Game.players[winnerColor].name;
+  const verb = name.trim().toLowerCase() === "you" ? "win" : "wins";
+  const outcome = reason === "resign"
+    ? `${name} (${winnerColor}) ${verb} \u2014 their opponent resigned.`
+    : reason === "no-moves"
+      ? `${name} (${winnerColor}) ${verb} \u2014 their opponent had no legal moves.`
+      : `${name} (${winnerColor}) ${verb} by connecting all of their pieces!`;
+  const savedNote = Game.saveRecordsEnabled ? " A record of the game was downloaded." : "";
+  showMessage(`${outcome}${savedNote} Press \u201cNew game\u201d to play again.`);
 }
 
 function endGameDraw() {
+  cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = null;
+  Game.lastMove = null;
+  renderBoard();
   updateButtonsForPhase();
-  dom.winnerOverlay.hidden = false;
-  dom.winnerTitle.textContent = "Draw agreed";
-  dom.winnerText.textContent = "Both players agreed to end the game.";
-  showMessage("Game finished. Press \u201cNew game\u201d to play again.");
   updateStatusUI();
+  flashBoardEnd();
+  downloadGameRecord({ outcome: "draw", winner: null, reason: "draw-agreed" });
+  const savedNote = Game.saveRecordsEnabled ? " A record of the game was downloaded." : "";
+  showMessage(`Draw agreed.${savedNote} Press \u201cNew game\u201d to play again.`);
+}
+
+/** Builds a plain-object summary of the just-finished game (mode, board
+ *  size, players, full move list, and how it ended) and triggers a
+ *  browser download of it as a JSON file. This is the entire "save
+ *  history" feature: since the game is hosted as a static site (e.g.
+ *  GitHub Pages) with no server or database of its own, each browser
+ *  saves its own copy of each game it finishes, as a file the player
+ *  keeps — there's no server-side game log to maintain. */
+function buildGameRecord(result) {
+  const startedAt = Game.startedAt || new Date().toISOString();
+  const endedAt = new Date().toISOString();
+  const moveCount = Game.moveHistory.filter((e) => e.type === "move").length;
+  return {
+    schemaVersion: 1,
+    game: "Selfo",
+    gameId: Game.gameId || null,
+    mode: Game.mode,
+    board: { radius: Game.radius, piecesPerColor: Game.piecesPerColor },
+    players: {
+      black: { name: Game.players.black.name, controlledLocally: Boolean(Game.players.black.isLocal) },
+      white: { name: Game.players.white.name, controlledLocally: Boolean(Game.players.white.isLocal) },
+    },
+    result,
+    startedAt,
+    endedAt,
+    durationMs: Date.parse(endedAt) - Date.parse(startedAt),
+    moveCount,
+    moves: Game.moveHistory,
+  };
+}
+
+function downloadGameRecord(result) {
+  if (!Game.saveRecordsEnabled) return;
+  try {
+    const record = buildGameRecord(result);
+    const json = JSON.stringify(record, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `selfo-game-${Game.mode || "game"}-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (err) {
+    console.error("Failed to save game record:", err);
+  }
+}
+
+/** Brief, non-blocking glow across the board to mark that the game just
+ *  ended — retriggerable, since the class is removed once the animation
+ *  finishes (or after a timeout fallback, in case animationend doesn't
+ *  fire for some reason). */
+function flashBoardEnd() {
+  const el = dom.boardFlash;
+  if (!el) return;
+  el.classList.remove("flashing");
+  // force reflow so re-adding the class restarts the animation even if
+  // the previous flash hadn't finished yet
+  void el.offsetWidth;
+  el.classList.add("flashing");
+  const clear = () => el.classList.remove("flashing");
+  el.addEventListener("animationend", clear, { once: true });
+  setTimeout(clear, 1200);
 }
 
 // =======================================================================
@@ -575,6 +649,7 @@ function swapColors() {
 
   Game.pieRuleAvailable = false;
   Game.turn = "black"; // after the swap, it's black's (formerly white's opponent) turn
+  Game.moveHistory.push({ type: "pie-swap", at: new Date().toISOString() });
 
   if (Game.mode === "online2p" && Game.isHost) {
     sendToRemote({ type: "swap" });
@@ -629,42 +704,104 @@ function offerDraw() {
 // =======================================================================
 // Computer play (vs computer / computer vs computer)
 // -----------------------------------------------------------------------
-// The actual alpha-beta search runs off the main thread in a Web Worker
-// (aistrategies.js doubles as the worker script — see its bottom
-// section), so a slow/deep search never freezes the page — the board,
-// buttons, and "New game"/"Resign" controls all stay responsive while
-// the CPU thinks.
+// The alpha-beta search normally runs off the main thread in a Web
+// Worker (aistrategies.js doubles as the worker script — see its bottom
+// section), so a slow/deep search never freezes the page. Some
+// environments block Workers entirely — notably opening the page via
+// `file://` instead of `http(s)://`, which several browsers refuse for
+// security reasons (same-origin restrictions don't apply cleanly to
+// local files). When that happens this falls back to running the exact
+// same search synchronously on the main thread instead of leaving the
+// CPU stuck forever — the trade-off is that the tab will briefly stop
+// responding while it thinks, same as before Workers were added. See
+// the readme for how to serve the page so that trade-off never applies.
 // =======================================================================
 
-let cpuWorker = null;          // the Worker instance, created lazily
-let cpuRequestId = 0;          // bumped on every dispatch/cancel so stale
-                                // worker replies (e.g. after New game) are
-                                // detected and ignored
-let cpuAwaitingColor = null;   // color the outstanding request is for
-let cpuThinkDelayId = null;    // setTimeout id for the pre-dispatch pause
+let cpuWorker = null;             // the Worker instance, created lazily
+let cpuWorkerUnavailable = false; // set once Workers are known not to work
+                                   // here, so we stop retrying them
+let cpuRequestId = 0;             // bumped on every dispatch/cancel so
+                                   // stale replies (e.g. after New game)
+                                   // are detected and ignored
+let cpuPendingRequest = null;     // { requestId, color, state, options }
+                                   // for the outstanding request, kept
+                                   // around so a Worker failure can be
+                                   // retried locally without recomputing
+let cpuThinkDelayId = null;       // setTimeout id for the pre-dispatch pause
 
 function ensureCpuWorker() {
+  if (cpuWorkerUnavailable) return null;
   if (!cpuWorker) {
-    cpuWorker = new Worker("aistrategies.js");
-    cpuWorker.onmessage = onCpuWorkerMessage;
-    cpuWorker.onerror = onCpuWorkerError;
+    try {
+      cpuWorker = new Worker("aistrategies.js");
+      cpuWorker.onmessage = onCpuWorkerMessage;
+      cpuWorker.onerror = onCpuWorkerError;
+    } catch (err) {
+      console.warn("Web Worker unavailable, falling back to main-thread CPU search:", err);
+      cpuWorkerUnavailable = true;
+      cpuWorker = null;
+      return null;
+    }
   }
   return cpuWorker;
 }
 
 function onCpuWorkerMessage(e) {
   const { requestId, ok, move, error } = e.data || {};
-  if (requestId !== cpuRequestId) return; // reply to a since-cancelled request
-  const color = cpuAwaitingColor;
-  cpuAwaitingColor = null;
+  if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return; // stale reply
+  const color = cpuPendingRequest.color;
+  cpuPendingRequest = null;
 
   if (!ok) {
     console.error("CPU search failed:", error);
     showMessage("The computer player hit an error \u2014 check the console.");
     return;
   }
-  if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
+  applyCpuResult(color, move);
+}
 
+function onCpuWorkerError(err) {
+  // The Worker script itself failed to load/run (e.g. blocked under
+  // file://, or a restrictive Content-Security-Policy). Stop trying to
+  // use Workers for the rest of the session and, if a request was in
+  // flight, run it locally instead of leaving the CPU stuck.
+  console.warn("Web Worker failed \u2014 blocked by the browser (often happens under file://); falling back to running the search on the main thread. Serve the page over http(s) to avoid this.", err);
+  cpuWorkerUnavailable = true;
+  if (cpuWorker) {
+    try { cpuWorker.terminate(); } catch (e) { /* already gone */ }
+    cpuWorker = null;
+  }
+  if (cpuPendingRequest) {
+    runCpuSearchLocally(cpuPendingRequest);
+  }
+}
+
+/** Fallback path: runs AiStrategies.pickMove() directly (aistrategies.js
+ *  is already loaded on the main thread via <script>), used only when
+ *  Web Workers aren't available. Freezes the tab for up to the chosen
+ *  think-time budget, same as a build with no Worker support at all. */
+function runCpuSearchLocally(req) {
+  showMessage(`${Game.players[req.color].name} is thinking... (running locally \u2014 serve over http(s) for a smoother experience)`);
+  // brief delay so the message above actually paints before the
+  // synchronous, blocking search starts
+  setTimeout(() => {
+    if (!cpuPendingRequest || req.requestId !== cpuPendingRequest.requestId) return;
+    if (Game.phase !== "playing" || Game.turn !== req.color) return;
+    cpuPendingRequest = null;
+    try {
+      const result = AiStrategies.pickMove(req.state, req.options);
+      applyCpuResult(req.color, result.move);
+    } catch (err) {
+      console.error("CPU local search failed:", err);
+      showMessage("The computer player hit an error \u2014 check the console.");
+    }
+  }, 30);
+}
+
+/** Shared by both the Worker and local-fallback paths once a move (or
+ *  lack thereof) has actually been decided. */
+function applyCpuResult(color, move) {
+  if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
   if (move) {
     performMove(move.from, move.to);
   } else {
@@ -674,24 +811,20 @@ function onCpuWorkerMessage(e) {
   }
 }
 
-function onCpuWorkerError(err) {
-  console.error("CPU worker error:", err);
-  showMessage("The computer player hit an error \u2014 check the console.");
-}
-
 /** Stops any pending or in-flight CPU move: cancels the pre-dispatch
- *  delay, invalidates the current request id (so a late worker reply is
- *  ignored), and terminates the worker so an actually-running search
- *  stops burning CPU right away. Used whenever the game state is reset
- *  or ended out from under a scheduled move (new game, resign, back to
- *  mode select, etc.). A fresh worker is created on the next request. */
+ *  delay, drops the outstanding request (so a late reply is ignored),
+ *  and terminates the worker so an actually-running search stops
+ *  burning CPU right away. Used whenever the game state is reset or
+ *  ended out from under a scheduled move (new game, resign, back to
+ *  mode select, etc.). A fresh worker is created on the next request
+ *  (unless Workers were already found to be unavailable this session). */
 function cancelScheduledCpuMove() {
   if (cpuThinkDelayId !== null) {
     clearTimeout(cpuThinkDelayId);
     cpuThinkDelayId = null;
   }
   cpuRequestId += 1;
-  cpuAwaitingColor = null;
+  cpuPendingRequest = null;
   if (cpuWorker) {
     cpuWorker.terminate();
     cpuWorker = null;
@@ -713,8 +846,8 @@ function scheduleCpuMove() {
   showMessage(`${Game.players[color].name} is thinking...`);
 
   // small delay so the "thinking" message paints and moves don't feel
-  // instantaneous/robotic; the actual search then runs in the worker,
-  // off the main thread, so this is purely cosmetic pacing
+  // instantaneous/robotic; the actual search then runs in the worker
+  // (off the main thread), so this is purely cosmetic pacing
   cpuThinkDelayId = setTimeout(() => {
     cpuThinkDelayId = null;
     // guard: game state may have moved on while we were waiting
@@ -727,12 +860,20 @@ function scheduleCpuMove() {
     const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color };
 
     cpuRequestId += 1;
-    cpuAwaitingColor = color;
+    const req = { requestId: cpuRequestId, color, state, options: { maxDepth, maxTimeSeconds } };
+    cpuPendingRequest = req;
+
+    const worker = ensureCpuWorker();
+    if (!worker) {
+      runCpuSearchLocally(req);
+      return;
+    }
     try {
-      ensureCpuWorker().postMessage({ requestId: cpuRequestId, state, options: { maxDepth, maxTimeSeconds } });
+      worker.postMessage({ requestId: req.requestId, state: req.state, options: req.options });
     } catch (err) {
-      console.error("Failed to start CPU worker:", err);
-      showMessage("Couldn't start the computer player (Web Workers may be unavailable here).");
+      console.warn("Failed to dispatch to CPU worker, falling back to main thread:", err);
+      cpuWorkerUnavailable = true;
+      runCpuSearchLocally(req);
     }
   }, 350);
 }
@@ -763,11 +904,15 @@ function updateButtonsForPhase() {
   dom.swapColorBtn.disabled = !(playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally());
   dom.offerDrawBtn.disabled = !playing || Game.mode === "vscomputer" || Game.mode === "computerself";
   dom.resignBtn.disabled = !playing || Game.mode === "computerself";
-  // "New game" only makes sense once a game is actually running or over —
-  // during mode-select/setup there is nothing to abandon, and having it
-  // active then reads as competing with the "Start game" button.
-  dom.newGameBtn.disabled = !(Game.phase === "playing" || Game.phase === "ended");
-  dom.startGameBtn.disabled = !canStartGame();
+  // "New game" doubles as the general "back to mode select" control now
+  // that the separate "Change mode" button is gone — usable any time
+  // there's actually a mode/game to step back from.
+  dom.newGameBtn.disabled = Game.phase === "mode-select";
+
+  // Start game is only actionable during setup; once the game is running
+  // (or has ended) it's simply disabled — "New game" is the one control
+  // for leaving/restarting a game.
+  dom.startGameBtn.disabled = Game.phase === "setup" ? !canStartGame() : true;
 }
 
 function canStartGame() {
@@ -782,15 +927,25 @@ function updateStatusUI() {
   const ind = dom.turnIndicator;
   ind.classList.remove("turn-black", "turn-white", "turn-over");
   if (Game.phase === "mode-select") {
-    ind.textContent = "SELECT MODE";
+    ind.hidden = true;
+    ind.textContent = "";
   } else if (Game.phase === "setup") {
+    ind.hidden = false;
     ind.textContent = "SETTING UP...";
   } else if (Game.phase === "playing") {
+    ind.hidden = false;
     const name = Game.players[Game.turn].name;
     ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
     ind.classList.add(Game.turn === "black" ? "turn-black" : "turn-white");
   } else if (Game.phase === "ended") {
-    ind.textContent = Game.winner ? `${Game.players[Game.winner].name.toUpperCase()} WINS` : "DRAW";
+    ind.hidden = false;
+    if (Game.winner) {
+      const winnerName = Game.players[Game.winner].name;
+      const verb = winnerName.trim().toLowerCase() === "you" ? "WIN" : "WINS";
+      ind.textContent = `${winnerName.toUpperCase()} ${verb}`;
+    } else {
+      ind.textContent = "DRAW";
+    }
     ind.classList.add("turn-over");
   }
   updatePlayersUI();
@@ -804,6 +959,13 @@ function updatePlayersUI() {
   dom.playerYouWhite.textContent = Game.mode === "online2p" && Game.localColor === "white" ? "(you)" : "";
   dom.playerRowBlack.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "black");
   dom.playerRowWhite.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "white");
+
+  const blackWon = Game.phase === "ended" && Game.winner === "black";
+  const whiteWon = Game.phase === "ended" && Game.winner === "white";
+  dom.playerRowBlack.classList.toggle("winner-row", blackWon);
+  dom.playerRowWhite.classList.toggle("winner-row", whiteWon);
+  dom.playerWinnerBlack.hidden = !blackWon;
+  dom.playerWinnerWhite.hidden = !whiteWon;
 }
 
 // =======================================================================
@@ -886,36 +1048,29 @@ dom.colorButtons.forEach((btn) => {
   });
 });
 
-dom.backToModeBtn.addEventListener("click", () => {
+/** Tears down whatever's running (scheduled CPU move, online connection)
+ *  and returns to mode selection. Used by "New game". Set `confirmIfPlaying`
+ *  to ask before abandoning an in-progress game. */
+function abandonToModeSelect(confirmIfPlaying) {
+  if (confirmIfPlaying && Game.phase === "playing" && !confirm("Abandon the current game?")) return;
   cancelScheduledCpuMove();
   teardownOnline();
-  dom.modeButtons.forEach((b) => b.classList.remove("selected"));
-  Game.mode = null;
-  setPhase("mode-select");
-  updateStatusUI();
-});
-
-dom.newGameBtn.addEventListener("click", () => {
-  if (Game.phase === "playing" && !confirm("Abandon the current game?")) return;
-  cancelScheduledCpuMove();
-  teardownOnline();
-  dom.winnerOverlay.hidden = true;
   dom.modeButtons.forEach((b) => b.classList.remove("selected"));
   Game.mode = null;
   Game.winner = null;
   setPhase("mode-select");
   updateStatusUI();
   showMessage("");
-});
+}
 
-dom.winnerCloseBtn.addEventListener("click", () => dom.newGameBtn.click());
+dom.newGameBtn.addEventListener("click", () => abandonToModeSelect(true));
 
 dom.swapColorBtn.addEventListener("click", swapColors);
 dom.offerDrawBtn.addEventListener("click", offerDraw);
 dom.resignBtn.addEventListener("click", resign);
 
 // =======================================================================
-// Starting a local game
+// Starting a game
 // =======================================================================
 
 dom.startGameBtn.addEventListener("click", () => {
@@ -967,6 +1122,8 @@ function startNewGame() {
   Game.lastMove = null;
   Game.winner = null;
   Game.drawOffered = null;
+  Game.moveHistory = [];
+  Game.startedAt = new Date().toISOString();
 
   dom.gameIdValue.textContent = Game.gameId || "\u2014";
   dom.copyLinkBtn.disabled = !Game.gameId;
@@ -1039,6 +1196,8 @@ function handleRemoteMessage(msg) {
       Game.lastMove = null;
       Game.winner = null;
       Game.players = msg.players;
+      Game.moveHistory = [];
+      Game.startedAt = new Date().toISOString();
       setPhase("playing");
       renderBoard();
       updateStatusUI();
@@ -1060,6 +1219,7 @@ function handleRemoteMessage(msg) {
       }
       Game.pieRuleAvailable = false;
       Game.turn = "black";
+      Game.moveHistory.push({ type: "pie-swap", at: new Date().toISOString() });
       renderBoard();
       updateStatusUI();
       updatePlayersUI();
@@ -1183,6 +1343,29 @@ dom.onboardingCloseBtn.addEventListener("click", closeOnboarding);
 dom.helpBtn.addEventListener("click", showOnboarding);
 
 // =======================================================================
+// "Save game records" toggle
+// -----------------------------------------------------------------------
+// A simple on/off switch, persisted in localStorage, for the automatic
+// JSON-download-on-game-end feature (see downloadGameRecord()). Lives in
+// the topbar since it's a standing preference, not tied to any one game.
+// =======================================================================
+
+const SAVE_RECORDS_KEY = "selfo_save_records";
+
+function updateSaveRecordsToggleUI() {
+  const on = Game.saveRecordsEnabled;
+  dom.saveRecordsToggleBtn.setAttribute("aria-checked", String(on));
+  dom.saveRecordsStateLabel.textContent = on ? "ON" : "OFF";
+  dom.saveRecordsStateLabel.classList.toggle("is-off", !on);
+}
+
+dom.saveRecordsToggleBtn.addEventListener("click", () => {
+  Game.saveRecordsEnabled = !Game.saveRecordsEnabled;
+  try { localStorage.setItem(SAVE_RECORDS_KEY, Game.saveRecordsEnabled ? "1" : "0"); } catch (e) { /* file:// or private mode: ignore */ }
+  updateSaveRecordsToggleUI();
+});
+
+// =======================================================================
 // Boot
 // =======================================================================
 
@@ -1191,6 +1374,12 @@ function boot() {
   dom.radiusValue.textContent = String(Game.radius);
   setPhase("mode-select");
   updateStatusUI();
+
+  try {
+    const saved = localStorage.getItem(SAVE_RECORDS_KEY);
+    if (saved !== null) Game.saveRecordsEnabled = saved === "1";
+  } catch (e) { /* file:// or private mode: keep the default (on) */ }
+  updateSaveRecordsToggleUI();
 
   let hideOnboarding = false;
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }

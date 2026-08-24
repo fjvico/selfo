@@ -12,66 +12,43 @@
   <!-- TOP BAR : title + persistent game id                          -->
   <!-- ============================================================ -->
   <header class="topbar">
-    <div class="brand">
-      <span class="brand-hex">&#x2B22;</span>
-      <span class="brand-text">SELF<span class="brand-accent">O</span></span>
-      <button id="helpBtn" class="chip-btn" title="How to play">?</button>
-    </div>
-    <div class="game-id-wrap">
-      <span class="game-id-label">GAME ID</span>
-      <span id="gameIdValue" class="game-id-value">&mdash;</span>
-      <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">COPY LINK</button>
+    <div class="topbar-left">
+      <div class="brand">
+        <span class="brand-hex">&#x2B22;</span>
+        <span class="brand-text">SELF<span class="brand-accent">O</span></span>
+        <button id="helpBtn" class="chip-btn" title="How to play">?</button>
+      </div>
+      <div class="game-id-wrap">
+        <span class="game-id-label">GAME ID</span>
+        <span id="gameIdValue" class="game-id-value">&mdash;</span>
+        <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">COPY LINK</button>
+      </div>
+      <div class="save-toggle-wrap" title="When on, a JSON record of each finished game is downloaded automatically">
+        <span class="save-toggle-label">Save records</span>
+        <button id="saveRecordsToggleBtn" class="toggle-switch" type="button" role="switch" aria-checked="true">
+          <span class="toggle-knob"></span>
+        </button>
+        <span class="save-toggle-state" id="saveRecordsStateLabel">ON</span>
+      </div>
     </div>
     <div class="status-wrap">
-      <span id="turnIndicator" class="turn-indicator">SELECT MODE</span>
+      <span id="turnIndicator" class="turn-indicator"></span>
     </div>
   </header>
 
   <!-- ============================================================ -->
-  <!-- MAIN LAYOUT : options (left/bottom) | board (center) | setup  -->
+  <!-- MAIN LAYOUT : setup (left/top) | board (center) | options (right/bottom) -->
   <!-- ============================================================ -->
   <main class="layout">
 
-    <!-- ---------------- LEFT / BOTTOM : game options -------------- -->
-    <section class="panel panel-options" aria-label="Game options">
-      <h2 class="panel-title">Options</h2>
-
-      <div class="players-box">
-        <div class="player-row" id="playerRowBlack">
-          <span class="player-swatch swatch-black"></span>
-          <span class="player-name" id="playerNameBlack">&mdash;</span>
-          <span class="player-you" id="playerYouBlack"></span>
-        </div>
-        <div class="player-row" id="playerRowWhite">
-          <span class="player-swatch swatch-white"></span>
-          <span class="player-name" id="playerNameWhite">&mdash;</span>
-          <span class="player-you" id="playerYouWhite"></span>
-        </div>
-      </div>
-
-      <div class="btn-stack">
-        <button id="swapColorBtn" class="btn btn-metal" disabled>Swap colors (pie rule)</button>
-        <button id="offerDrawBtn" class="btn btn-metal" disabled>Offer draw</button>
-        <button id="resignBtn" class="btn btn-metal btn-danger" disabled>Resign</button>
-      </div>
-
-      <div class="btn-stack">
-        <button id="newGameBtn" class="btn btn-metal-accent">New game</button>
-      </div>
-
-      <div id="messageBox" class="message-box" aria-live="polite"></div>
-    </section>
-
-    <!-- ---------------- CENTER : the board ------------------------- -->
-    <section class="panel panel-board" aria-label="Board">
-      <div id="boardScroll" class="board-scroll">
-        <svg id="boardSvg" class="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
-      </div>
-    </section>
-
-    <!-- ---------------- RIGHT / TOP : setup ------------------------ -->
+    <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup">
       <h2 class="panel-title">Setup</h2>
+
+      <!-- start / stop — always the top control in this panel -->
+      <div class="setup-block" id="startBlock" hidden>
+        <button id="startGameBtn" class="btn btn-metal-accent" disabled>Start game</button>
+      </div>
 
       <!-- mode selection -->
       <div class="setup-block" id="modeSelectBlock">
@@ -138,11 +115,46 @@
           <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" />
         </fieldset>
       </div>
+    </section>
 
-      <div class="setup-block" id="startBlock" hidden>
-        <button id="startGameBtn" class="btn btn-metal-accent" disabled>Start game</button>
-        <button id="backToModeBtn" class="btn btn-metal-sm">&larr; Change mode</button>
+    <!-- ---------------- CENTER : the board ------------------------- -->
+    <section class="panel panel-board" aria-label="Board">
+      <div id="boardScroll" class="board-scroll">
+        <svg id="boardSvg" class="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
+      <div id="boardFlash" class="board-flash-overlay" aria-hidden="true"></div>
+    </section>
+
+    <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
+    <section class="panel panel-options" aria-label="Game options">
+      <h2 class="panel-title">Options</h2>
+
+      <div class="players-box">
+        <div class="player-row" id="playerRowBlack">
+          <span class="player-swatch swatch-black"></span>
+          <span class="player-name" id="playerNameBlack">&mdash;</span>
+          <span class="player-you" id="playerYouBlack"></span>
+          <span class="player-winner-badge" id="playerWinnerBlack" hidden>&#127942; WINNER</span>
+        </div>
+        <div class="player-row" id="playerRowWhite">
+          <span class="player-swatch swatch-white"></span>
+          <span class="player-name" id="playerNameWhite">&mdash;</span>
+          <span class="player-you" id="playerYouWhite"></span>
+          <span class="player-winner-badge" id="playerWinnerWhite" hidden>&#127942; WINNER</span>
+        </div>
+      </div>
+
+      <div class="btn-stack">
+        <button id="swapColorBtn" class="btn btn-metal" disabled>Swap colors (pie rule)</button>
+        <button id="offerDrawBtn" class="btn btn-metal" disabled>Offer draw</button>
+        <button id="resignBtn" class="btn btn-metal btn-danger" disabled>Resign</button>
+      </div>
+
+      <div class="btn-stack">
+        <button id="newGameBtn" class="btn btn-metal-accent">New game</button>
+      </div>
+
+      <div id="messageBox" class="message-box" aria-live="polite"></div>
     </section>
 
   </main>
@@ -160,17 +172,6 @@
         No mostrar de nuevo
       </label>
       <button id="onboardingCloseBtn" class="btn btn-metal-accent">Got it</button>
-    </div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- WINNER OVERLAY                                                -->
-  <!-- ============================================================ -->
-  <div id="winnerOverlay" class="overlay" hidden>
-    <div class="overlay-card">
-      <h2 id="winnerTitle">Game over</h2>
-      <p id="winnerText"></p>
-      <button id="winnerCloseBtn" class="btn btn-metal-accent">New game</button>
     </div>
   </div>
 

@@ -14,7 +14,7 @@
   /* board tones, as specified */
   --cell-fill: #808080;      /* 50% gray */
   --cell-fill-hover: #8f8f8f;
-  --cell-edge: #cccccc;      /* 80% gray */
+  --cell-edge: #595959;      /* darker than the cell fill, ~35% gray, so edges read clearly */
 
   /* accent (cool cyan, "energy" glow) */
   --accent: #35e0ff;
@@ -23,6 +23,9 @@
 
   --danger: #ff5c6c;
   --danger-glow: rgba(255, 92, 108, 0.5);
+
+  --gold: #ffd35c;
+  --gold-glow: rgba(255, 211, 92, 0.55);
 
   --piece-black-a: #3a3f45;
   --piece-black-b: #06070a;
@@ -69,6 +72,12 @@ body {
   background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
   border-bottom: 1px solid var(--metal-line);
   box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
 
 .brand {
@@ -133,7 +142,7 @@ body {
 .layout {
   height: calc(100% - 56px);
   display: grid;
-  grid-template-columns: 250px 1fr 280px;
+  grid-template-columns: 280px 1fr 250px;
   gap: 14px;
   padding: 14px;
 }
@@ -163,6 +172,27 @@ body {
   align-items: center;
   justify-content: center;
   padding: 10px;
+  position: relative;
+}
+
+/* Non-blocking "game over" cue: a brief glow across the board itself
+   instead of a dialog that covers it. Triggered by adding/removing the
+   .flashing class (see script.js's flashBoardEnd()). */
+.board-flash-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  opacity: 0;
+}
+.board-flash-overlay.flashing {
+  animation: boardEndFlash 1s ease-out;
+  background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
+}
+@keyframes boardEndFlash {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .board-scroll {
@@ -189,7 +219,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #14171a;
+  background: var(--metal-dark);
   border: 1px solid var(--metal-line);
   border-radius: 8px;
   padding: 8px 10px;
@@ -199,15 +229,38 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 12px var(--accent-glow);
 }
+.player-row.winner-row {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(255, 211, 92, 0.16) 0%, var(--metal-dark) 70%);
+  box-shadow: 0 0 16px var(--gold-glow), inset 0 0 0 1px rgba(255, 211, 92, 0.4);
+  animation: winnerRowPulse 1.4s ease-out;
+}
+@keyframes winnerRowPulse {
+  0%   { box-shadow: 0 0 0 rgba(255, 211, 92, 0); }
+  30%  { box-shadow: 0 0 22px var(--gold-glow), inset 0 0 0 1px rgba(255, 211, 92, 0.4); }
+  100% { box-shadow: 0 0 16px var(--gold-glow), inset 0 0 0 1px rgba(255, 211, 92, 0.4); }
+}
 .player-swatch {
   width: 16px; height: 16px; border-radius: 50%;
   flex-shrink: 0;
   border: 1px solid var(--metal-line);
 }
-.swatch-black { background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b)); }
+.swatch-black {
+  background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b));
+  border-color: var(--metal-mid);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
 .swatch-white { background: radial-gradient(circle at 35% 30%, var(--piece-white-a), var(--piece-white-b)); }
 .player-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-you { font-size: 11px; color: var(--accent); }
+.player-winner-badge {
+  font-family: var(--font-display), sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--gold);
+  white-space: nowrap;
+}
 
 .btn-stack {
   display: flex;
@@ -277,6 +330,17 @@ body {
 }
 .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.chip-btn.chip-on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 8px var(--accent-glow) inset;
+}
+.chip-btn.chip-off {
+  color: var(--metal-mid);
+  border-color: var(--metal-line);
+  background: #14171a;
+}
 
 /* ---------------------------------------------------------------
    Setup panel
@@ -380,14 +444,11 @@ body {
   filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 .hex-cell.move-target {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-  fill: #6b7a7d;
-  filter: drop-shadow(0 0 5px var(--accent-glow));
+  fill: #8f9598; /* a touch lighter than the normal cell fill; edges stay untouched */
 }
 .hex-cell.last-move {
-  stroke: #ffd35c;
-  stroke-width: 2.5;
+  stroke: rgba(255, 208, 96, 0.65);
+  stroke-width: 2;
 }
 
 .piece { cursor: grab; }
