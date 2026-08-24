@@ -310,15 +310,6 @@ body {
    --------------------------------------------------------------- */
 .setup-block { margin-bottom: 18px; }
 
-.start-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-wrap: nowrap;
-}
-.start-row .btn { flex-shrink: 0; }
-.nickname-inline { flex: 1 1 auto; min-width: 0; }
-.nickname-inline .text-input { width: 100%; }
 .setup-label {
   display: block;
   font-size: 12px;

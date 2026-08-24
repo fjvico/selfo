@@ -4,7 +4,21 @@
  * Selfo — main application logic.
  *
  * Game phases:
- *   'mode-select' -> 'setup' -> 'playing' -> 'ended'
+ *   'setup' -> 'playing' -> 'ended' -> 'setup' (auto, new game) -> ...
+ *
+ * There's no "nothing configured yet" state: a mode is always active (see
+ * CONFIG.DEFAULT_MODE) and the board always shows a live preview of what a
+ * new game with the current settings would look like. Changing the mode
+ * or a board parameter while in 'setup' just regenerates that preview.
+ * The game actually begins ('setup' -> 'playing') the moment a piece
+ * moves — no separate "Start" button. Ending a game (by connecting all
+ * pieces, resigning, or agreeing a draw) enters 'ended', which shows the
+ * final board for CONFIG.ENDED_PAUSE_MS and then automatically returns to
+ * 'setup' with a fresh preview — using whatever mode/parameters are
+ * current at that moment, since the setup controls stay live during the
+ * pause too. Picking a mode (including the one already active) at any
+ * time abandons the current game, if any, and jumps straight to a fresh
+ * preview for it.
  *
  * NOTE on future extensibility (per spec, not exposed in UI yet):
  *   RULES.maxStepsPerMove  — a piece could move several cells in one
@@ -27,6 +41,8 @@ const CONFIG = {
   TOUCH_LONG_PRESS_MS: 220,   // touch: hold-still time before a drag is "armed" (and page panning gets locked)
   TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
+  DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
+  ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
 };
 
 const RULES = {
@@ -38,8 +54,8 @@ const RULES = {
 // Global mutable game state
 // ---------------------------------------------------------------------
 const Game = {
-  phase: "mode-select", // 'mode-select' | 'setup' | 'playing' | 'ended'
-  mode: null,            // 'local2p' | 'online2p' | 'vscomputer' | 'computerself'
+  phase: "setup", // 'setup' | 'playing' | 'ended' — see file header for the flow
+  mode: CONFIG.DEFAULT_MODE, // 'local2p' | 'online2p' | 'vscomputer' | 'computerself' — always set
 
   radius: CONFIG.DEFAULT_RADIUS,
   piecesPerColor: 0,
@@ -90,7 +106,6 @@ const dom = {
   swapColorBtn: document.getElementById("swapColorBtn"),
   offerDrawBtn: document.getElementById("offerDrawBtn"),
   resignBtn: document.getElementById("resignBtn"),
-  newGameBtn: document.getElementById("newGameBtn"),
   messageBox: document.getElementById("messageBox"),
 
   boardSvg: document.getElementById("boardSvg"),
@@ -123,9 +138,6 @@ const dom = {
   cpuDepthRange: document.getElementById("cpuDepthRange"),
   cpuDepthValue: document.getElementById("cpuDepthValue"),
 
-  startBlock: document.getElementById("startBlock"),
-  startGameBtn: document.getElementById("startGameBtn"),
-
   boardFlash: document.getElementById("boardFlash"),
 
   onboardingOverlay: document.getElementById("onboardingOverlay"),
@@ -151,6 +163,13 @@ function showMessage(text) {
 
 function opponentOf(color) {
   return color === "black" ? "white" : "black";
+}
+
+/** 'setup' (the live preview) and 'playing' both accept clicks/drags on
+ *  pieces — moving a piece during 'setup' is exactly what starts the
+ *  game. Only 'ended' (showing the finished board) is non-interactive. */
+function isInteractivePhase() {
+  return Game.phase === "setup" || Game.phase === "playing";
 }
 
 // =======================================================================
@@ -335,7 +354,7 @@ function renderPieces(positions) {
     circle.setAttribute("class", `piece piece-${cell.color}`);
     circle.dataset.key = k;
 
-    const canDrag = Game.phase === "playing" && cell.color === Game.turn && isMyTurnLocally();
+    const canDrag = isInteractivePhase() && cell.color === Game.turn && isMyTurnLocally();
     if (canDrag) {
       circle.classList.add("own-piece", "draggable");
       circle.addEventListener("pointerdown", (ev) => onPieceDragStart(ev, k));
@@ -357,7 +376,7 @@ function applyHighlights() {
     poly.classList.remove("selected", "move-target", "selectable", "last-move");
     const cell = Game.cells.get(k);
 
-    if (Game.phase === "playing" && isMyTurnLocally()) {
+    if (isInteractivePhase() && isMyTurnLocally()) {
       if (cell.color === Game.turn) poly.classList.add("selectable");
       if (targets.includes(k)) poly.classList.add("selectable", "move-target");
     }
@@ -377,7 +396,7 @@ function applyHighlights() {
 // =======================================================================
 
 function onCellClick(key) {
-  if (Game.phase !== "playing" || !isMyTurnLocally()) return;
+  if (!isInteractivePhase() || !isMyTurnLocally()) return;
   const cell = Game.cells.get(key);
 
   if (Game.selectedKey === null) {
@@ -440,7 +459,7 @@ function svgUserPoint(svg, clientX, clientY) {
 }
 
 function onPieceDragStart(ev, key) {
-  if (Game.phase !== "playing" || !isMyTurnLocally()) return;
+  if (!isInteractivePhase() || !isMyTurnLocally()) return;
   if (dragState) return; // a drag is already in progress
   const cell = Game.cells.get(key);
   if (cell.color !== Game.turn) return;
@@ -561,7 +580,7 @@ function attachHoverDwellClick(el, key) {
 
   el.addEventListener("pointerenter", (ev) => {
     if (ev.pointerType !== "mouse") return;
-    if (Game.phase !== "playing" || !isMyTurnLocally()) return;
+    if (!isInteractivePhase() || !isMyTurnLocally()) return;
     cancel();
     timer = setTimeout(() => { timer = null; onCellClick(key); }, CONFIG.MOUSE_HOVER_MOVE_MS);
   });
@@ -589,9 +608,18 @@ function isMyTurnLocally() {
   return true; // local2p: both colors are played on this device
 }
 
-/** Applies a move to the model, re-renders, checks for a win, advances turn. */
+/** Applies a move to the model, re-renders, checks for a win, advances turn.
+ *  If this is called while still in "setup" (the live preview), this is
+ *  the move that actually starts the game — for both the mover and, via
+ *  the identical "move" message, the remote peer in online play. */
 function performMove(fromKey, toKey, opts = {}) {
   const { fromRemote = false } = opts;
+
+  if (Game.phase === "setup") {
+    Game.phase = "playing";
+    updateSetupVisibility();
+  }
+
   const fromCell = Game.cells.get(fromKey);
   const toCell = Game.cells.get(toKey);
   const color = fromCell.color;
@@ -631,12 +659,14 @@ function endGame(winnerColor, reason) {
   Game.winner = winnerColor;
   Game.endReason = reason;
   Game.lastMove = null; // the finished board doesn't need the last-move trail highlighted anymore
+  updateSetupVisibility();
   renderBoard();
   updateButtonsForPhase();
   updateStatusUI();
   flashBoardEnd();
   dom.downloadBtn.disabled = false;
   showMessage("");
+  scheduleEndedAutoRestart();
 }
 
 function endGameDraw() {
@@ -645,12 +675,35 @@ function endGameDraw() {
   Game.winner = null;
   Game.endReason = "draw";
   Game.lastMove = null;
+  updateSetupVisibility();
   renderBoard();
   updateButtonsForPhase();
   updateStatusUI();
   flashBoardEnd();
   dom.downloadBtn.disabled = false;
   showMessage("");
+  scheduleEndedAutoRestart();
+}
+
+/** How long the finished board stays on screen before a fresh preview
+ *  (using whatever mode/parameters are current at that moment — the
+ *  setup controls stay live during this pause) automatically appears. */
+let endedAutoRestartTimer = null;
+
+function scheduleEndedAutoRestart() {
+  cancelEndedAutoRestart();
+  endedAutoRestartTimer = setTimeout(() => {
+    endedAutoRestartTimer = null;
+    if (Game.phase !== "ended") return; // state moved on already (mode switch, etc.)
+    beginSetupPreview();
+  }, CONFIG.ENDED_PAUSE_MS);
+}
+
+function cancelEndedAutoRestart() {
+  if (endedAutoRestartTimer !== null) {
+    clearTimeout(endedAutoRestartTimer);
+    endedAutoRestartTimer = null;
+  }
 }
 
 /** Brief, non-blocking glow across the board to mark that the game just
@@ -925,21 +978,24 @@ function scheduleCpuMove() {
 // UI state / phase management
 // =======================================================================
 
-function setPhase(phase) {
-  Game.phase = phase;
-  dom.modeSelectBlock.hidden = phase !== "mode-select";
-  dom.onlineBlock.hidden = !(phase === "setup" && Game.mode === "online2p");
-  dom.colorChoiceBlock.hidden = !(phase === "setup" && Game.mode === "vscomputer");
-  dom.nicknameBlock.hidden = phase === "mode-select";
-  dom.paramsBlock.hidden = phase === "mode-select";
-  dom.startBlock.hidden = phase === "mode-select";
-  updateButtonsForPhase();
+/** Shows/hides the setup controls based on the current phase and mode.
+ *  Mode buttons are always visible (per spec, so the mode can be changed
+ *  any time). Everything else — online connection, color choice,
+ *  nickname, board/CPU parameters — hides while a game is actually being
+ *  played, and reappears during "setup" (the live preview) and "ended"
+ *  (so settings can be changed before the next game auto-begins). */
+function updateSetupVisibility() {
+  const playing = Game.phase === "playing";
+  const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
+  const guestOnline = Game.mode === "online2p" && !Game.isHost;
 
-  if (phase === "mode-select") {
-    showMessage("Choose a mode on the right to begin: two players on this device, or online with a code.");
-  } else if (phase === "setup") {
-    showMessage("Set up your board on the right, then press \u201cStart game\u201d.");
-  }
+  dom.onlineBlock.hidden = playing || Game.mode !== "online2p";
+  dom.colorChoiceBlock.hidden = playing || Game.mode !== "vscomputer";
+  dom.nicknameBlock.hidden = playing || !(Game.mode === "online2p" || Game.mode === "vscomputer");
+  dom.paramsBlock.hidden = playing || guestOnline;
+  dom.cpuParamsBlock.hidden = !isCpuMode;
+
+  updateButtonsForPhase();
 }
 
 function updateButtonsForPhase() {
@@ -947,52 +1003,17 @@ function updateButtonsForPhase() {
   dom.swapColorBtn.disabled = !(playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally());
   dom.offerDrawBtn.disabled = !playing || Game.mode === "vscomputer" || Game.mode === "computerself";
   dom.resignBtn.disabled = !playing || Game.mode === "computerself";
-  // "New game" doubles as the general "back to mode select" control now
-  // that the separate "Change mode" button is gone — usable any time
-  // there's actually a mode/game to step back from.
-  dom.newGameBtn.disabled = Game.phase === "mode-select";
-
-  // The start/stop button is enabled in "setup" once ready to start, and
-  // stays enabled through "playing" so it can be used to stop. Once the
-  // game has ended it reverts to an inactive "Start game" — there's no
-  // more running game to stop, and "New game" is the way back to setup.
-  dom.startGameBtn.disabled = Game.phase === "setup" ? !canStartGame() : Game.phase !== "playing";
-  updateStartStopLabel();
-}
-
-/** Toggles the single start/stop control's label and styling: "Start
- *  game" (accent) before configuring or once a game has ended, "Stop"
- *  (danger) only while a game is actually running. */
-function updateStartStopLabel() {
-  const isStopMode = Game.phase === "playing";
-  dom.startGameBtn.textContent = isStopMode ? "Stop" : "Start game";
-  dom.startGameBtn.classList.toggle("btn-danger", isStopMode);
-  dom.startGameBtn.classList.toggle("btn-metal-accent", !isStopMode);
-}
-
-function canStartGame() {
-  if (Game.phase !== "setup") return false;
-  if (Game.mode === "online2p") {
-    return Boolean(Game.conn && Game.conn.open) && Game.isHost;
-  }
-  return true;
 }
 
 function updateStatusUI() {
   const ind = dom.turnIndicator;
   ind.classList.remove("turn-black", "turn-white", "turn-over");
-  if (Game.phase === "mode-select") {
-    ind.hidden = true;
-    ind.textContent = "";
-  } else if (Game.phase === "setup") {
-    ind.hidden = false;
-    ind.textContent = "SETTING UP...";
-  } else if (Game.phase === "playing") {
+  if (Game.phase === "setup" || Game.phase === "playing") {
     ind.hidden = false;
     const name = Game.players[Game.turn].name;
     ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
     ind.classList.add(Game.turn === "black" ? "turn-black" : "turn-white");
-  } else if (Game.phase === "ended") {
+  } else {
     ind.hidden = true;
     ind.textContent = "";
   }
@@ -1034,10 +1055,12 @@ dom.radiusRange.addEventListener("input", () => {
   Game.radius = Number(dom.radiusRange.value);
   dom.radiusValue.textContent = String(Game.radius);
   refreshPieceRangeUI();
+  if (Game.phase === "setup") beginSetupPreview();
 });
 dom.piecesRange.addEventListener("input", () => {
   const { min, max } = pieceRangeForRadius(Game.radius);
   dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
+  if (Game.phase === "setup") beginSetupPreview();
 });
 dom.cpuTimeRange.addEventListener("input", () => {
   dom.cpuTimeValue.textContent = dom.cpuTimeRange.value;
@@ -1049,13 +1072,25 @@ dom.cpuDepthRange.addEventListener("input", () => {
 dom.modeButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     if (btn.disabled) return;
-    dom.modeButtons.forEach((b) => b.classList.remove("selected"));
-    btn.classList.add("selected");
     selectMode(btn.dataset.mode);
   });
 });
 
+/** Switches to (or restarts) a mode: abandons any game in progress (with
+ *  confirmation), tears down any online connection, and immediately
+ *  shows a fresh live preview for the chosen mode. Mode buttons are
+ *  always visible/clickable, including the one already active — clicking
+ *  it again is how you get a fresh board without changing anything. */
 function selectMode(mode) {
+  if (Game.phase === "playing" && !confirm("Abandon the current game and start a new one?")) {
+    syncModeButtonsSelection();
+    return;
+  }
+
+  cancelScheduledCpuMove();
+  cancelEndedAutoRestart();
+  teardownOnline();
+
   Game.mode = mode;
   Game.isHost = mode === "online2p" ? true : Game.isHost; // default assumption until join overrides
   Game.gameId = null;
@@ -1064,109 +1099,45 @@ function selectMode(mode) {
   dom.onlineStatus.textContent = "";
   dom.onlineStatus.className = "online-status";
   dom.joinCodeWrap.hidden = true;
-  dom.cpuParamsBlock.disabled = !(mode === "vscomputer" || mode === "computerself");
+  if (mode === "online2p" || mode === "vscomputer") dom.nicknameInput.placeholder = "Your nickname";
 
-  refreshPieceRangeUI();
-  dom.radiusValue.textContent = String(Game.radius);
+  syncModeButtonsSelection();
+  beginSetupPreview();
+}
 
-  setPhase("setup");
-
-  if (mode === "local2p") {
-    dom.nicknameBlock.hidden = true; // both players share this device, defaults are used
-    dom.startGameBtn.disabled = false;
-  } else if (mode === "online2p") {
-    dom.nicknameBlock.hidden = false;
-    dom.nicknameInput.placeholder = "Your nickname";
-    dom.startGameBtn.disabled = true; // enabled once connected
-  } else if (mode === "vscomputer") {
-    dom.nicknameBlock.hidden = false;
-    dom.nicknameInput.placeholder = "Your nickname";
-    dom.startGameBtn.disabled = false;
-  } else if (mode === "computerself") {
-    dom.nicknameBlock.hidden = true; // no human players in this mode
-    dom.startGameBtn.disabled = false;
-  }
-  updateButtonsForPhase();
+function syncModeButtonsSelection() {
+  dom.modeButtons.forEach((b) => b.classList.toggle("selected", b.dataset.mode === Game.mode));
 }
 
 dom.colorButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
+    if (Game.phase === "playing" && !confirm("Abandon the current game and start a new one?")) return;
     dom.colorButtons.forEach((b) => b.classList.remove("selected"));
     btn.classList.add("selected");
     Game.humanColor = btn.dataset.color;
+    if (Game.mode === "vscomputer") beginSetupPreview();
   });
 });
-
-/** Tears down whatever's running (scheduled CPU move, online connection)
- *  and returns to mode selection. Shared by "New game" and the start/stop
- *  control when it's acting as "Stop". Set `confirmIfPlaying` to ask
- *  before abandoning an in-progress game. */
-function abandonToModeSelect(confirmIfPlaying) {
-  if (confirmIfPlaying && Game.phase === "playing" && !confirm("Abandon the current game?")) return;
-  cancelScheduledCpuMove();
-  teardownOnline();
-  dom.modeButtons.forEach((b) => b.classList.remove("selected"));
-  Game.mode = null;
-  Game.winner = null;
-  dom.downloadBtn.disabled = true;
-  setPhase("mode-select");
-  updateStatusUI();
-  showMessage("");
-}
-
-dom.newGameBtn.addEventListener("click", () => abandonToModeSelect(true));
 
 dom.swapColorBtn.addEventListener("click", swapColors);
 dom.offerDrawBtn.addEventListener("click", offerDraw);
 dom.resignBtn.addEventListener("click", resign);
 
 // =======================================================================
-// Starting / stopping a game — one button, two roles depending on phase
+// The live preview / game start
+// -----------------------------------------------------------------------
+// There's no explicit "Start" step: (re)building the board here is what
+// "always shows the current configuration" means, and the game actually
+// begins the moment a piece moves (see performMove()) — except when the
+// color to move is computer-controlled, in which case there's no human
+// gesture to wait for and play begins immediately (maybeAutoStartFromSetup).
 // =======================================================================
 
-dom.startGameBtn.addEventListener("click", () => {
-  if (Game.phase === "playing") {
-    abandonToModeSelect(true); // acting as "Stop"
-    return;
-  }
-
-  if (!canStartGame()) return;
-  const nick = dom.nicknameInput.value.trim();
-
-  if (Game.mode === "local2p") {
-    Game.players.black = { name: "Player 1", isLocal: true };
-    Game.players.white = { name: "Player 2", isLocal: true };
-    Game.gameId = randomGameId();
-    startNewGame();
-  } else if (Game.mode === "online2p") {
-    // host confirms start; broadcast the board so both sides match
-    Game.players[Game.localColor] = { name: nick || "Player", isLocal: true };
-    startNewGame();
-    sendToRemote({
-      type: "start",
-      radius: Game.radius,
-      piecesPerColor: Game.piecesPerColor,
-      cells: Array.from(Game.cells.values()),
-      players: Game.players,
-      hostColor: Game.localColor,
-    });
-  } else if (Game.mode === "vscomputer") {
-    const human = Game.humanColor || "black";
-    const cpu = opponentOf(human);
-    Game.players[human] = { name: nick || "You", isLocal: true };
-    Game.players[cpu] = { name: "CPU", isLocal: false };
-    Game.gameId = randomGameId();
-    startNewGame();
-  } else if (Game.mode === "computerself") {
-    Game.players.black = { name: "CPU \u00b7 Black", isLocal: false };
-    Game.players.white = { name: "CPU \u00b7 White", isLocal: false };
-    Game.gameId = randomGameId();
-    startNewGame();
-  }
-});
-
-function startNewGame() {
+function beginSetupPreview() {
   cancelScheduledCpuMove();
+  cancelEndedAutoRestart();
+
+  Game.phase = "setup";
   Game.radius = Number(dom.radiusRange.value);
   Game.piecesPerColor = Number(dom.piecesRange.value);
   const built = buildBoard(Game.radius, Game.piecesPerColor);
@@ -1177,27 +1148,83 @@ function startNewGame() {
   Game.selectedKey = null;
   Game.lastMove = null;
   Game.winner = null;
-  Game.drawOffered = null;
   Game.endReason = null;
+  Game.drawOffered = null;
   Game.moveLog = [];
+  if (Game.mode !== "online2p") Game.gameId = randomGameId(); // online2p keeps its room code, if any
+
+  assignPreviewPlayers();
 
   dom.gameIdValue.textContent = Game.gameId || "\u2014";
   dom.copyLinkBtn.disabled = !Game.gameId;
   dom.downloadBtn.disabled = true;
 
-  setPhase("playing");
+  updateSetupVisibility();
   renderBoard();
   updateStatusUI();
-  showMessage(
-    Game.mode === "local2p"
-      ? "Black moves first. White may swap colors instead of moving, on their first turn only."
-      : Game.mode === "vscomputer"
-        ? `You are playing ${Game.humanColor}. Black moves first.`
-        : Game.mode === "computerself"
-          ? "Two computer players will play automatically."
-          : "Game started."
-  );
-  maybeTriggerCpuMove();
+  showMessage(setupMessageForMode());
+
+  if (Game.mode === "online2p" && Game.isHost) broadcastPreview();
+
+  maybeAutoStartFromSetup();
+}
+
+/** Fills in Game.players for whatever the current mode is. Re-run every
+ *  time the preview regenerates, so nickname/color-choice edits and
+ *  (for online play) newly-known opponent names all stay reflected. */
+function assignPreviewPlayers() {
+  const nick = dom.nicknameInput.value.trim();
+  if (Game.mode === "local2p") {
+    Game.players.black = { name: "Player 1", isLocal: true };
+    Game.players.white = { name: "Player 2", isLocal: true };
+  } else if (Game.mode === "online2p") {
+    if (Game.localColor) {
+      Game.players[Game.localColor] = { name: nick || "Player", isLocal: true };
+      const other = opponentOf(Game.localColor);
+      if (!Game.players[other] || Game.players[other].isLocal) {
+        Game.players[other] = { name: "Waiting\u2026", isLocal: false };
+      }
+    } else {
+      Game.players.black = { name: "Player 1", isLocal: true };
+      Game.players.white = { name: "Waiting\u2026", isLocal: false };
+    }
+  } else if (Game.mode === "vscomputer") {
+    const human = Game.humanColor || "black";
+    const cpu = opponentOf(human);
+    Game.players[human] = { name: nick || "You", isLocal: true };
+    Game.players[cpu] = { name: "CPU", isLocal: false };
+  } else if (Game.mode === "computerself") {
+    Game.players.black = { name: "CPU \u00b7 Black", isLocal: false };
+    Game.players.white = { name: "CPU \u00b7 White", isLocal: false };
+  }
+}
+
+function setupMessageForMode() {
+  if (Game.mode === "local2p") {
+    return "Move a piece to begin \u2014 black moves first. White may swap colors instead of moving, on their first turn only.";
+  }
+  if (Game.mode === "online2p") {
+    if (!Game.conn || !Game.conn.open) return "Create a game to host, or join one with a code.";
+    return Game.isHost ? "Move a piece to begin." : "Waiting for the host to move first.";
+  }
+  if (Game.mode === "vscomputer") return `You are playing ${Game.humanColor}. Move a piece to begin.`;
+  if (Game.mode === "computerself") return "Two computer players will begin automatically.";
+  return "";
+}
+
+/** If the color due to move first is computer-controlled, there's no
+ *  human gesture to wait for — commit to "playing" right away and let
+ *  the CPU make its move. */
+function maybeAutoStartFromSetup() {
+  if (Game.phase !== "setup") return;
+  if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
+  const mover = Game.players[Game.turn];
+  if (mover && !mover.isLocal) {
+    Game.phase = "playing";
+    updateSetupVisibility();
+    updateStatusUI();
+    maybeTriggerCpuMove();
+  }
 }
 
 // =======================================================================
@@ -1218,12 +1245,13 @@ function wireConnection(conn) {
   Game.conn = conn;
   conn.on("open", () => {
     dom.onlineStatus.textContent = Game.isHost
-      ? "Opponent connected. Ready to start."
-      : "Connected. Waiting for the host to start the game.";
+      ? "Opponent connected."
+      : "Connected. Waiting for the host's board.";
     dom.onlineStatus.className = "online-status ok";
     const myName = dom.nicknameInput.value.trim() || (Game.isHost ? "Player 1" : "Player 2");
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
-    updateButtonsForPhase();
+    if (Game.isHost) broadcastPreview();
+    updateStatusUI();
   });
   conn.on("data", (payload) => handleRemoteMessage(payload));
   conn.on("close", () => {
@@ -1237,26 +1265,42 @@ function wireConnection(conn) {
   });
 }
 
+/** Host only: sends the current live preview board (and player names) to
+ *  the connected guest, so their screen matches — sent once on connect,
+ *  and again any time the host changes radius/pieces while still in
+ *  "setup". The actual game start is a "move" message, same as any other
+ *  move, once the host (always black, moving first) actually moves. */
+function broadcastPreview() {
+  sendToRemote({
+    type: "preview",
+    radius: Game.radius,
+    piecesPerColor: Game.piecesPerColor,
+    cells: Array.from(Game.cells.values()),
+    players: Game.players,
+  });
+}
+
 function handleRemoteMessage(msg) {
   switch (msg.type) {
-    case "start": {
+    case "preview": {
       Game.radius = msg.radius;
       Game.piecesPerColor = msg.piecesPerColor;
       const cells = new Map();
       for (const c of msg.cells) cells.set(HexGeometry.key(c.q, c.r), { q: c.q, r: c.r, color: c.color });
-      const neighborKeys = BoardInit.buildNeighborMap(cells);
       Game.cells = cells;
-      Game.neighborKeys = neighborKeys;
+      Game.neighborKeys = BoardInit.buildNeighborMap(cells);
       Game.turn = "black";
       Game.pieRuleAvailable = true;
       Game.selectedKey = null;
       Game.lastMove = null;
       Game.winner = null;
+      Game.endReason = null;
       Game.players = msg.players;
-      setPhase("playing");
+      Game.phase = "setup";
+      updateSetupVisibility();
       renderBoard();
       updateStatusUI();
-      showMessage("Game started.");
+      showMessage(setupMessageForMode());
       break;
     }
     case "move": {
@@ -1312,6 +1356,7 @@ dom.createGameBtn.addEventListener("click", () => {
   Game.localColor = "black";
   const id = "selfo-" + randomGameId();
   Game.gameId = id.replace("selfo-", "");
+  beginSetupPreview(); // Game.gameId is preserved (online2p keeps its own id) — this just refreshes players/message
   dom.onlineStatus.textContent = "Opening room...";
   dom.onlineStatus.className = "online-status";
 
@@ -1347,6 +1392,7 @@ dom.joinCodeSubmit.addEventListener("click", () => {
   Game.isHost = false;
   Game.localColor = "white";
   Game.gameId = code;
+  beginSetupPreview(); // a local placeholder, replaced the moment the host's "preview" message arrives
   dom.gameIdValue.textContent = code;
 
   dom.onlineStatus.textContent = "Connecting...";
@@ -1361,7 +1407,6 @@ dom.joinCodeSubmit.addEventListener("click", () => {
     dom.onlineStatus.textContent = "Could not connect. Check the code.";
     dom.onlineStatus.className = "online-status err";
   });
-  updatePlayersUI();
 });
 
 dom.copyLinkBtn.addEventListener("click", () => {
@@ -1432,8 +1477,9 @@ dom.downloadBtn.addEventListener("click", () => {
 
 function boot() {
   resetAllRangeInputs();
-  setPhase("mode-select");
-  updateStatusUI();
+  Game.mode = CONFIG.DEFAULT_MODE;
+  syncModeButtonsSelection();
+  beginSetupPreview();
 
   let hideOnboarding = false;
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }

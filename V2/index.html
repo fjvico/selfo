@@ -19,7 +19,7 @@
       </div>
       <div class="game-id-wrap">
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
-        <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">COPY LINK</button>
+        <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
       </div>
     </div>
     <div class="status-wrap">
@@ -35,15 +35,6 @@
     <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup">
 
-      <!-- start / stop, with the nickname field alongside it — always the
-           top control in this panel -->
-      <div class="setup-block start-row" id="startBlock" hidden>
-        <button id="startGameBtn" class="btn btn-metal-accent" disabled>Start game</button>
-        <div class="nickname-inline" id="nicknameBlock" hidden>
-          <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
-        </div>
-      </div>
-
       <!-- mode selection -->
       <div class="setup-block" id="modeSelectBlock">
         <label class="setup-label">Mode</label>
@@ -53,6 +44,11 @@
           <button class="mode-btn" data-mode="vscomputer">Vs computer<br /><small>you vs CPU</small></button>
           <button class="mode-btn" data-mode="computerself">Computer vs computer<br /><small>watch CPU play</small></button>
         </div>
+      </div>
+
+      <!-- nickname (online / vs computer only) -->
+      <div class="setup-block" id="nicknameBlock" hidden>
+        <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
       </div>
 
       <!-- online connection block (create / join) -->
@@ -90,7 +86,7 @@
         </label>
         <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
 
-        <fieldset class="cpu-params" id="cpuParamsBlock" disabled>
+        <fieldset class="cpu-params" id="cpuParamsBlock">
           <legend>Computer</legend>
           <label class="setup-label" for="cpuTimeRange">
             Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
@@ -138,7 +134,6 @@
       </div>
 
       <div class="btn-stack">
-        <button id="newGameBtn" class="btn btn-metal-accent">New game</button>
         <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
       </div>
 
