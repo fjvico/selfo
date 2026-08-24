@@ -331,15 +331,41 @@ body {
 .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-.chip-btn.chip-on {
+/* "Save records" toggle: a real checkbox behind a <label>, so clicking
+   anywhere on the label (native browser behavior, not dependent on any
+   JS event listener) flips it. All ON/OFF visuals are driven purely by
+   the :checked pseudo-class — even if a script error ever broke the
+   JS on this page, the switch itself would still visibly toggle. */
+.save-toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+.save-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.save-off-text { display: inline; }
+.save-on-text { display: none; }
+.save-toggle-input:checked ~ .save-on-text { display: inline; }
+.save-toggle-input:checked ~ .save-off-text { display: none; }
+
+.save-toggle-chip:has(.save-toggle-input:checked) {
   color: var(--accent);
   border-color: var(--accent-dim);
   box-shadow: 0 0 8px var(--accent-glow) inset;
 }
-.chip-btn.chip-off {
-  color: var(--metal-mid);
-  border-color: var(--metal-line);
-  background: #14171a;
+.save-toggle-chip:not(:has(.save-toggle-input:checked)) {
+  color: var(--danger);
+  border-color: #7a2a32;
+}
+/* focus-visible fallback for keyboard users, and for browsers without :has() support */
+.save-toggle-input:focus-visible ~ * {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ---------------------------------------------------------------

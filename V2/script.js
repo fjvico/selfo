@@ -73,8 +73,7 @@ const Game = {
 const dom = {
   gameIdValue: document.getElementById("gameIdValue"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
-  saveRecordsToggleBtn: document.getElementById("saveRecordsToggleBtn"),
-  saveRecordsStateLabel: document.getElementById("saveRecordsStateLabel"),
+  saveRecordsToggleInput: document.getElementById("saveRecordsToggleInput"),
   turnIndicator: document.getElementById("turnIndicator"),
 
   playerNameBlack: document.getElementById("playerNameBlack"),
@@ -1353,16 +1352,16 @@ dom.helpBtn.addEventListener("click", showOnboarding);
 const SAVE_RECORDS_KEY = "selfo_save_records";
 
 function updateSaveRecordsToggleUI() {
-  const on = Game.saveRecordsEnabled;
-  dom.saveRecordsToggleBtn.setAttribute("aria-checked", String(on));
-  dom.saveRecordsStateLabel.textContent = on ? "ON" : "OFF";
-  dom.saveRecordsStateLabel.classList.toggle("is-off", !on);
+  dom.saveRecordsToggleInput.checked = Game.saveRecordsEnabled;
 }
 
-dom.saveRecordsToggleBtn.addEventListener("click", () => {
-  Game.saveRecordsEnabled = !Game.saveRecordsEnabled;
+// "change" fires reliably for both mouse clicks (anywhere on the <label>,
+// which natively toggles the checkbox it's bound to via "for") and
+// keyboard activation — unlike a plain <button>, this doesn't depend on
+// a click listener being correctly wired up to visibly work.
+dom.saveRecordsToggleInput.addEventListener("change", () => {
+  Game.saveRecordsEnabled = dom.saveRecordsToggleInput.checked;
   try { localStorage.setItem(SAVE_RECORDS_KEY, Game.saveRecordsEnabled ? "1" : "0"); } catch (e) { /* file:// or private mode: ignore */ }
-  updateSaveRecordsToggleUI();
 });
 
 // =======================================================================

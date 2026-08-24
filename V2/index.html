@@ -23,13 +23,11 @@
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
         <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">COPY LINK</button>
       </div>
-      <div class="save-toggle-wrap" title="When on, a JSON record of each finished game is downloaded automatically">
-        <span class="save-toggle-label">Save records</span>
-        <button id="saveRecordsToggleBtn" class="toggle-switch" type="button" role="switch" aria-checked="true">
-          <span class="toggle-knob"></span>
-        </button>
-        <span class="save-toggle-state" id="saveRecordsStateLabel">ON</span>
-      </div>
+      <label class="chip-btn save-toggle-chip" for="saveRecordsToggleInput" title="When on, a JSON record of each finished game is downloaded automatically">
+        <input type="checkbox" id="saveRecordsToggleInput" class="save-toggle-input" checked />
+        <span class="save-on-text">SAVE RECORDS: ON</span>
+        <span class="save-off-text">SAVE RECORDS: OFF</span>
+      </label>
     </div>
     <div class="status-wrap">
       <span id="turnIndicator" class="turn-indicator"></span>
