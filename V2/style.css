@@ -14,7 +14,7 @@
   /* board tones, as specified */
   --cell-fill: #808080;      /* 50% gray */
   --cell-fill-hover: #8f8f8f;
-  --cell-edge: #595959;      /* darker than the cell fill, ~35% gray, so edges read clearly */
+  --cell-edge: #707070;      /* just a touch darker than the fill — barely visible */
 
   /* accent (cool cyan, "energy" glow) */
   --accent: #35e0ff;

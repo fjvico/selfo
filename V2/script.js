@@ -1453,7 +1453,17 @@ function handleRemoteMessage(msg) {
       Game.lastMove = null;
       Game.winner = null;
       Game.endReason = null;
-      Game.players = msg.players;
+      // Only adopt the sender's info for the *other* color. Never let an
+      // incoming preview clobber our own name/isLocal — msg.players was
+      // built from the sender's point of view, where our color is just
+      // a "Waiting..." placeholder (a race: they broadcast before
+      // hearing our own nickname), so blindly replacing Game.players
+      // wholesale wiped out our own chosen name and made it stop being
+      // editable (isLocal flipped to false).
+      const otherColor = opponentOf(Game.localColor);
+      if (msg.players && msg.players[otherColor]) {
+        Game.players[otherColor] = { name: msg.players[otherColor].name, isLocal: false };
+      }
       Game.phase = "setup";
       updateSetupVisibility();
       renderBoard();
