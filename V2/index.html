@@ -35,7 +35,20 @@
     <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup">
 
-      <!-- mode selection -->
+      <!-- board parameters: always visible, always first, fixed position -->
+      <div class="setup-block" id="boardParamsBlock">
+        <label class="setup-label" for="radiusRange">
+          Board radius <span class="value-pill" id="radiusValue">3</span>
+        </label>
+        <input type="range" id="radiusRange" min="2" max="6" step="1" value="3" class="range-input" autocomplete="off" />
+
+        <label class="setup-label" for="piecesRange">
+          Pieces per player <span class="value-pill" id="piecesValue">&mdash;</span>
+        </label>
+        <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
+      </div>
+
+      <!-- mode selection: always visible -->
       <div class="setup-block" id="modeSelectBlock">
         <label class="setup-label">Mode</label>
         <div class="mode-grid">
@@ -46,10 +59,7 @@
         </div>
       </div>
 
-      <!-- nickname (online / vs computer only) -->
-      <div class="setup-block" id="nicknameBlock" hidden>
-        <input id="nicknameInput" class="text-input" maxlength="18" placeholder="Player" autocomplete="off" />
-      </div>
+      <!-- below here: whatever applies to the current mode -->
 
       <!-- online connection block (create / join) -->
       <div class="setup-block" id="onlineBlock" hidden>
@@ -65,39 +75,27 @@
         <div id="onlineStatus" class="online-status"></div>
       </div>
 
-      <!-- color choice (vs computer only) -->
+      <!-- CPU search parameters (vs computer / computer vs computer only) -->
+      <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>
+        <legend>Computer</legend>
+        <label class="setup-label" for="cpuTimeRange">
+          Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
+        </label>
+        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" autocomplete="off" />
+
+        <label class="setup-label" for="cpuDepthRange">
+          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
+        </label>
+        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" autocomplete="off" />
+      </fieldset>
+
+      <!-- color choice (vs computer only) — last, so it's the final choice before play -->
       <div class="setup-block" id="colorChoiceBlock" hidden>
         <label class="setup-label">Play as</label>
         <div class="mode-grid">
           <button class="mode-btn color-btn selected" data-color="black">Black<br /><small>moves first</small></button>
           <button class="mode-btn color-btn" data-color="white">White<br /><small>pie rule</small></button>
         </div>
-      </div>
-
-      <!-- board parameters -->
-      <div class="setup-block" id="paramsBlock" hidden>
-        <label class="setup-label" for="radiusRange">
-          Board radius <span class="value-pill" id="radiusValue">3</span>
-        </label>
-        <input type="range" id="radiusRange" min="2" max="6" step="1" value="3" class="range-input" autocomplete="off" />
-
-        <label class="setup-label" for="piecesRange">
-          Pieces per player <span class="value-pill" id="piecesValue">&mdash;</span>
-        </label>
-        <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
-
-        <fieldset class="cpu-params" id="cpuParamsBlock">
-          <legend>Computer</legend>
-          <label class="setup-label" for="cpuTimeRange">
-            Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
-          </label>
-          <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" autocomplete="off" />
-
-          <label class="setup-label" for="cpuDepthRange">
-            Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
-          </label>
-          <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" autocomplete="off" />
-        </fieldset>
       </div>
     </section>
 

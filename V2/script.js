@@ -43,6 +43,7 @@ const CONFIG = {
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
   DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
+  CPU_FIRST_MOVE_GRACE_MS: 3000, // vs-computer with the CPU moving first: how long to wait, controls live, before it actually moves
 };
 
 const RULES = {
@@ -78,6 +79,7 @@ const Game = {
   },
   localColor: null, // in online mode, which color this browser controls
   humanColor: "black", // in vscomputer mode, which color the human plays
+  localNickname: null, // set by editing the "You" name label directly; null means "use the default"
 
   // online play
   gameId: null,
@@ -121,13 +123,10 @@ const dom = {
   joinCodeSubmit: document.getElementById("joinCodeSubmit"),
   onlineStatus: document.getElementById("onlineStatus"),
 
-  nicknameBlock: document.getElementById("nicknameBlock"),
-  nicknameInput: document.getElementById("nicknameInput"),
-
   colorChoiceBlock: document.getElementById("colorChoiceBlock"),
   colorButtons: Array.from(document.querySelectorAll(".color-btn")),
 
-  paramsBlock: document.getElementById("paramsBlock"),
+  boardParamsBlock: document.getElementById("boardParamsBlock"),
   radiusRange: document.getElementById("radiusRange"),
   radiusValue: document.getElementById("radiusValue"),
   piecesRange: document.getElementById("piecesRange"),
@@ -618,6 +617,7 @@ function performMove(fromKey, toKey, opts = {}) {
   if (Game.phase === "setup") {
     Game.phase = "playing";
     updateSetupVisibility();
+    flashBoardStart();
   }
 
   const fromCell = Game.cells.get(fromKey);
@@ -721,6 +721,20 @@ function flashBoardEnd() {
   const clear = () => el.classList.remove("flashing");
   el.addEventListener("animationend", clear, { once: true });
   setTimeout(clear, 1200);
+}
+
+/** Same idea as flashBoardEnd(), but green instead of cyan, and fired the
+ *  moment "setup" (the live preview) becomes "playing" — i.e. right when
+ *  a game actually begins, whichever side made the first move. */
+function flashBoardStart() {
+  const el = dom.boardFlash;
+  if (!el) return;
+  el.classList.remove("flashing-start");
+  void el.offsetWidth;
+  el.classList.add("flashing-start");
+  const clear = () => el.classList.remove("flashing-start");
+  el.addEventListener("animationend", clear, { once: true });
+  setTimeout(clear, 1000);
 }
 
 // =======================================================================
@@ -978,22 +992,27 @@ function scheduleCpuMove() {
 // UI state / phase management
 // =======================================================================
 
-/** Shows/hides the setup controls based on the current phase and mode.
- *  Mode buttons are always visible (per spec, so the mode can be changed
- *  any time). Everything else — online connection, color choice,
- *  nickname, board/CPU parameters — hides while a game is actually being
- *  played, and reappears during "setup" (the live preview) and "ended"
- *  (so settings can be changed before the next game auto-begins). */
+/** Shows/hides the setup controls based on the current mode. Board
+ *  radius/pieces and the mode buttons are always visible, in a fixed
+ *  position, in every phase — including while a game is being played,
+ *  so the player never loses access to them (e.g. while the CPU is
+ *  thinking). Changing any of them mid-game asks for confirmation
+ *  first — see the confirmSettingChange() helper and each control's
+ *  listeners below. Mode-specific blocks (online connection, nickname,
+ *  CPU search settings, color choice) show/hide purely based on the
+ *  current mode, in every phase, for the same reason. */
 function updateSetupVisibility() {
-  const playing = Game.phase === "playing";
   const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const guestOnline = Game.mode === "online2p" && !Game.isHost;
 
-  dom.onlineBlock.hidden = playing || Game.mode !== "online2p";
-  dom.colorChoiceBlock.hidden = playing || Game.mode !== "vscomputer";
-  dom.nicknameBlock.hidden = playing || !(Game.mode === "online2p" || Game.mode === "vscomputer");
-  dom.paramsBlock.hidden = playing || guestOnline;
+  dom.onlineBlock.hidden = Game.mode !== "online2p";
+  dom.colorChoiceBlock.hidden = Game.mode !== "vscomputer";
   dom.cpuParamsBlock.hidden = !isCpuMode;
+
+  // a guest doesn't control the host's board — visible (fixed position),
+  // just inert
+  dom.radiusRange.disabled = guestOnline;
+  dom.piecesRange.disabled = guestOnline;
 
   updateButtonsForPhase();
 }
@@ -1022,8 +1041,8 @@ function updateStatusUI() {
 }
 
 function updatePlayersUI() {
-  dom.playerNameBlack.textContent = Game.players.black.name;
-  dom.playerNameWhite.textContent = Game.players.white.name;
+  if (document.activeElement !== dom.playerNameBlack) dom.playerNameBlack.textContent = Game.players.black.name;
+  if (document.activeElement !== dom.playerNameWhite) dom.playerNameWhite.textContent = Game.players.white.name;
   dom.playerYouBlack.textContent = Game.mode === "online2p" && Game.localColor === "black" ? "(you)" : "";
   dom.playerYouWhite.textContent = Game.mode === "online2p" && Game.localColor === "white" ? "(you)" : "";
   dom.playerRowBlack.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "black");
@@ -1036,14 +1055,78 @@ function updatePlayersUI() {
   dom.playerRowWhite.classList.toggle("winner", whiteWon);
   dom.playerBadgeBlack.textContent = blackWon ? "Wins" : isDraw ? "Draw" : "";
   dom.playerBadgeWhite.textContent = whiteWon ? "Wins" : isDraw ? "Draw" : "";
+
+  updateNameEditability();
 }
+
+/** A player's own name label (next to their piece color) doubles as the
+ *  nickname field: it's directly editable, but only for your own row,
+ *  and only before the game actually starts — there's no separate
+ *  "your nickname" input anymore. */
+function updateNameEditability() {
+  for (const color of ["black", "white"]) {
+    const el = color === "black" ? dom.playerNameBlack : dom.playerNameWhite;
+    const editable = Game.phase === "setup"
+      && Boolean(Game.players[color] && Game.players[color].isLocal)
+      && (Game.mode === "online2p" || Game.mode === "vscomputer");
+    if (editable) {
+      if (el.getAttribute("contenteditable") !== "true") el.setAttribute("contenteditable", "true");
+      el.title = "Click to rename";
+    } else {
+      if (el.hasAttribute("contenteditable")) {
+        if (document.activeElement === el) el.blur();
+        el.removeAttribute("contenteditable");
+      }
+      el.removeAttribute("title");
+    }
+  }
+}
+
+/** Wires the actual click-to-edit behavior for one player-name label:
+ *  select-all on focus (so typing replaces the placeholder immediately),
+ *  Enter commits, Escape reverts, and losing focus either way commits
+ *  whatever's there (falling back to "You" if left empty). */
+function wireEditableName(el, color) {
+  let previousText = "";
+
+  el.addEventListener("focus", () => {
+    if (el.getAttribute("contenteditable") !== "true") return;
+    previousText = el.textContent;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+
+  el.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); el.blur(); }
+    else if (ev.key === "Escape") { ev.preventDefault(); el.textContent = previousText; el.blur(); }
+  });
+
+  el.addEventListener("blur", () => {
+    if (el.getAttribute("contenteditable") !== "true") return;
+    const nick = el.textContent.replace(/\s+/g, " ").trim().slice(0, 18);
+    const finalName = nick || "You";
+    el.textContent = finalName;
+    Game.localNickname = finalName === "You" ? null : finalName;
+    if (Game.players[color]) Game.players[color].name = finalName;
+    if (Game.mode === "online2p" && Game.conn && Game.conn.open) {
+      sendToRemote({ type: "nickname", color, name: finalName });
+    }
+    updatePlayersUI();
+  });
+}
+
+wireEditableName(dom.playerNameBlack, "black");
+wireEditableName(dom.playerNameWhite, "white");
 
 // =======================================================================
 // Setup panel wiring
 // =======================================================================
 
-function refreshPieceRangeUI() {
-  const { min, max } = pieceRangeForRadius(Game.radius);
+function refreshPieceRangeUI(radius = Game.radius) {
+  const { min, max } = pieceRangeForRadius(radius);
   dom.piecesRange.min = String(min);
   dom.piecesRange.max = String(max);
   const mid = Math.round((min + max) / 2);
@@ -1051,17 +1134,55 @@ function refreshPieceRangeUI() {
   dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
 }
 
+/** Used by every control that defines the board itself (radius, pieces,
+ *  color choice) when changed while a game is in progress: asks whether
+ *  to abandon the current game and start a fresh one with the new
+ *  value. Returns true if the change should go ahead (not playing, or
+ *  confirmed); false if the caller must revert its control back to the
+ *  last committed value. CPU think-time/depth deliberately skip this —
+ *  they don't affect the board, so they just apply to the CPU's next
+ *  move without needing to restart anything. */
+function confirmSettingChange() {
+  if (Game.phase !== "playing") return true;
+  return confirm("End the current game and start a new one with these settings?");
+}
+
 dom.radiusRange.addEventListener("input", () => {
-  Game.radius = Number(dom.radiusRange.value);
-  dom.radiusValue.textContent = String(Game.radius);
-  refreshPieceRangeUI();
-  if (Game.phase === "setup") beginSetupPreview();
+  // live label/bounds feedback while dragging, even before it's
+  // committed (during play, committing only happens on release — see
+  // the "change" listener below)
+  dom.radiusValue.textContent = dom.radiusRange.value;
+  refreshPieceRangeUI(Number(dom.radiusRange.value));
+  if (Game.phase !== "playing") beginSetupPreview();
+});
+dom.radiusRange.addEventListener("change", () => {
+  if (Game.phase !== "playing") return; // already applied live above
+  if (confirmSettingChange()) {
+    beginSetupPreview();
+  } else {
+    dom.radiusRange.value = String(Game.radius);
+    dom.radiusValue.textContent = String(Game.radius);
+    refreshPieceRangeUI(Game.radius);
+  }
 });
 dom.piecesRange.addEventListener("input", () => {
-  const { min, max } = pieceRangeForRadius(Game.radius);
+  const { min, max } = pieceRangeForRadius(Game.phase === "playing" ? Game.radius : Number(dom.radiusRange.value));
   dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
-  if (Game.phase === "setup") beginSetupPreview();
+  if (Game.phase !== "playing") beginSetupPreview();
 });
+dom.piecesRange.addEventListener("change", () => {
+  if (Game.phase !== "playing") return;
+  if (confirmSettingChange()) {
+    beginSetupPreview();
+  } else {
+    dom.piecesRange.value = String(Game.piecesPerColor);
+    const { min, max } = pieceRangeForRadius(Game.radius);
+    dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
+  }
+});
+
+// CPU think-time/depth don't define the board, so they apply live to the
+// CPU's *next* move — no need to interrupt or restart the game for these.
 dom.cpuTimeRange.addEventListener("input", () => {
   dom.cpuTimeValue.textContent = dom.cpuTimeRange.value;
 });
@@ -1082,7 +1203,7 @@ dom.modeButtons.forEach((btn) => {
  *  always visible/clickable, including the one already active — clicking
  *  it again is how you get a fresh board without changing anything. */
 function selectMode(mode) {
-  if (Game.phase === "playing" && !confirm("Abandon the current game and start a new one?")) {
+  if (!confirmSettingChange()) {
     syncModeButtonsSelection();
     return;
   }
@@ -1099,7 +1220,6 @@ function selectMode(mode) {
   dom.onlineStatus.textContent = "";
   dom.onlineStatus.className = "online-status";
   dom.joinCodeWrap.hidden = true;
-  if (mode === "online2p" || mode === "vscomputer") dom.nicknameInput.placeholder = "Your nickname";
 
   syncModeButtonsSelection();
   beginSetupPreview();
@@ -1111,13 +1231,20 @@ function syncModeButtonsSelection() {
 
 dom.colorButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
-    if (Game.phase === "playing" && !confirm("Abandon the current game and start a new one?")) return;
-    dom.colorButtons.forEach((b) => b.classList.remove("selected"));
-    btn.classList.add("selected");
+    if (btn.dataset.color === Game.humanColor) return; // no actual change
+    if (!confirmSettingChange()) {
+      syncColorButtonsSelection();
+      return;
+    }
     Game.humanColor = btn.dataset.color;
+    syncColorButtonsSelection();
     if (Game.mode === "vscomputer") beginSetupPreview();
   });
 });
+
+function syncColorButtonsSelection() {
+  dom.colorButtons.forEach((b) => b.classList.toggle("selected", b.dataset.color === Game.humanColor));
+}
 
 dom.swapColorBtn.addEventListener("click", swapColors);
 dom.offerDrawBtn.addEventListener("click", offerDraw);
@@ -1136,6 +1263,7 @@ dom.resignBtn.addEventListener("click", resign);
 function beginSetupPreview() {
   cancelScheduledCpuMove();
   cancelEndedAutoRestart();
+  cancelAutoStartGrace();
 
   Game.phase = "setup";
   Game.radius = Number(dom.radiusRange.value);
@@ -1154,6 +1282,7 @@ function beginSetupPreview() {
   if (Game.mode !== "online2p") Game.gameId = randomGameId(); // online2p keeps its room code, if any
 
   assignPreviewPlayers();
+  syncColorButtonsSelection();
 
   dom.gameIdValue.textContent = Game.gameId || "\u2014";
   dom.copyLinkBtn.disabled = !Game.gameId;
@@ -1173,25 +1302,24 @@ function beginSetupPreview() {
  *  time the preview regenerates, so nickname/color-choice edits and
  *  (for online play) newly-known opponent names all stay reflected. */
 function assignPreviewPlayers() {
-  const nick = dom.nicknameInput.value.trim();
   if (Game.mode === "local2p") {
     Game.players.black = { name: "Player 1", isLocal: true };
     Game.players.white = { name: "Player 2", isLocal: true };
   } else if (Game.mode === "online2p") {
     if (Game.localColor) {
-      Game.players[Game.localColor] = { name: nick || "Player", isLocal: true };
+      Game.players[Game.localColor] = { name: Game.localNickname || "You", isLocal: true };
       const other = opponentOf(Game.localColor);
       if (!Game.players[other] || Game.players[other].isLocal) {
         Game.players[other] = { name: "Waiting\u2026", isLocal: false };
       }
     } else {
-      Game.players.black = { name: "Player 1", isLocal: true };
+      Game.players.black = { name: Game.localNickname || "You", isLocal: true };
       Game.players.white = { name: "Waiting\u2026", isLocal: false };
     }
   } else if (Game.mode === "vscomputer") {
     const human = Game.humanColor || "black";
     const cpu = opponentOf(human);
-    Game.players[human] = { name: nick || "You", isLocal: true };
+    Game.players[human] = { name: Game.localNickname || "You", isLocal: true };
     Game.players[cpu] = { name: "CPU", isLocal: false };
   } else if (Game.mode === "computerself") {
     Game.players.black = { name: "CPU \u00b7 Black", isLocal: false };
@@ -1213,18 +1341,48 @@ function setupMessageForMode() {
 }
 
 /** If the color due to move first is computer-controlled, there's no
- *  human gesture to wait for — commit to "playing" right away and let
- *  the CPU make its move. */
+ *  human move to wait for indefinitely. "Computer vs computer" begins
+ *  immediately — nothing for a human to configure once it's running.
+ *  "Vs computer" with the CPU moving first (human chose white) instead
+ *  waits a short grace period, controls fully live the whole time, so
+ *  there's a real chance to change something before it commits — this
+ *  also fixes the CPU-first case never showing its controls again. */
+let autoStartGraceTimer = null;
+
+function cancelAutoStartGrace() {
+  if (autoStartGraceTimer !== null) {
+    clearTimeout(autoStartGraceTimer);
+    autoStartGraceTimer = null;
+  }
+}
+
 function maybeAutoStartFromSetup() {
+  cancelAutoStartGrace();
   if (Game.phase !== "setup") return;
   if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
   const mover = Game.players[Game.turn];
-  if (mover && !mover.isLocal) {
-    Game.phase = "playing";
-    updateSetupVisibility();
-    updateStatusUI();
-    maybeTriggerCpuMove();
+  if (!mover || mover.isLocal) return; // a human moves first — just wait for them
+
+  if (Game.mode === "computerself") {
+    commitPlayingAndTriggerCpu();
+    return;
   }
+
+  const graceSeconds = Math.round(CONFIG.CPU_FIRST_MOVE_GRACE_MS / 1000);
+  showMessage(`The CPU moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`);
+  autoStartGraceTimer = setTimeout(() => {
+    autoStartGraceTimer = null;
+    if (Game.phase !== "setup") return; // state moved on already (mode/param change, etc.)
+    commitPlayingAndTriggerCpu();
+  }, CONFIG.CPU_FIRST_MOVE_GRACE_MS);
+}
+
+function commitPlayingAndTriggerCpu() {
+  Game.phase = "playing";
+  updateSetupVisibility();
+  updateStatusUI();
+  flashBoardStart();
+  maybeTriggerCpuMove();
 }
 
 // =======================================================================
@@ -1248,7 +1406,7 @@ function wireConnection(conn) {
       ? "Opponent connected."
       : "Connected. Waiting for the host's board.";
     dom.onlineStatus.className = "online-status ok";
-    const myName = dom.nicknameInput.value.trim() || (Game.isHost ? "Player 1" : "Player 2");
+    const myName = Game.localNickname || "You";
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
     if (Game.isHost) broadcastPreview();
     updateStatusUI();
@@ -1351,6 +1509,7 @@ function handleRemoteMessage(msg) {
 }
 
 dom.createGameBtn.addEventListener("click", () => {
+  if (!confirmSettingChange()) return;
   teardownOnline();
   Game.isHost = true;
   Game.localColor = "black";
@@ -1388,6 +1547,7 @@ dom.joinGameBtn.addEventListener("click", () => {
 dom.joinCodeSubmit.addEventListener("click", () => {
   const code = dom.joinCodeInput.value.trim();
   if (!code) return;
+  if (!confirmSettingChange()) return;
   teardownOnline();
   Game.isHost = false;
   Game.localColor = "white";

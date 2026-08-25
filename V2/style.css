@@ -24,6 +24,8 @@
   --danger: #ff5c6c;
   --danger-glow: rgba(255, 92, 108, 0.5);
 
+  --start-glow: rgba(110, 255, 150, 0.55); /* green — distinct from the cyan end-of-game flash */
+
   --piece-black-a: #3a3f45;
   --piece-black-b: #06070a;
   --piece-white-a: #ffffff;
@@ -158,7 +160,9 @@ body {
 
 /* Non-blocking "game over" cue: a brief glow across the board itself
    instead of a dialog that covers it. Triggered by adding/removing the
-   .flashing class (see script.js's flashBoardEnd()). */
+   .flashing class (see script.js's flashBoardEnd()). A second variant,
+   .flashing-start (green instead of cyan), marks the moment a game
+   actually begins — see flashBoardStart(). */
 .board-flash-overlay {
   position: absolute;
   inset: 0;
@@ -169,6 +173,10 @@ body {
 .board-flash-overlay.flashing {
   animation: boardEndFlash 1s ease-out;
   background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
+}
+.board-flash-overlay.flashing-start {
+  animation: boardEndFlash 0.8s ease-out;
+  background: radial-gradient(ellipse at center, var(--start-glow) 0%, transparent 70%);
 }
 @keyframes boardEndFlash {
   0%   { opacity: 0; }
@@ -222,6 +230,21 @@ body {
 }
 .swatch-white { background: radial-gradient(circle at 35% 30%, var(--piece-white-a), var(--piece-white-b)); }
 .player-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-name[contenteditable="true"] {
+  cursor: text;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-bottom: 1px dashed var(--accent-dim);
+}
+.player-name[contenteditable="true"]:hover {
+  background: rgba(53, 224, 255, 0.08);
+}
+.player-name[contenteditable="true"]:focus {
+  outline: none;
+  background: rgba(53, 224, 255, 0.12);
+  border-bottom-color: var(--accent);
+}
 .player-you { font-size: 11px; color: var(--accent); }
 .player-badge {
   font-family: var(--font-display), sans-serif;
