@@ -254,6 +254,7 @@ body {
   display: inline-block;
   transform: scaleX(-1);
 }
+.edit-icon[hidden] { display: none; }
 .edit-icon:hover { color: var(--accent); }
 .player-you { font-size: 11px; color: var(--accent); }
 .player-badge {

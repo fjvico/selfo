@@ -1338,10 +1338,10 @@ function assignPreviewPlayers() {
     const human = Game.humanColor || "black";
     const cpu = opponentOf(human);
     Game.players[human] = { name: Game.localNickname || "You", isLocal: true };
-    Game.players[cpu] = { name: "CPU", isLocal: false };
+    Game.players[cpu] = { name: "AI", isLocal: false };
   } else if (Game.mode === "computerself") {
-    Game.players.black = { name: "CPU \u00b7 Black", isLocal: false };
-    Game.players.white = { name: "CPU \u00b7 White", isLocal: false };
+    Game.players.black = { name: "AI \u00b7 Black", isLocal: false };
+    Game.players.white = { name: "AI \u00b7 White", isLocal: false };
   }
 }
 
@@ -1382,7 +1382,7 @@ function scheduleGameStartGrace() {
   const cpuFirst = mover && !mover.isLocal;
   showMessage(
     cpuFirst
-      ? `The CPU moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`
+      ? `The AI moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`
       : `Starting in ${graceSeconds}s\u2026 change any setting above to adjust first.`
   );
 
