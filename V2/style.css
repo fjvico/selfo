@@ -245,6 +245,13 @@ body {
   background: rgba(53, 224, 255, 0.12);
   border-bottom-color: var(--accent);
 }
+.edit-icon {
+  font-size: 12px;
+  color: var(--metal-mid);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.edit-icon:hover { color: var(--accent); }
 .player-you { font-size: 11px; color: var(--accent); }
 .player-badge {
   font-family: var(--font-display), sans-serif;

@@ -98,6 +98,8 @@ const dom = {
 
   playerNameBlack: document.getElementById("playerNameBlack"),
   playerNameWhite: document.getElementById("playerNameWhite"),
+  editIconBlack: document.getElementById("editIconBlack"),
+  editIconWhite: document.getElementById("editIconWhite"),
   playerYouBlack: document.getElementById("playerYouBlack"),
   playerYouWhite: document.getElementById("playerYouWhite"),
   playerBadgeBlack: document.getElementById("playerBadgeBlack"),
@@ -1053,8 +1055,10 @@ function updatePlayersUI() {
   const isDraw = Game.phase === "ended" && Game.winner === null;
   dom.playerRowBlack.classList.toggle("winner", blackWon);
   dom.playerRowWhite.classList.toggle("winner", whiteWon);
-  dom.playerBadgeBlack.textContent = blackWon ? "Wins" : isDraw ? "Draw" : "";
-  dom.playerBadgeWhite.textContent = whiteWon ? "Wins" : isDraw ? "Draw" : "";
+  dom.playerBadgeBlack.textContent = blackWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
+  dom.playerBadgeWhite.textContent = whiteWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
+  dom.playerBadgeBlack.title = blackWon ? "Winner" : "";
+  dom.playerBadgeWhite.title = whiteWon ? "Winner" : "";
 
   updateNameEditability();
 }
@@ -1066,9 +1070,11 @@ function updatePlayersUI() {
 function updateNameEditability() {
   for (const color of ["black", "white"]) {
     const el = color === "black" ? dom.playerNameBlack : dom.playerNameWhite;
+    const icon = color === "black" ? dom.editIconBlack : dom.editIconWhite;
     const editable = Game.phase === "setup"
       && Boolean(Game.players[color] && Game.players[color].isLocal)
       && (Game.mode === "online2p" || Game.mode === "vscomputer");
+    icon.hidden = !editable;
     if (editable) {
       if (el.getAttribute("contenteditable") !== "true") el.setAttribute("contenteditable", "true");
       el.title = "Click to rename";
@@ -1120,6 +1126,8 @@ function wireEditableName(el, color) {
 
 wireEditableName(dom.playerNameBlack, "black");
 wireEditableName(dom.playerNameWhite, "white");
+dom.editIconBlack.addEventListener("click", () => dom.playerNameBlack.focus());
+dom.editIconWhite.addEventListener("click", () => dom.playerNameWhite.focus());
 
 // =======================================================================
 // Setup panel wiring
