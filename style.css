@@ -251,6 +251,8 @@ body {
   color: var(--metal-mid);
   flex-shrink: 0;
   cursor: pointer;
+  display: inline-block;
+  transform: scaleX(-1);
 }
 .edit-icon:hover { color: var(--accent); }
 .player-you { font-size: 11px; color: var(--accent); }
