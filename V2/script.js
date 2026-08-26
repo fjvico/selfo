@@ -1061,6 +1061,8 @@ function updatePlayersUI() {
   dom.playerRowWhite.classList.toggle("winner", whiteWon);
   dom.playerBadgeBlack.textContent = blackWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
   dom.playerBadgeWhite.textContent = whiteWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
+  dom.playerBadgeBlack.classList.toggle("badge-icon", blackWon);
+  dom.playerBadgeWhite.classList.toggle("badge-icon", whiteWon);
   dom.playerBadgeBlack.title = blackWon ? "Winner" : "";
   dom.playerBadgeWhite.title = whiteWon ? "Winner" : "";
 
@@ -1413,6 +1415,7 @@ function teardownOnline() {
   if (Game.conn) { try { Game.conn.close(); } catch (e) {} Game.conn = null; }
   if (Game.peer) { try { Game.peer.destroy(); } catch (e) {} Game.peer = null; }
   Game.localColor = null;
+  updateOnlineButtonsState();
 }
 
 function sendToRemote(payload) {
@@ -1421,6 +1424,7 @@ function sendToRemote(payload) {
 
 function wireConnection(conn) {
   Game.conn = conn;
+  updateOnlineButtonsState();
   conn.on("open", () => {
     dom.onlineStatus.textContent = Game.isHost
       ? "Opponent connected."
@@ -1436,10 +1440,14 @@ function wireConnection(conn) {
     dom.onlineStatus.textContent = "Opponent disconnected.";
     dom.onlineStatus.className = "online-status err";
     showMessage("Your opponent disconnected.");
+    Game.conn = null;
+    updateOnlineButtonsState();
   });
   conn.on("error", (err) => {
     dom.onlineStatus.textContent = "Connection error.";
     dom.onlineStatus.className = "online-status err";
+    Game.conn = null;
+    updateOnlineButtonsState();
   });
 }
 
@@ -1473,6 +1481,19 @@ function handleRemoteMessage(msg) {
       Game.lastMove = null;
       Game.winner = null;
       Game.endReason = null;
+      // The board radius/pieces bars are always visible and are never
+      // ours to control here (we're the guest), but they should still
+      // reflect the host's actual values rather than staying stuck at
+      // whatever this browser had before connecting.
+      dom.radiusRange.value = String(Game.radius);
+      dom.radiusValue.textContent = String(Game.radius);
+      {
+        const { min, max } = pieceRangeForRadius(Game.radius);
+        dom.piecesRange.min = String(min);
+        dom.piecesRange.max = String(max);
+        dom.piecesRange.value = String(Game.piecesPerColor);
+        dom.piecesValue.textContent = `${Game.piecesPerColor} (${min}-${max})`;
+      }
       // Only adopt the sender's info for the *other* color. Never let an
       // incoming preview clobber our own name/isLocal — msg.players was
       // built from the sender's point of view, where our color is just
@@ -1539,6 +1560,16 @@ function handleRemoteMessage(msg) {
   }
 }
 
+/** Grays out (disables) "Join game" and "Connect" whenever they wouldn't
+ *  do anything right now — while a connection attempt is already under
+ *  way or already succeeded. Re-enabled after teardownOnline() (fresh
+ *  start) or if the connection drops/fails, so retrying is possible. */
+function updateOnlineButtonsState() {
+  const busy = Boolean(Game.conn);
+  dom.joinGameBtn.disabled = busy;
+  dom.joinCodeSubmit.disabled = busy;
+}
+
 dom.createGameBtn.addEventListener("click", () => {
   if (!confirmSettingChange()) return;
   teardownOnline();
@@ -1575,8 +1606,12 @@ dom.joinGameBtn.addEventListener("click", () => {
   if (urlCode) dom.joinCodeInput.value = urlCode;
 });
 
-dom.joinCodeSubmit.addEventListener("click", () => {
-  const code = dom.joinCodeInput.value.trim();
+/** Actually connects as a guest to the given room code. Used both by the
+ *  manual "Connect" button (type/paste a code you were given some other
+ *  way) and, directly, by an invite-link visit — which skips straight to
+ *  this instead of making the visitor also click "Connect" themselves;
+ *  the manual code-entry flow above just stays available as an option. */
+function connectToRoom(code) {
   if (!code) return;
   if (!confirmSettingChange()) return;
   teardownOnline();
@@ -1597,7 +1632,12 @@ dom.joinCodeSubmit.addEventListener("click", () => {
   Game.peer.on("error", () => {
     dom.onlineStatus.textContent = "Could not connect. Check the code.";
     dom.onlineStatus.className = "online-status err";
+    updateOnlineButtonsState();
   });
+}
+
+dom.joinCodeSubmit.addEventListener("click", () => {
+  connectToRoom(dom.joinCodeInput.value.trim());
 });
 
 dom.copyLinkBtn.addEventListener("click", () => {
@@ -1676,11 +1716,14 @@ function boot() {
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }
   if (!hideOnboarding) showOnboarding();
 
-  // if the page was opened from an invite link, pre-select online mode
+  // an invite link connects directly — no need to also click "Connect";
+  // the code-entry UI (revealed by "Join game") stays available as an
+  // option for codes you were given some other way
   const urlCode = new URLSearchParams(location.search).get("join");
   if (urlCode) {
     dom.modeButtons.find((b) => b.dataset.mode === "online2p")?.click();
-    dom.joinGameBtn.click();
+    dom.joinGameBtn.click(); // reveals the code UI too, showing the code being used
+    connectToRoom(urlCode);
   }
 }
 
