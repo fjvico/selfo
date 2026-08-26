@@ -80,7 +80,7 @@ const Game = {
   },
   localColor: null, // in online mode, which color this browser controls
   humanColor: "black", // in vscomputer mode, which color the human plays
-  localNickname: null, // set by editing the "You" name label directly; null means "use the default"
+  localNames: { black: null, white: null }, // set by editing a name label directly; null means "use the default" for that slot
 
   // online play
   gameId: null,
@@ -1079,7 +1079,7 @@ function updateNameEditability() {
     const icon = color === "black" ? dom.editIconBlack : dom.editIconWhite;
     const editable = Game.phase === "setup"
       && Boolean(Game.players[color] && Game.players[color].isLocal)
-      && (Game.mode === "online2p" || Game.mode === "vscomputer");
+      && (Game.mode === "online2p" || Game.mode === "vscomputer" || Game.mode === "local2p");
     icon.hidden = !editable;
     if (editable) {
       if (el.getAttribute("contenteditable") !== "true") el.setAttribute("contenteditable", "true");
@@ -1094,10 +1094,18 @@ function updateNameEditability() {
   }
 }
 
+/** The placeholder a name reverts to when left empty — "Player 1"/"Player
+ *  2" in local2p (two distinct people sharing this device), "You"
+ *  everywhere else (online2p/vscomputer, a single local identity). */
+function defaultNameFor(color) {
+  if (Game.mode === "local2p") return color === "black" ? "Player 1" : "Player 2";
+  return "You";
+}
+
 /** Wires the actual click-to-edit behavior for one player-name label:
  *  select-all on focus (so typing replaces the placeholder immediately),
  *  Enter commits, Escape reverts, and losing focus either way commits
- *  whatever's there (falling back to "You" if left empty). */
+ *  whatever's there (falling back to this mode's default if left empty). */
 function wireEditableName(el, color) {
   let previousText = "";
 
@@ -1118,10 +1126,11 @@ function wireEditableName(el, color) {
 
   el.addEventListener("blur", () => {
     if (el.getAttribute("contenteditable") !== "true") return;
+    const fallback = defaultNameFor(color);
     const nick = el.textContent.replace(/\s+/g, " ").trim().slice(0, 18);
-    const finalName = nick || "You";
+    const finalName = nick || fallback;
     el.textContent = finalName;
-    Game.localNickname = finalName === "You" ? null : finalName;
+    Game.localNames[color] = finalName === fallback ? null : finalName;
     if (Game.players[color]) Game.players[color].name = finalName;
     if (Game.mode === "online2p" && Game.conn && Game.conn.open) {
       sendToRemote({ type: "nickname", color, name: finalName });
@@ -1321,23 +1330,23 @@ function beginSetupPreview() {
  *  (for online play) newly-known opponent names all stay reflected. */
 function assignPreviewPlayers() {
   if (Game.mode === "local2p") {
-    Game.players.black = { name: "Player 1", isLocal: true };
-    Game.players.white = { name: "Player 2", isLocal: true };
+    Game.players.black = { name: Game.localNames.black || "Player 1", isLocal: true };
+    Game.players.white = { name: Game.localNames.white || "Player 2", isLocal: true };
   } else if (Game.mode === "online2p") {
     if (Game.localColor) {
-      Game.players[Game.localColor] = { name: Game.localNickname || "You", isLocal: true };
+      Game.players[Game.localColor] = { name: Game.localNames[Game.localColor] || "You", isLocal: true };
       const other = opponentOf(Game.localColor);
       if (!Game.players[other] || Game.players[other].isLocal) {
         Game.players[other] = { name: "Waiting\u2026", isLocal: false };
       }
     } else {
-      Game.players.black = { name: Game.localNickname || "You", isLocal: true };
+      Game.players.black = { name: Game.localNames.black || "You", isLocal: true };
       Game.players.white = { name: "Waiting\u2026", isLocal: false };
     }
   } else if (Game.mode === "vscomputer") {
     const human = Game.humanColor || "black";
     const cpu = opponentOf(human);
-    Game.players[human] = { name: Game.localNickname || "You", isLocal: true };
+    Game.players[human] = { name: Game.localNames[human] || "You", isLocal: true };
     Game.players[cpu] = { name: "AI", isLocal: false };
   } else if (Game.mode === "computerself") {
     Game.players.black = { name: "AI \u00b7 Black", isLocal: false };
@@ -1430,7 +1439,7 @@ function wireConnection(conn) {
       ? "Opponent connected."
       : "Connected. Waiting for the host's board.";
     dom.onlineStatus.className = "online-status ok";
-    const myName = Game.localNickname || "You";
+    const myName = Game.localNames[Game.localColor] || "You";
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
     if (Game.isHost) broadcastPreview();
     updateStatusUI();
