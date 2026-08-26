@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego de Mesa Selfo - Online & VS IA</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg-wood: #2c1d11;
+      --panel-bg: #f4ebd0;
+      --board-bg: #3d2b1f;
+      --cell-gray: #808080;
+      --cell-stroke: #1a1a1a;
+      --accent-gold: #c5a059;
+      --text-dark: #2b2118;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      background-color: var(--bg-wood);
+      background-image: radial-gradient(circle at center, #3d2817 0%, #1a100a 100%);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 15px;
+    }
+
+    .container {
+      background: var(--panel-bg);
+      border: 8px solid var(--accent-gold);
+      border-radius: 12px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      max-width: 900px;
+      width: 100%;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+      color: #3a220f;
+      text-transform: uppercase;
+      border-bottom: 2px solid var(--accent-gold);
+      padding-bottom: 5px;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      color: #3a220f;
+      margin-bottom: 15px;
+    }
+
+    .panel { display: none; }
+    .active { display: block; }
+
+    .form-group {
+      margin: 15px 0;
+      text-align: left;
+    }
+
+    label { display: block; font-weight: bold; margin-bottom: 5px; }
+
+    input, select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #a89270;
+      border-radius: 4px;
+      background: #fffdf5;
+      font-family: inherit;
+      font-size: 1rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .mode-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 320px;
+      margin: 20px auto;
+    }
+
+    button {
+      background: #5c3a21;
+      color: #f4ebd0;
+      border: 2px solid var(--accent-gold);
+      padding: 10px 20px;
+      font-size: 1rem;
+      font-weight: bold;
+      font-family: inherit;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 5px;
+    }
+
+    button:hover {
+      background: #7a4e2c;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+
+    .btn-ai { background: #2d5a27; }
+    .btn-ai:hover { background: #3d7336; }
+
+    .btn-action {
+      padding: 6px 12px;
+      font-size: 0.9rem;
+      margin-top: 0;
+    }
+
+    .btn-draw { background: #2b547e; }
+    .btn-draw:hover { background: #3a6898; }
+
+    .btn-cancel { background: #800000; }
+    .btn-cancel:hover { background: #a00000; }
+
+    .game-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #e6d7b8;
+      padding: 12px 15px;
+      border-radius: 6px;
+      border: 1px solid #c8b48c;
+      margin-bottom: 15px;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .players-list {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .status-box {
+      font-size: 1.15rem;
+      font-weight: bold;
+      color: #3a220f;
+    }
+
+    .game-tag {
+      font-family: monospace;
+      background: #2b2118;
+      color: var(--accent-gold);
+      padding: 4px 8px;
+      border-radius: 4px;
+      user-select: all;
+    }
+
+    .player-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      font-weight: bold;
+    }
+
+    .badge-black {
+      background: #1a1a1a;
+      color: #f4ebd0;
+      border: 1px solid #333;
+    }
+
+    .badge-white {
+      background: #ffffff;
+      color: #2b2118;
+      border: 1px solid #888;
+    }
+
+    .board-container {
+      background: var(--board-bg);
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: inset 0 0 15px rgba(0,0,0,0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: auto;
+    }
+
+    svg { user-select: none; }
+
+    .hex {
+      fill: var(--cell-gray);
+      stroke: var(--cell-stroke);
+      stroke-width: 1.5px;
+      transition: fill 0.2s;
+      cursor: pointer;
+    }
+
+    .hex:hover { fill: #999999; }
+    .hex.selected { fill: #b39b4d; stroke: #fff; stroke-width: 2.5px; }
+    .hex.valid-move { fill: #728c69; stroke: #2e4d23; cursor: pointer; }
+
+    .piece { pointer-events: none; transition: all 0.3s ease; }
+    .piece-black { fill: url(#blackPieceGrad); stroke: #000; stroke-width: 1px; }
+    .piece-white { fill: url(#whitePieceGrad); stroke: #999; stroke-width: 1px; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 500px;
+      background: transparent;
+      justify-content: center;
+      align-items: flex-start;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .modal-content {
+      pointer-events: auto;
+      background: var(--panel-bg);
+      padding: 20px;
+      border-radius: 10px;
+      border: 4px solid var(--accent-gold);
+      text-align: center;
+      width: 100%;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.7);
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 15px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>SELFO ONLINE & VS IA</h1>
+
+    <!-- Selección de Modo Inicial -->
+    <div id="modePanel" class="panel active">
+      <div class="mode-buttons">
+        <button onclick="showHostForm()">Crear Partida Online</button>
+        <button onclick="showJoinForm()">Unirse a Partida Online</button>
+        <button onclick="showAIForm()" class="btn-ai">Jugar contra el Ordenador</button>
+      </div>
+    </div>
+
+    <!-- Crear Partida Online (Host) -->
+    <div id="hostPanel" class="panel">
+      <h2>Crear Partida Online (Host)</h2>
+      <div class="form-group">
+        <label for="hostName">Tu Nickname:</label>
+        <input type="text" id="hostName" value="Jugador 1">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="boardRadius">Radio del tablero (1-6):</label>
+          <input type="number" id="boardRadius" min="1" max="6" value="3">
+        </div>
+        <div class="form-group">
+          <label for="pieceCount">Fichas por jugador:</label>
+          <input type="number" id="pieceCount" min="1" max="10" value="3">
+        </div>
+      </div>
+      <button onclick="createRoom()">Generar Sala y Esperar Jugador</button>
+      <button onclick="showModePanel()" class="btn-cancel">Volver</button>
+    </div>
+
+    <!-- Esperando Jugador -->
+    <div id="waitingPanel" class="panel">
+      <h2>Partida Creada</h2>
+      <p style="margin: 15px 0;">Comparte este código o enlace con el otro jugador:</p>
+      <p>Código: <span id="displayRoomCode" class="game-tag"></span></p>
+      <button onclick="copyInviteLink()" style="margin: 15px 0;">Copiar Enlace Directo</button>
+      <p><i>Esperando a que el Jugador 2 introduzca su nickname y se conecte...</i></p>
+    </div>
+
+    <!-- Unirse a Partida Online (Guest) -->
+    <div id="joinPanel" class="panel">
+      <h2>Unirse a Partida Online</h2>
+      <div class="form-group">
+        <label for="guestName">Tu Nickname:</label>
+        <input type="text" id="guestName" value="Jugador 2">
+      </div>
+      <div class="form-group">
+        <label for="joinCode">Código de la Sala:</label>
+        <input type="text" id="joinCode" placeholder="Ej: SELFO-1234">
+      </div>
+      <button onclick="joinRoom()">Conectarse a la Partida</button>
+      <button onclick="showModePanel()" class="btn-cancel">Volver</button>
+    </div>
+
+    <!-- Jugar contra el Ordenador (CPU) -->
+    <div id="aiPanel" class="panel">
+      <h2>Jugar contra el Ordenador</h2>
+      <div class="form-group">
+        <label for="aiHumanName">Tu Nickname:</label>
+        <input type="text" id="aiHumanName" value="Jugador">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="aiBoardRadius">Radio del tablero (1-6):</label>
+          <input type="number" id="aiBoardRadius" min="1" max="6" value="3">
+        </div>
+        <div class="form-group">
+          <label for="aiPieceCount">Fichas por jugador:</label>
+          <input type="number" id="aiPieceCount" min="1" max="10" value="4">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="aiDepthInput">Evaluación N (Profundidad):</label>
+          <input type="number" id="aiDepthInput" min="1" max="5" value="5">
+        </div>
+        <div class="form-group">
+          <label for="aiTimeInput">Tiempo máx. por turno (seg):</label>
+          <input type="number" id="aiTimeInput" min="0.5" max="30" step="0.5" value="10">
+        </div>
+      </div>
+      <p style="font-size: 0.9em; color: #666;">El color de las Negras (que siempre empiezan) se asigna al azar entre tú y el ordenador. Quien juegue con Blancas podrá pedir el cambio de color (regla del pastel) en el primer turno.</p>
+      <button onclick="startAIGame()" class="btn-ai">Empezar Partida contra el Ordenador</button>
+      <button onclick="showModePanel()" class="btn-cancel">Volver</button>
+    </div>
+
+    <!-- Panel de Juego -->
+    <div id="gamePanel" class="panel">
+      <div class="game-header">
+        <div class="header-top">
+          <div>ID: <span id="gameTag" class="game-tag"></span></div>
+          <div class="status-box" id="turnStatus"></div>
+          <div class="action-buttons">
+            <button id="pieBtn" onclick="applyPieRule()" style="display:none;" class="btn-action">Cambiar Color (Pastel)</button>
+            <button id="drawBtn" onclick="offerDraw()" style="display:none;" class="btn-action btn-draw">Ofrecer Tablas</button>
+            <button id="resignBtn" onclick="resignGame()" style="display:none;" class="btn-action btn-cancel">Abandonar</button>
+          </div>
+        </div>
+        <div class="players-list">
+          <span id="blackBadge" class="player-badge badge-black"></span>
+          <span id="whiteBadge" class="player-badge badge-white"></span>
+        </div>
+      </div>
+      <div class="board-container">
+        <svg id="hexBoard" width="500" height="500">
+          <defs>
+            <radialGradient id="blackPieceGrad" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#555" />
+              <stop offset="100%" stop-color="#050505" />
+            </radialGradient>
+            <radialGradient id="whitePieceGrad" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#ffffff" />
+              <stop offset="100%" stop-color="#cccccc" />
+            </radialGradient>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Fin de Partida Superior -->
+  <div id="winModal" class="modal">
+    <div class="modal-content">
+      <h2 id="winTitle">¡Partida Concluida!</h2>
+      <p id="winMessage" style="font-size: 1.15rem; font-weight: bold; margin: 10px 0; color: #2b2118;"></p>
+      <div class="modal-buttons">
+        <button onclick="location.reload()">Nueva Partida</button>
+        <button onclick="restartGameWithSameConfig()" class="btn-ai">Repetir Configuración</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Oferta de Tablas -->
+  <div id="drawOfferModal" class="modal" style="top: 0; background: rgba(0,0,0,0.65); height: 100%; align-items: center; pointer-events: auto;">
+    <div class="modal-content" style="max-width: 450px;">
+      <h2>Oferta de Tablas</h2>
+      <p id="drawOfferMessage" style="font-size: 1.15rem; margin: 15px 0; color: #2b2118;"></p>
+      <div class="modal-buttons">
+        <button onclick="respondDraw(true)">Aceptar Tablas</button>
+        <button onclick="respondDraw(false)" class="btn-cancel">Rechazar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const HEX_SIZE = 32;
+    let maxAiTimeMs = 5000;
+    let peer = null;
+    let conn = null;
+    let isHost = false;
+    let gameMode = 'ONLINE'; // 'ONLINE' o 'CPU'
+    let myColor = null; // 'B' o 'W'
+    let aiColor = null; // 'B' o 'W'
+    let aiDepth = 4;
+    let localPlayerName = '';
+    let NEIGHBORS_MAP = {};
+    // Identificador de la partida en curso. Se incrementa cada vez que
+    // arranca una partida nueva (CPU u online). Cualquier tarea asíncrona de
+    // la IA que pertenezca a una partida anterior comprueba este valor antes
+    // de tocar el estado global, evitando que un cálculo "zombie" de una
+    // partida ya terminada corrompa la partida nueva.
+    let gameSessionId = 0;
+    let currentAiSearchId = 0;
+    let aiStartTime = 0;
+    let aiTimedOut = false;
+    let aiNodeCount = 0;
+
+    let config = { radius: 3, pieces: 4 };
+    let players = { B: 'Jugador 1', W: 'Jugador 2' };
+    let gameState = {
+      board: {},
+      currentTurn: 'B',
+      selectedCell: null,
+      moveCount: 0,
+      pieRuleAvailable: false,
+      gameEnded: false,
+      winMessageText: ''
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const hash = window.location.hash.substring(1);
+      if (hash.startsWith('SELFO-')) {
+        showJoinForm();
+        document.getElementById('joinCode').value = hash;
+      }
+    });
+
+    function showPanel(panelId) {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById(panelId).classList.add('active');
+    }
+
+    function showModePanel() { showPanel('modePanel'); }
+    function showHostForm() { showPanel('hostPanel'); }
+    function showJoinForm() { showPanel('joinPanel'); }
+    function showAIForm() { showPanel('aiPanel'); }
+
+    function axialKey(q, r) { return `${q},${r}`; }
+
+    function initNeighborsMap() {
+      NEIGHBORS_MAP = {};
+      const keys = Object.keys(gameState.board);
+      const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+      keys.forEach(k => {
+        const [q, r] = k.split(',').map(Number);
+        NEIGHBORS_MAP[k] = dirs
+          .map(([dq, dr]) => axialKey(q + dq, r + dr))
+          .filter(nk => gameState.board.hasOwnProperty(nk));
+      });
+    }
+
+    function getDispersed(count, existing, poolCells) {
+      let pool = poolCells.filter(k => !existing.includes(k));
+      let selected = [];
+      for (let i = 0; i < count; i++) {
+        if (!pool.length) break;
+        if (!selected.length) {
+          let idx = Math.floor(Math.random() * pool.length);
+          selected.push(pool.splice(idx, 1)[0]);
+        } else {
+          let bestKey = pool[0], maxDist = -1;
+          for (let cand of pool) {
+            let [cq, cr] = cand.split(',').map(Number);
+            let minD = Math.min(...selected.map(s => {
+              let [sq, sr] = s.split(',').map(Number);
+              return (Math.abs(cq - sq) + Math.abs(cq + cr - sq - sr) + Math.abs(cr - sr)) / 2;
+            }));
+            if (minD > maxDist) { maxDist = minD; bestKey = cand; }
+          }
+          selected.push(bestKey);
+          pool = pool.filter(k => k !== bestKey);
+        }
+      }
+      return selected;
+    }
+
+    function restartGameWithSameConfig() {
+      closeModal();
+      currentAiSearchId++;
+      if (gameMode === 'CPU') {
+        startAIGame();
+      } else if (gameMode === 'ONLINE') {
+        if (isHost) {
+          const guestName = (players.B === localPlayerName) ? players.W : players.B;
+          initHostGame(guestName);
+        } else {
+          alert('Solo el anfitrión (Host) puede reiniciar la partida online.');
+        }
+      }
+    }
+
+    // --- MODO VS ORDENADOR (IA) ---
+
+    function startAIGame() {
+      closeModal();
+      currentAiSearchId++;
+      gameSessionId++;
+      gameMode = 'CPU';
+      const nameInput = document.getElementById('aiHumanName').value.trim();
+      localPlayerName = nameInput || 'Jugador';
+
+      config.radius = parseInt(document.getElementById('aiBoardRadius').value);
+      config.pieces = parseInt(document.getElementById('aiPieceCount').value);
+      aiDepth = parseInt(document.getElementById('aiDepthInput').value);
+      if (!Number.isInteger(aiDepth) || aiDepth < 1) aiDepth = 4;
+      if (aiDepth > 8) aiDepth = 8; // evita profundidades desproporcionadas que disparen el tiempo de cálculo
+
+      const seconds = parseFloat(document.getElementById('aiTimeInput').value) || 5;
+      maxAiTimeMs = Math.max(200, seconds * 1000);
+
+      const maxAvailable = (3 * config.radius * (config.radius - 1) + 1) - 1;
+      if (config.pieces * 2 > maxAvailable) {
+        alert(`Demasiadas fichas. Máximo: ${Math.floor(maxAvailable / 2)} por jugador.`);
+        return;
+      }
+
+      // Las Negras siempre empiezan; a quién le tocan Negras se decide al azar.
+      // Quien juegue con Blancas podrá pedir el cambio de color (regla del
+      // pastel) en su primer turno, igual que en las partidas humano vs humano.
+      const choice = Math.random() < 0.5 ? 'B' : 'W';
+
+      myColor = choice;
+      aiColor = (myColor === 'B') ? 'W' : 'B';
+
+      players[myColor] = localPlayerName;
+      players[aiColor] = `Ordenador (N=${aiDepth})`;
+
+      gameState.board = {};
+      const R = config.radius - 1;
+      for (let q = -R; q <= R; q++) {
+        const r1 = Math.max(-R, -q - R);
+        const r2 = Math.min(R, -q + R);
+        for (let r = r1; r <= r2; r++) {
+          gameState.board[axialKey(q, r)] = null;
+        }
+      }
+
+      initNeighborsMap();
+
+      const validCells = Object.keys(gameState.board).filter(k => k !== "0,0");
+      const blackKeys = getDispersed(config.pieces, [], validCells);
+      const whiteKeys = getDispersed(config.pieces, blackKeys, validCells);
+
+      blackKeys.forEach(k => gameState.board[k] = 'B');
+      whiteKeys.forEach(k => gameState.board[k] = 'W');
+
+      gameState.currentTurn = 'B';
+      gameState.moveCount = 0;
+      gameState.pieRuleAvailable = false;
+      gameState.gameEnded = false;
+      gameState.winMessageText = '';
+      gameState.selectedCell = null;
+
+      document.getElementById('gameTag').innerText = 'VS CPU';
+      showPanel('gamePanel');
+      updateUI();
+      renderBoard();
+
+      if (aiColor === 'B') triggerCPUTurn();
+    }
+
+    function getConnectedGroups(boardState, color) {
+      const keys = [];
+      for (const k in boardState) {
+        if (boardState[k] === color) keys.push(k);
+      }
+      if (keys.length === 0) return [];
+
+      const visited = new Set();
+      const groups = [];
+
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        if (!visited.has(k)) {
+          let size = 0;
+          const queue = [k];
+          visited.add(k);
+          let head = 0;
+          while (head < queue.length) {
+            const curr = queue[head++];
+            size++;
+            const neighbors = NEIGHBORS_MAP[curr];
+            if (neighbors) {
+              for (let j = 0; j < neighbors.length; j++) {
+                const nk = neighbors[j];
+                if (boardState[nk] === color && !visited.has(nk)) {
+                  visited.add(nk);
+                  queue.push(nk);
+                }
+              }
+            }
+          }
+          groups.push(size);
+        }
+      }
+      return groups;
+    }
+
+    function checkWinForBoard(boardState, color) {
+      const groups = getConnectedGroups(boardState, color);
+      return groups.length === 1 && groups[0] === config.pieces;
+    }
+
+    function evaluateGoodness(boardState, playerColor) {
+      const groups = getConnectedGroups(boardState, playerColor);
+      if (groups.length === 0) return 0;
+      let maxGroupSize = 0;
+      for (let i = 0; i < groups.length; i++) {
+        if (groups[i] > maxGroupSize) maxGroupSize = groups[i];
+      }
+      
+      let adjacencyBonus = 0;
+      for (const k in boardState) {
+        if (boardState[k] === playerColor) {
+          const neighbors = NEIGHBORS_MAP[k] || [];
+          for (let j = 0; j < neighbors.length; j++) {
+            if (boardState[neighbors[j]] === playerColor) {
+              adjacencyBonus += 0.05;
+            }
+          }
+        }
+      }
+      return maxGroupSize + adjacencyBonus;
+    }
+
+    function getValidMovesForColor(boardState, color) {
+      const moves = [];
+      for (const fromKey in boardState) {
+        if (boardState[fromKey] === color) {
+          const neighbors = NEIGHBORS_MAP[fromKey] || [];
+          for (let j = 0; j < neighbors.length; j++) {
+            const toKey = neighbors[j];
+            if (boardState[toKey] === null) {
+              moves.push({ fromKey, toKey });
+            }
+          }
+        }
+      }
+      return moves;
+    }
+
+    function quickMoveScore(boardState, move, color) {
+      let score = 0;
+      const neighbors = NEIGHBORS_MAP[move.toKey] || [];
+      for (let i = 0; i < neighbors.length; i++) {
+        if (boardState[neighbors[i]] === color) score += 1;
+      }
+      return score;
+    }
+
+    function minimaxSync(boardState, depth, isMaximizing, alpha, beta, currentTurnColor, targetAiColor, searchId) {
+      aiNodeCount++;
+      // Comprobamos el reloj con más frecuencia (cada 32 nodos en vez de 256)
+      // para reaccionar antes si el límite de tiempo se supera.
+      if ((aiNodeCount & 31) === 0) {
+        if (Date.now() - aiStartTime > maxAiTimeMs || searchId !== currentAiSearchId) {
+          aiTimedOut = true;
+        }
+      }
+
+      if (aiTimedOut || searchId !== currentAiSearchId) {
+        return 0;
+      }
+
+      const oppColor = (targetAiColor === 'B') ? 'W' : 'B';
+      const lastMovedColor = isMaximizing ? oppColor : targetAiColor;
+
+      if (checkWinForBoard(boardState, lastMovedColor)) {
+        return lastMovedColor === targetAiColor ? (10000 + depth) : (-10000 - depth);
+      }
+
+      if (depth === 0) {
+        const aiG = evaluateGoodness(boardState, targetAiColor);
+        const oppG = evaluateGoodness(boardState, oppColor);
+        return aiG - oppG;
+      }
+
+      const moves = getValidMovesForColor(boardState, currentTurnColor);
+      if (moves.length === 0) {
+        const aiG = evaluateGoodness(boardState, targetAiColor);
+        const oppG = evaluateGoodness(boardState, oppColor);
+        return aiG - oppG;
+      }
+
+      moves.sort((a, b) => quickMoveScore(boardState, b, currentTurnColor) - quickMoveScore(boardState, a, currentTurnColor));
+
+      if (isMaximizing) {
+        let maxEval = -Infinity;
+        for (let i = 0; i < moves.length; i++) {
+          if (aiTimedOut) break;
+          const move = moves[i];
+          boardState[move.fromKey] = null;
+          boardState[move.toKey] = currentTurnColor;
+
+          const evalVal = minimaxSync(boardState, depth - 1, false, alpha, beta, oppColor, targetAiColor, searchId);
+
+          boardState[move.fromKey] = currentTurnColor;
+          boardState[move.toKey] = null;
+
+          if (aiTimedOut) break;
+
+          if (evalVal > maxEval) maxEval = evalVal;
+          alpha = Math.max(alpha, evalVal);
+          if (beta <= alpha) break;
+        }
+        return maxEval;
+      } else {
+        let minEval = Infinity;
+        for (let i = 0; i < moves.length; i++) {
+          if (aiTimedOut) break;
+          const move = moves[i];
+          boardState[move.fromKey] = null;
+          boardState[move.toKey] = currentTurnColor;
+
+          const evalVal = minimaxSync(boardState, depth - 1, true, alpha, beta, targetAiColor, targetAiColor, searchId);
+
+          boardState[move.fromKey] = currentTurnColor;
+          boardState[move.toKey] = null;
+
+          if (aiTimedOut) break;
+
+          if (evalVal < minEval) minEval = evalVal;
+          beta = Math.min(beta, evalVal);
+          if (beta <= alpha) break;
+        }
+        return minEval;
+      }
+    }
+
+    async function getBestMoveAIAsync(boardState, maxTargetDepth, targetColor, maxTimeMs) {
+      aiStartTime = Date.now();
+      aiTimedOut = false;
+      aiNodeCount = 0;
+      const searchId = ++currentAiSearchId;
+
+      const validMoves = getValidMovesForColor(boardState, targetColor);
+      if (validMoves.length === 0) return null;
+      // Ordenamos por la heurística rápida para que, incluso en el caso
+      // extremo de que el tiempo se agote antes de completar la evaluación
+      // de un solo movimiento en la profundidad 1, el "fallback" ya sea una
+      // opción razonable y no un movimiento arbitrario.
+      validMoves.sort((a, b) => quickMoveScore(boardState, b, targetColor) - quickMoveScore(boardState, a, targetColor));
+      let absoluteBestMove = validMoves[0];
+
+      for (let currDepth = 1; currDepth <= maxTargetDepth; currDepth++) {
+        if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+        if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+        let alpha = -Infinity;
+        let beta = Infinity;
+        let moves = getValidMovesForColor(boardState, targetColor);
+        moves.sort((a, b) => quickMoveScore(boardState, b, targetColor) - quickMoveScore(boardState, a, targetColor));
+
+        let depthBestMove = moves[0];
+        let maxEval = -Infinity;
+
+        for (let i = 0; i < moves.length; i++) {
+          if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+          const move = moves[i];
+          boardState[move.fromKey] = null;
+          boardState[move.toKey] = targetColor;
+
+          const oppColor = (targetColor === 'B') ? 'W' : 'B';
+          const evalVal = minimaxSync(boardState, currDepth - 1, false, alpha, beta, oppColor, targetColor, searchId);
+
+          boardState[move.fromKey] = targetColor;
+          boardState[move.toKey] = null;
+
+          if (aiTimedOut || searchId !== currentAiSearchId) break;
+
+          if (evalVal > maxEval) {
+            maxEval = evalVal;
+            depthBestMove = move;
+          }
+          alpha = Math.max(alpha, evalVal);
+        }
+
+        // Si esta profundidad llegó a evaluar al menos un movimiento por
+        // completo (maxEval ya no es -Infinity), ese resultado es válido
+        // aunque el tiempo se haya agotado a mitad del resto de movimientos:
+        // es una búsqueda más profunda que la de la iteración anterior y
+        // debe conservarse en lugar de descartarse.
+        if (searchId === currentAiSearchId && maxEval > -Infinity) {
+          absoluteBestMove = depthBestMove;
+          if (!aiTimedOut && maxEval >= 9000) break;
+        }
+
+        if (aiTimedOut || searchId !== currentAiSearchId) break;
+      }
+
+      return absoluteBestMove;
+    }
+
+    // Watchdog externo: garantiza que, ocurra lo que ocurra dentro del motor
+    // de búsqueda (una excepción, un cuelgue, un bucle que no corta a
+    // tiempo...), la IA siempre termine moviendo. Si el cálculo "real" no
+    // resuelve antes de maxAiTimeMs + un margen de seguridad, se cancela esa
+    // búsqueda (incrementando currentAiSearchId, lo que hace que minimaxSync
+    // se detenga en su siguiente comprobación) y se elige la mejor jugada
+    // "rápida" disponible como red de seguridad.
+    function getBestMoveWithWatchdog(boardCopy, depth, color, timeMs) {
+      const searchPromise = (async () => {
+        try {
+          return await getBestMoveAIAsync(boardCopy, depth, color, timeMs);
+        } catch (err) {
+          console.error('Error durante el cálculo de la IA:', err);
+          return null;
+        }
+      })();
+
+      const watchdogPromise = new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({ __watchdog: true });
+        }, timeMs + 2000); // margen de seguridad de 2s sobre el límite configurado
+      });
+
+      return Promise.race([searchPromise, watchdogPromise]).then((result) => {
+        if (result && result.__watchdog) {
+          // El cálculo "real" no volvió a tiempo: lo cancelamos y usamos un
+          // movimiento rápido (heurística sin profundidad) como último recurso.
+          currentAiSearchId++;
+          aiTimedOut = true;
+          const fallbackMoves = getValidMovesForColor(boardCopy, color);
+          if (fallbackMoves.length === 0) return null;
+          fallbackMoves.sort((a, b) => quickMoveScore(boardCopy, b, color) - quickMoveScore(boardCopy, a, color));
+          return fallbackMoves[0];
+        }
+        return result;
+      });
+    }
+
+    async function triggerCPUTurn() {
+      if (gameState.gameEnded || gameState.currentTurn !== aiColor) return;
+
+      // Capturamos en qué partida y con qué color estamos pensando. Si al
+      // terminar el cálculo la partida ya es otra (o el color de la IA ha
+      // cambiado, p.ej. por la regla del pastel), esta tarea se considera
+      // obsoleta y no debe tocar el estado global.
+      const mySessionId = gameSessionId;
+      const myAiColorSnapshot = aiColor;
+
+      document.getElementById('turnStatus').innerText = `Turno: ${players[aiColor]} (Pensando...)`;
+
+      if (gameState.pieRuleAvailable && gameState.moveCount === 1) {
+        const blackScore = evaluateGoodness(gameState.board, 'B');
+        const whiteScore = evaluateGoodness(gameState.board, 'W');
+        if (blackScore > whiteScore) {
+          applyPieRuleSwap();
+          return;
+        }
+      }
+
+      const boardCopy = { ...gameState.board };
+      const bestMove = await getBestMoveWithWatchdog(boardCopy, aiDepth, aiColor, maxAiTimeMs);
+
+      // Guarda de obsolescencia: si mientras pensábamos empezó otra partida,
+      // el color de la IA cambió, o la partida actual ya terminó, descartamos
+      // el resultado en vez de aplicarlo sobre un estado que ya no le
+      // corresponde.
+      if (mySessionId !== gameSessionId || myAiColorSnapshot !== aiColor || gameState.gameEnded) return;
+
+      if (bestMove) {
+        const { fromKey, toKey } = bestMove;
+        gameState.board[fromKey] = null;
+        gameState.board[toKey] = aiColor;
+        gameState.moveCount++;
+
+        const isPieAvail = (gameState.moveCount === 1);
+        const winner = checkWin(aiColor) ? aiColor : null;
+        const nextTurn = aiColor === 'B' ? 'W' : 'B';
+
+        gameState.currentTurn = nextTurn;
+        gameState.pieRuleAvailable = isPieAvail;
+        gameState.selectedCell = null;
+
+        if (winner) {
+          gameState.gameEnded = true;
+          const winnerName = players[winner];
+          const winnerColorText = winner === 'B' ? 'Negras' : 'Blancas';
+          gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText})!`;
+          renderBoard();
+          updateUI();
+          showWinModal(gameState.winMessageText);
+        } else {
+          renderBoard();
+          updateUI();
+        }
+      } else {
+        // La IA no tiene ningún movimiento legal disponible: en vez de
+        // quedarse mostrando "Pensando..." para siempre, se declara la
+        // partida sin más jugadas posibles para ese color.
+        gameState.gameEnded = true;
+        gameState.winMessageText = `${players[aiColor]} no tiene movimientos disponibles. ¡Partida finalizada!`;
+        renderBoard();
+        updateUI();
+        showWinModal(gameState.winMessageText);
+      }
+    }
+
+    // --- MODO ONLINE ---
+
+    function createRoom() {
+      gameMode = 'ONLINE';
+      const nameInput = document.getElementById('hostName').value.trim();
+      localPlayerName = nameInput || 'Jugador 1';
+      config.radius = parseInt(document.getElementById('boardRadius').value);
+      config.pieces = parseInt(document.getElementById('pieceCount').value);
+
+      const maxAvailable = (3 * config.radius * (config.radius - 1) + 1) - 1;
+      if (config.pieces * 2 > maxAvailable) {
+        alert(`Demasiadas fichas. Máximo: ${Math.floor(maxAvailable / 2)} por jugador.`);
+        return;
+      }
+
+      isHost = true;
+      const roomCode = 'SELFO-' + Math.floor(1000 + Math.random() * 9000);
+      document.getElementById('displayRoomCode').innerText = roomCode;
+      showPanel('waitingPanel');
+
+      peer = new Peer(roomCode);
+      peer.on('connection', (c) => { conn = c; setupHostConnection(); });
+      peer.on('error', (err) => alert('Error al crear sala: ' + err));
+    }
+
+    function joinRoom() {
+      gameMode = 'ONLINE';
+      const nameInput = document.getElementById('guestName').value.trim();
+      localPlayerName = nameInput || 'Jugador 2';
+      const code = document.getElementById('joinCode').value.trim().toUpperCase();
+      if (!code) { alert('Introduce un código de sala válido.'); return; }
+
+      isHost = false;
+      peer = new Peer();
+      peer.on('open', () => { conn = peer.connect(code); setupGuestConnection(); });
+      peer.on('error', (err) => alert('No se pudo conectar a la sala. Revisa el código.'));
+    }
+
+    function setupHostConnection() {
+      conn.on('data', (data) => {
+        if (data.type === 'JOIN_REQUEST') initHostGame(data.guestName || 'Jugador 2');
+        else handleNetworkMessage(data);
+      });
+      conn.on('close', () => alert('El otro jugador se ha desconectado.'));
+    }
+
+    function setupGuestConnection() {
+      conn.on('open', () => sendPayload('JOIN_REQUEST', { guestName: localPlayerName }));
+      conn.on('data', (data) => handleNetworkMessage(data));
+      conn.on('close', () => alert('El otro jugador se ha desconectado.'));
+    }
+
+    function sendPayload(type, payload = {}) {
+      if (conn && conn.open) conn.send({ type, ...payload });
+    }
+
+    function initHostGame(guestName) {
+      closeModal();
+      gameState.board = {};
+      const R = config.radius - 1;
+      for (let q = -R; q <= R; q++) {
+        const r1 = Math.max(-R, -q - R);
+        const r2 = Math.min(R, -q + R);
+        for (let r = r1; r <= r2; r++) {
+          gameState.board[axialKey(q, r)] = null;
+        }
+      }
+
+      initNeighborsMap();
+
+      const validCells = Object.keys(gameState.board).filter(k => k !== "0,0");
+      const blackKeys = getDispersed(config.pieces, [], validCells);
+      const whiteKeys = getDispersed(config.pieces, blackKeys, validCells);
+
+      blackKeys.forEach(k => gameState.board[k] = 'B');
+      whiteKeys.forEach(k => gameState.board[k] = 'W');
+
+      const hostIsBlack = Math.random() < 0.5;
+      const hostColor = hostIsBlack ? 'B' : 'W';
+      const guestColor = hostIsBlack ? 'W' : 'B';
+
+      players[hostColor] = localPlayerName || 'Jugador 1';
+      players[guestColor] = guestName || 'Jugador 2';
+
+      const payload = { config, board: gameState.board, players, hostColor, roomCode: peer.id };
+      sendPayload('INIT_GAME', payload);
+      handleNetworkMessage({ type: 'INIT_GAME', ...payload });
+    }
+
+    function handleNetworkMessage(data) {
+      switch (data.type) {
+        case 'INIT_GAME':
+          closeModal();
+          config = data.config;
+          gameState.board = data.board;
+          players = data.players;
+          gameState.currentTurn = 'B';
+          gameState.moveCount = 0;
+          gameState.pieRuleAvailable = false;
+          gameState.gameEnded = false;
+          gameState.winMessageText = '';
+          myColor = isHost ? data.hostColor : (data.hostColor === 'B' ? 'W' : 'B');
+          initNeighborsMap();
+
+          document.getElementById('gameTag').innerText = data.roomCode;
+          showPanel('gamePanel');
+          updateUI();
+          renderBoard();
+          break;
+
+        case 'SYNC_MOVE':
+          gameState.board[data.fromKey] = null;
+          gameState.board[data.toKey] = data.piece;
+          gameState.currentTurn = data.nextTurn;
+          gameState.moveCount = data.moveCount;
+          gameState.pieRuleAvailable = data.pieRuleAvailable;
+          gameState.selectedCell = null;
+
+          if (data.winner) {
+            gameState.gameEnded = true;
+            const winnerName = players[data.winner] || 'Jugador';
+            const winnerColorText = data.winner === 'B' ? 'Negras' : 'Blancas';
+            gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText})!`;
+            renderBoard();
+            updateUI();
+            showWinModal(gameState.winMessageText);
+          } else {
+            renderBoard();
+            updateUI();
+          }
+          break;
+
+        case 'SYNC_PIE_RULE':
+          const tempP = players.B;
+          players.B = players.W;
+          players.W = tempP;
+          myColor = (myColor === 'B') ? 'W' : 'B';
+          gameState.currentTurn = 'W';
+          gameState.pieRuleAvailable = false;
+          renderBoard();
+          updateUI();
+          break;
+
+        case 'RESIGN':
+          gameState.gameEnded = true;
+          const winnerColor = data.color === 'B' ? 'W' : 'B';
+          const winnerName = players[winnerColor] || 'Jugador';
+          const winnerColorText = winnerColor === 'B' ? 'Negras' : 'Blancas';
+          gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText}) por abandono!`;
+          renderBoard();
+          updateUI();
+          showWinModal(gameState.winMessageText);
+          break;
+
+        case 'OFFER_DRAW':
+          if (data.color !== myColor) {
+            const offererName = players[data.color] || 'El otro jugador';
+            const offererColorText = data.color === 'B' ? 'Negras' : 'Blancas';
+            document.getElementById('drawOfferMessage').innerText = `¡${offererName} (${offererColorText}) te ha ofrecido tablas! ¿Aceptas?`;
+            document.getElementById('drawOfferModal').style.display = 'flex';
+          }
+          break;
+
+        case 'RESPOND_DRAW':
+          if (data.accepted) {
+            gameState.gameEnded = true;
+            gameState.winMessageText = '¡Partida finalizada en Tablas (Empate)!';
+            renderBoard();
+            updateUI();
+            showWinModal(gameState.winMessageText);
+          } else {
+            if (data.responderColor !== myColor) alert('El otro jugador ha rechazado la oferta de tablas.');
+          }
+          break;
+      }
+    }
+
+    // --- ACCIONES DEL JUGADOR ---
+
+    function resignGame() {
+      if (gameState.gameEnded) return;
+      if (!confirm('¿Estás seguro de que deseas abandonar la partida? Se le dará la victoria al otro jugador.')) return;
+
+      if (gameMode === 'CPU') {
+        gameState.gameEnded = true;
+        currentAiSearchId++;
+        const winnerName = players[aiColor];
+        const winnerColorText = aiColor === 'B' ? 'Negras' : 'Blancas';
+        gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText}) por abandono!`;
+        renderBoard();
+        updateUI();
+        showWinModal(gameState.winMessageText);
+      } else {
+        sendPayload('RESIGN', { color: myColor });
+        handleNetworkMessage({ type: 'RESIGN', color: myColor });
+      }
+    }
+
+    function offerDraw() {
+      if (gameState.gameEnded) return;
+
+      if (gameMode === 'CPU') {
+        const aiGoodness = evaluateGoodness(gameState.board, aiColor);
+        const humanGoodness = evaluateGoodness(gameState.board, myColor);
+        if (Math.abs(aiGoodness - humanGoodness) <= 0.5) {
+          gameState.gameEnded = true;
+          currentAiSearchId++;
+          gameState.winMessageText = '¡Partida finalizada en Tablas por acuerdo con el Ordenador!';
+          renderBoard();
+          updateUI();
+          showWinModal(gameState.winMessageText);
+        } else {
+          alert('El Ordenador rechaza la oferta de tablas y prefiere continuar la partida.');
+        }
+      } else {
+        sendPayload('OFFER_DRAW', { color: myColor });
+        alert('Has ofrecido tablas. Esperando respuesta del otro jugador...');
+      }
+    }
+
+    function respondDraw(accepted) {
+      document.getElementById('drawOfferModal').style.display = 'none';
+      sendPayload('RESPOND_DRAW', { accepted, responderColor: myColor });
+      handleNetworkMessage({ type: 'RESPOND_DRAW', accepted, responderColor: myColor });
+    }
+
+    function applyPieRule() {
+      if (gameState.currentTurn !== myColor || !gameState.pieRuleAvailable) return;
+
+      if (gameMode === 'CPU') {
+        applyPieRuleSwap();
+      } else {
+        sendPayload('SYNC_PIE_RULE');
+        handleNetworkMessage({ type: 'SYNC_PIE_RULE' });
+      }
+    }
+
+    // Ejecuta el intercambio de color de la regla del pastel en modo CPU.
+    // A diferencia de applyPieRule(), esta función no exige que sea el turno
+    // de "myColor": la usa tanto el humano (a través de applyPieRule, cuando
+    // pulsa el botón en su propio turno) como la propia IA cuando decide
+    // acogerse a la regla en su turno (currentTurn === aiColor). Antes, la IA
+    // llamaba directamente a applyPieRule(), cuya comprobación de guarda
+    // asumía siempre currentTurn === myColor y bloqueaba el intercambio
+    // quedándose la partida congelada sin mover ni avisar.
+    function applyPieRuleSwap() {
+      const tempName = players.B;
+      players.B = players.W;
+      players.W = tempName;
+
+      const tempColor = myColor;
+      myColor = aiColor;
+      aiColor = tempColor;
+
+      gameState.currentTurn = 'W';
+      gameState.pieRuleAvailable = false;
+
+      renderBoard();
+      updateUI();
+
+      if (gameState.currentTurn === aiColor) triggerCPUTurn();
+    }
+
+    // --- RENDERIZADO Y TABLERO ---
+
+    function renderBoard() {
+      const svg = document.getElementById('hexBoard');
+      svg.querySelectorAll('.hex, .piece').forEach(e => e.remove());
+
+      const R = config.radius;
+      const width = (R * 2 + 1) * HEX_SIZE * 1.75;
+      const height = (R * 2 + 1) * HEX_SIZE * 1.5;
+      svg.setAttribute('viewBox', `-${width/2} -${height/2} ${width} ${height}`);
+
+      const validMoves = (!gameState.gameEnded && gameState.selectedCell) ? getValidMoves(gameState.selectedCell) : [];
+
+      Object.keys(gameState.board).forEach(key => {
+        const [q, r] = key.split(',').map(Number);
+        const { x, y } = hexToPixel(q, r);
+
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        polygon.setAttribute('points', getHexPoints(x, y, HEX_SIZE));
+
+        let className = 'hex';
+        if (gameState.selectedCell === key) className += ' selected';
+        else if (validMoves.includes(key)) className += ' valid-move';
+
+        polygon.setAttribute('class', className);
+        polygon.onclick = () => handleCellClick(key);
+        svg.appendChild(polygon);
+
+        const piece = gameState.board[key];
+        if (piece) {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', x);
+          circle.setAttribute('cy', y);
+          circle.setAttribute('r', HEX_SIZE * 0.65);
+          circle.setAttribute('class', `piece piece-${piece === 'B' ? 'black' : 'white'}`);
+          svg.appendChild(circle);
+        }
+      });
+    }
+
+    function hexToPixel(q, r) {
+      return {
+        x: HEX_SIZE * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r),
+        y: HEX_SIZE * (3/2 * r)
+      };
+    }
+
+    function getHexPoints(cx, cy, size) {
+      let points = [];
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 180) * (60 * i - 30);
+        points.push(`${cx + size * Math.cos(angle)},${cy + size * Math.sin(angle)}`);
+      }
+      return points.join(' ');
+    }
+
+    function handleCellClick(key) {
+      if (gameState.gameEnded || gameState.currentTurn !== myColor) return;
+
+      const piece = gameState.board[key];
+
+      if (gameState.selectedCell) {
+        const validMoves = getValidMoves(gameState.selectedCell);
+        if (validMoves.includes(key)) {
+          const fromKey = gameState.selectedCell;
+          const pieceColor = gameState.board[fromKey];
+
+          gameState.board[fromKey] = null;
+          gameState.board[key] = pieceColor;
+          gameState.moveCount++;
+          
+          const isPieAvail = (gameState.moveCount === 1);
+          const winner = checkWin(pieceColor) ? pieceColor : null;
+          const nextTurn = gameState.currentTurn === 'B' ? 'W' : 'B';
+
+          if (gameMode === 'CPU') {
+            gameState.currentTurn = nextTurn;
+            gameState.pieRuleAvailable = isPieAvail;
+            gameState.selectedCell = null;
+
+            if (winner) {
+              gameState.gameEnded = true;
+              currentAiSearchId++;
+              const winnerName = players[winner];
+              const winnerColorText = winner === 'B' ? 'Negras' : 'Blancas';
+              gameState.winMessageText = `¡Ha ganado ${winnerName} (${winnerColorText})!`;
+              renderBoard();
+              updateUI();
+              showWinModal(gameState.winMessageText);
+            } else {
+              renderBoard();
+              updateUI();
+              if (gameState.currentTurn === aiColor) triggerCPUTurn();
+            }
+          } else {
+            const moveData = {
+              fromKey,
+              toKey: key,
+              piece: pieceColor,
+              nextTurn,
+              moveCount: gameState.moveCount,
+              pieRuleAvailable: isPieAvail,
+              winner
+            };
+            sendPayload('SYNC_MOVE', moveData);
+            handleNetworkMessage({ type: 'SYNC_MOVE', ...moveData });
+          }
+          return;
+        }
+      }
+
+      if (piece === myColor) {
+        gameState.selectedCell = (gameState.selectedCell === key) ? null : key;
+        renderBoard();
+      }
+    }
+
+    function getValidMoves(key) {
+      const neighbors = NEIGHBORS_MAP[key] || [];
+      return neighbors.filter(k => gameState.board[k] === null);
+    }
+
+    function checkWin(color) {
+      return checkWinForBoard(gameState.board, color);
+    }
+
+    function updateUI() {
+      const blackName = players.B || 'Jugador 1';
+      const whiteName = players.W || 'Jugador 2';
+
+      const blackText = myColor === 'B' ? `${blackName} (Tú)` : blackName;
+      const whiteText = myColor === 'W' ? `${whiteName} (Tú)` : whiteName;
+
+      document.getElementById('blackBadge').innerText = `⬛ Negras: ${blackText}`;
+      document.getElementById('whiteBadge').innerText = `⬜ Blancas: ${whiteText}`;
+
+      const turnStatusEl = document.getElementById('turnStatus');
+      const pieBtn = document.getElementById('pieBtn');
+      const drawBtn = document.getElementById('drawBtn');
+      const resignBtn = document.getElementById('resignBtn');
+
+      if (gameState.gameEnded) {
+        turnStatusEl.innerHTML = `<span style="color: #2e7d32;">🏆 ${gameState.winMessageText}</span>`;
+        pieBtn.style.display = 'none';
+        drawBtn.style.display = 'none';
+        resignBtn.style.display = 'none';
+        return;
+      }
+
+      const currentTurnPlayer = players[gameState.currentTurn] || 'Jugador';
+      const colorText = gameState.currentTurn === 'B' ? 'Negras' : 'Blancas';
+
+      turnStatusEl.innerText = `Turno: ${currentTurnPlayer} (${colorText})`;
+
+      drawBtn.style.display = 'inline-block';
+      resignBtn.style.display = 'inline-block';
+
+      if (gameState.pieRuleAvailable && gameState.currentTurn === myColor && myColor === 'W') {
+        pieBtn.style.display = 'inline-block';
+      } else {
+        pieBtn.style.display = 'none';
+      }
+    }
+
+    function showWinModal(msg) {
+      document.getElementById('winTitle').innerText = '¡Partida Concluida!';
+      document.getElementById('winMessage').innerText = msg;
+      document.getElementById('winModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+      document.getElementById('winModal').style.display = 'none';
+    }
+
+    function copyInviteLink() {
+      const code = document.getElementById('displayRoomCode').innerText;
+      const url = `${window.location.origin}${window.location.pathname}#${code}`;
+      navigator.clipboard.writeText(url).then(() => alert('¡Enlace directo copiado al portapapeles!'));
+    }
+  </script>
+</body>
+</html>
