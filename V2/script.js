@@ -43,7 +43,7 @@ const CONFIG = {
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
   DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
-  CPU_FIRST_MOVE_GRACE_MS: 3000, // vs-computer with the CPU moving first: how long to wait, controls live, before it actually moves
+  GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
 };
 
 const RULES = {
@@ -56,6 +56,7 @@ const RULES = {
 // ---------------------------------------------------------------------
 const Game = {
   phase: "setup", // 'setup' | 'playing' | 'ended' — see file header for the flow
+  setupReady: false, // 'setup' only becomes interactive once this flips true, after the start-grace wait
   mode: CONFIG.DEFAULT_MODE, // 'local2p' | 'online2p' | 'vscomputer' | 'computerself' — always set
 
   radius: CONFIG.DEFAULT_RADIUS,
@@ -166,11 +167,14 @@ function opponentOf(color) {
   return color === "black" ? "white" : "black";
 }
 
-/** 'setup' (the live preview) and 'playing' both accept clicks/drags on
- *  pieces — moving a piece during 'setup' is exactly what starts the
- *  game. Only 'ended' (showing the finished board) is non-interactive. */
+/** 'playing' is always interactive. 'setup' (the live preview) only
+ *  becomes interactive once Game.setupReady is true — every fresh
+ *  preview waits CONFIG.GAME_START_GRACE_MS first (controls stay fully
+ *  usable during that wait), then flashes and only then can a piece
+ *  actually be moved. Only 'ended' (showing the finished board) is
+ *  never interactive. */
 function isInteractivePhase() {
-  return Game.phase === "setup" || Game.phase === "playing";
+  return Game.phase === "playing" || (Game.phase === "setup" && Game.setupReady);
 }
 
 // =======================================================================
@@ -1262,18 +1266,23 @@ dom.resignBtn.addEventListener("click", resign);
 // The live preview / game start
 // -----------------------------------------------------------------------
 // There's no explicit "Start" step: (re)building the board here is what
-// "always shows the current configuration" means, and the game actually
-// begins the moment a piece moves (see performMove()) — except when the
-// color to move is computer-controlled, in which case there's no human
-// gesture to wait for and play begins immediately (maybeAutoStartFromSetup).
+// "always shows the current configuration" means. Every fresh preview
+// then waits CONFIG.GAME_START_GRACE_MS — setup controls stay fully
+// live and usable the whole time, but the board itself isn't playable
+// yet — before flashing to mark the moment it actually becomes playable.
+// After that flash: if the color to move is computer-controlled, there's
+// no human gesture to wait for, so it moves immediately; otherwise the
+// game just waits for a human to click/drag a piece, which is what
+// commits "setup" to "playing" (see performMove()).
 // =======================================================================
 
 function beginSetupPreview() {
   cancelScheduledCpuMove();
   cancelEndedAutoRestart();
-  cancelAutoStartGrace();
+  cancelGameStartGrace();
 
   Game.phase = "setup";
+  Game.setupReady = false;
   Game.radius = Number(dom.radiusRange.value);
   Game.piecesPerColor = Number(dom.piecesRange.value);
   const built = buildBoard(Game.radius, Game.piecesPerColor);
@@ -1299,11 +1308,10 @@ function beginSetupPreview() {
   updateSetupVisibility();
   renderBoard();
   updateStatusUI();
-  showMessage(setupMessageForMode());
 
   if (Game.mode === "online2p" && Game.isHost) broadcastPreview();
 
-  maybeAutoStartFromSetup();
+  scheduleGameStartGrace();
 }
 
 /** Fills in Game.players for whatever the current mode is. Re-run every
@@ -1348,49 +1356,53 @@ function setupMessageForMode() {
   return "";
 }
 
-/** If the color due to move first is computer-controlled, there's no
- *  human move to wait for indefinitely. "Computer vs computer" begins
- *  immediately — nothing for a human to configure once it's running.
- *  "Vs computer" with the CPU moving first (human chose white) instead
- *  waits a short grace period, controls fully live the whole time, so
- *  there's a real chance to change something before it commits — this
- *  also fixes the CPU-first case never showing its controls again. */
-let autoStartGraceTimer = null;
+/** Every fresh preview — any mode, whoever moves first — waits here
+ *  before becoming playable, controls fully live the whole time. Once
+ *  the wait completes: the board flashes to mark the moment, and if the
+ *  color to move is computer-controlled it moves right away (no human
+ *  gesture to wait for); otherwise it just sits ready for a human to
+ *  move whenever they like. */
+let gameStartGraceTimer = null;
 
-function cancelAutoStartGrace() {
-  if (autoStartGraceTimer !== null) {
-    clearTimeout(autoStartGraceTimer);
-    autoStartGraceTimer = null;
+function cancelGameStartGrace() {
+  if (gameStartGraceTimer !== null) {
+    clearTimeout(gameStartGraceTimer);
+    gameStartGraceTimer = null;
   }
 }
 
-function maybeAutoStartFromSetup() {
-  cancelAutoStartGrace();
+function scheduleGameStartGrace() {
+  cancelGameStartGrace();
   if (Game.phase !== "setup") return;
-  if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
+
+  const graceSeconds = Math.round(CONFIG.GAME_START_GRACE_MS / 1000);
   const mover = Game.players[Game.turn];
-  if (!mover || mover.isLocal) return; // a human moves first — just wait for them
+  const cpuFirst = mover && !mover.isLocal;
+  showMessage(
+    cpuFirst
+      ? `The CPU moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`
+      : `Starting in ${graceSeconds}s\u2026 change any setting above to adjust first.`
+  );
 
-  if (Game.mode === "computerself") {
-    commitPlayingAndTriggerCpu();
-    return;
-  }
-
-  const graceSeconds = Math.round(CONFIG.CPU_FIRST_MOVE_GRACE_MS / 1000);
-  showMessage(`The CPU moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`);
-  autoStartGraceTimer = setTimeout(() => {
-    autoStartGraceTimer = null;
+  gameStartGraceTimer = setTimeout(() => {
+    gameStartGraceTimer = null;
     if (Game.phase !== "setup") return; // state moved on already (mode/param change, etc.)
-    commitPlayingAndTriggerCpu();
-  }, CONFIG.CPU_FIRST_MOVE_GRACE_MS);
-}
 
-function commitPlayingAndTriggerCpu() {
-  Game.phase = "playing";
-  updateSetupVisibility();
-  updateStatusUI();
-  flashBoardStart();
-  maybeTriggerCpuMove();
+    Game.setupReady = true;
+    renderBoard(); // now interactive: (re)attaches drag/click/hover handlers
+    flashBoardStart();
+
+    const nowMover = Game.players[Game.turn];
+    if (nowMover && !nowMover.isLocal) {
+      // computer-controlled — no human gesture to wait for, so it moves now
+      Game.phase = "playing";
+      updateSetupVisibility();
+      updateStatusUI();
+      maybeTriggerCpuMove();
+    } else {
+      showMessage(setupMessageForMode());
+    }
+  }, CONFIG.GAME_START_GRACE_MS);
 }
 
 // =======================================================================
@@ -1473,10 +1485,11 @@ function handleRemoteMessage(msg) {
         Game.players[otherColor] = { name: msg.players[otherColor].name, isLocal: false };
       }
       Game.phase = "setup";
+      Game.setupReady = false;
       updateSetupVisibility();
       renderBoard();
       updateStatusUI();
-      showMessage(setupMessageForMode());
+      scheduleGameStartGrace();
       break;
     }
     case "move": {
