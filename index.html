@@ -20,7 +20,15 @@
       <div class="game-id-wrap">
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
         <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
-        <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup">&#128228;</button>
+        <div class="share-wrap">
+          <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup">&#128228;</button>
+          <div class="share-menu" id="shareMenu" hidden>
+            <a id="shareMenuEmail" class="share-menu-item" target="_blank" rel="noopener">&#9993;&#65039; Email</a>
+            <a id="shareMenuWhatsApp" class="share-menu-item" target="_blank" rel="noopener">&#128241; WhatsApp</a>
+            <a id="shareMenuTelegram" class="share-menu-item" target="_blank" rel="noopener">&#9992;&#65039; Telegram</a>
+            <button id="shareMenuCopy" class="share-menu-item" type="button">&#128279; Copy link</button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="status-wrap">

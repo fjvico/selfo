@@ -352,6 +352,39 @@ body {
 }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+.share-wrap { position: relative; display: inline-flex; }
+.share-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  background: var(--bg-panel);
+  border: 1px solid var(--metal-line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  padding: 6px;
+  gap: 2px;
+}
+.share-menu[hidden] { display: none; }
+.share-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--metal-light);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.share-menu-item:hover { background: rgba(53, 224, 255, 0.1); color: var(--accent); }
+
 /* ---------------------------------------------------------------
    Setup panel
    --------------------------------------------------------------- */

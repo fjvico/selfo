@@ -96,6 +96,11 @@ const dom = {
   gameIdValue: document.getElementById("gameIdValue"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
   shareLinkBtn: document.getElementById("shareLinkBtn"),
+  shareMenu: document.getElementById("shareMenu"),
+  shareMenuEmail: document.getElementById("shareMenuEmail"),
+  shareMenuWhatsApp: document.getElementById("shareMenuWhatsApp"),
+  shareMenuTelegram: document.getElementById("shareMenuTelegram"),
+  shareMenuCopy: document.getElementById("shareMenuCopy"),
   turnIndicator: document.getElementById("turnIndicator"),
 
   playerNameBlack: document.getElementById("playerNameBlack"),
@@ -1743,33 +1748,60 @@ dom.copyLinkBtn.addEventListener("click", () => {
 
 dom.shareLinkBtn.addEventListener("click", async () => {
   const url = currentShareUrl();
-  const shareData = {
-    title: "Selfo",
-    text: Game.mode === "online2p" ? "Join my Selfo game:" : "Play Selfo with this setup:",
-    url,
-  };
+  const text = Game.mode === "online2p" ? "Join my Selfo game:" : "Play Selfo with this setup:";
+
   // navigator.share() opens the OS/browser's native share sheet (other
   // apps, contacts, etc.) — supported mainly on mobile and some desktop
-  // browsers. Where it isn't available (or the user cancels, which
-  // throws an AbortError), fall back to the same clipboard copy as the
-  // LINK button.
-  if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+  // browsers with OS-level integration (e.g. Edge on Windows). Most
+  // desktop browsers (Chrome/Firefox on macOS/Linux) don't implement it
+  // at all, so falling back to a silent clipboard copy there left no
+  // visible way to actually share to email/WhatsApp/etc. — this menu of
+  // direct links is that fallback.
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ title: "Selfo", text, url }))) {
     try {
-      await navigator.share(shareData);
+      await navigator.share({ title: "Selfo", text, url });
+      return;
     } catch (err) {
-      if (err && err.name !== "AbortError") {
-        navigator.clipboard?.writeText(url).then(
-          () => showMessage("Sharing wasn't available \u2014 link copied to clipboard instead."),
-          () => showMessage(`Link: ${url}`)
-        );
-      }
+      if (err && err.name === "AbortError") return; // user cancelled the native sheet — do nothing
+      // fall through to the menu below on any other failure
     }
-  } else {
-    navigator.clipboard?.writeText(url).then(
-      () => showMessage("Sharing isn't available in this browser \u2014 link copied to clipboard instead."),
-      () => showMessage(`Link: ${url}`)
-    );
   }
+  openShareMenu(url, text);
+});
+
+function openShareMenu(url, text) {
+  dom.shareMenuEmail.href = `mailto:?subject=${encodeURIComponent("Selfo")}&body=${encodeURIComponent(`${text} ${url}`)}`;
+  dom.shareMenuWhatsApp.href = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;
+  dom.shareMenuTelegram.href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  dom.shareMenu.hidden = false;
+}
+
+function closeShareMenu() {
+  dom.shareMenu.hidden = true;
+}
+
+dom.shareMenuCopy.addEventListener("click", () => {
+  const url = currentShareUrl();
+  navigator.clipboard?.writeText(url).then(
+    () => showMessage("Link copied to clipboard."),
+    () => showMessage(`Link: ${url}`)
+  );
+  closeShareMenu();
+});
+
+// any click on an actual share option (email/WhatsApp/Telegram) also closes the menu
+dom.shareMenuEmail.addEventListener("click", closeShareMenu);
+dom.shareMenuWhatsApp.addEventListener("click", closeShareMenu);
+dom.shareMenuTelegram.addEventListener("click", closeShareMenu);
+
+// clicking anywhere outside the menu (or its button) closes it
+document.addEventListener("click", (ev) => {
+  if (dom.shareMenu.hidden) return;
+  if (dom.shareMenu.contains(ev.target) || dom.shareLinkBtn.contains(ev.target)) return;
+  closeShareMenu();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.shareMenu.hidden) closeShareMenu();
 });
 
 // =======================================================================
