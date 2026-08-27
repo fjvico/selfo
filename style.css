@@ -292,6 +292,29 @@ body {
   line-height: 1.4;
 }
 
+.support-wrap { margin-top: 4px; }
+.support-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--metal-mid);
+  text-decoration: none;
+  background: #1c2024;
+  border: 1px solid var(--metal-line);
+  border-radius: 14px;
+  padding: 6px 12px;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.support-link:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
 /* ---------------------------------------------------------------
    Buttons
    --------------------------------------------------------------- */
