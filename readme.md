@@ -1,96 +1,152 @@
-# Selfo
+# SyssPrompt
 
-A futuristic, metallic-themed hexagonal **connection board game**.
+Userscript (Tampermonkey / Violentmonkey) que añade un pequeño icono 🐍 a **DeepSeek**, **ChatGPT** y **Claude** desde el que puedes marcar qué "system prompts" (reglas de comportamiento) quieres aplicar al asistente, en el idioma que prefieras. Al enviar tu mensaje, el script añade automáticamente las instrucciones marcadas justo debajo, ocultas por debajo del scroll.
 
-Two players take turns moving one of their pieces to an empty adjacent
-cell. The first player to connect **all** of their pieces into a single
-group (every piece reachable from every other piece through adjacent
-same-color cells) wins. Black always moves first; White may invoke the
-**pie rule** and swap colors instead of making a move, but only on
-White's very first turn.
+## Índice
 
-## Play it
+- [Instalación](#instalación)
+- [Uso básico](#uso-básico)
+- [Cómo se inyectan los prompts](#cómo-se-inyectan-los-prompts)
+- [Idiomas](#idiomas)
+- [Prompts personalizados](#prompts-personalizados)
+- [Compatibilidad por sitio](#compatibilidad-por-sitio)
+- [Personalización del código](#personalización-del-código)
+- [Almacenamiento y privacidad](#almacenamiento-y-privacidad)
+- [Solución de problemas](#solución-de-problemas)
+- [Apoya el proyecto](#apoya-el-proyecto)
+- [Licencia](#licencia)
 
-Open `index.html` in any modern browser — no build step required. For
-2-player-on-one-device games, no server is needed either; it's a
-single static page (`index.html` + `style.css` + `script.js` +
-`hexgeometry.js` + `boardinit.js`). Online play and the computer
-modes need it served over `http(s)://` instead — see the notes below.
+## Instalación
 
-### Modes available now
-- **2 players, same device** — pass the device back and forth.
-- **2 players, online (code)** — one player creates a game and shares
-  the 6-character code (or the generated link) with the other, who
-  joins with it. This uses [PeerJS](https://peerjs.com) over WebRTC
-  with its free public signaling broker, so both files just need to be
-  served over `https://` (GitHub Pages works out of the box).
-- **Vs computer** — pick a color, then play against the CPU (powered
-  by `aistrategies.js`'s alpha-beta minimax search). Adjustable think
-  time and search depth in the setup panel.
-- **Computer vs computer** — sit back and watch two CPU players face
-  off; useful for testing the AI or just enjoying the metallic glow.
+### Opción más sencilla (recomendada para quien no tenga conocimientos técnicos)
 
-Both computer modes run the search in a Web Worker (`aistrategies.js`
-also acts as the worker script), so the board and buttons stay
-responsive even at high think-time/depth settings on larger boards —
-the search never blocks the page's main thread. One consequence:
-because browsers block Workers from loading scripts over `file://`,
-the two computer modes need the page served over `http(s)://` (any
-static server, or GitHub Pages) — they won't work if you just
-double-click `index.html`. 2-player-on-one-device mode is unaffected
-and still works straight from disk.
+1. Abre esta página en tu navegador: **[SyssPrompt en Greasy Fork](https://greasyfork.org/en/scripts/593175-syssprompt)**.
+2. Pulsa el botón **"Install this script"**. Si es la primera vez que instalas un userscript, la propia página te guiará para instalar antes la extensión necesaria (Tampermonkey, Violentmonkey, etc., según tu navegador) — solo hay que seguir el enlace que te ofrece y volver a intentarlo.
+3. Confirma la instalación en el diálogo que abre la extensión. Listo: ya no hace falta tocar ni copiar ningún código.
 
-### Coming soon
-- Multi-step moves and multi-move turns — the move/turn engine already
-  reads its rules (`RULES.maxStepsPerMove`, `RULES.movesPerTurn`) from
-  a single object in `script.js`, so this only needs new UI controls,
-  not a rewrite.
+Desde el propio icono 🐍 del script (dentro de DeepSeek, ChatGPT o Claude) hay también un botón **"Compartir"** para enviar este mismo enlace a quien quieras por WhatsApp, Telegram, correo, etc. (o copiarlo, si tu navegador no ofrece el panel de compartir nativo).
 
-## Pre-configuring via the URL
+### Opción manual (instalar desde el archivo)
 
-The whole setup panel can be filled in from the page's own URL, so a
-link alone can open the game with a specific mode, board size, color,
-or CPU settings already chosen — no clicking through the panel first.
-All parameters are optional and safe to combine; unknown or invalid
-values are just ignored.
+1. Instala una extensión de userscripts en tu navegador: [Tampermonkey](https://www.tampermonkey.net/) (Chrome, Firefox, Edge, Safari) o [Violentmonkey](https://violentmonkey.github.io/).
+2. Crea un nuevo script vacío desde el panel de la extensión y pega el contenido de `deep_prompt.js`, o ábrelo directamente si tu gestor lo permite.
+3. Guarda. El script se activará automáticamente en:
+   - `https://chat.deepseek.com/*`
+   - `https://chatgpt.com/*` y `https://chat.openai.com/*`
+   - `https://claude.ai/*`
 
-| Parameter  | Values                                              |
-|------------|------------------------------------------------------|
-| `mode`     | `local2p`, `online2p`, `vscomputer`, `computerself`  |
-| `radius`   | `2`–`6` — board radius                                |
-| `pieces`   | integer — pieces per player (clamped to what's valid for `radius`) |
-| `color`    | `black` or `white` — which color the human plays in `vscomputer` |
-| `cpuTime`  | `1`–`30` — CPU max think time, in seconds             |
-| `cpuDepth` | `1`–`5` — CPU max search depth                        |
-| `name`     | up to 18 characters — pre-fills your own name          |
-| `join`     | an online room code — connects directly as a guest (implies `mode=online2p`, and overrides any other `mode=`) |
+No requiere ninguna configuración adicional ni claves de API.
 
-Example: `index.html?mode=vscomputer&color=white&radius=4&cpuDepth=4`
-opens straight into "vs computer," human playing white, a radius-4
-board, and the CPU searching 4 moves ahead.
+## Uso básico
 
-The **LINK** button in the top bar builds one of these automatically
-from whatever's currently configured (or, in online mode, an invite
-link with a room code instead) and copies it to the clipboard.
+Al entrar en cualquiera de los tres sitios verás un pequeño icono 🐍 junto con un código de dos letras (el idioma activo, p. ej. `ES`):
 
-## Install on GitHub Pages
+- **DeepSeek / ChatGPT**: aparece pegado al botón "Share" de la barra superior.
+- **Claude**: aparece fijo abajo a la derecha, junto a la barra de envío.
 
-1. Create a new repository (or use an existing one) and add these six
-   files to its root: `index.html`, `style.css`, `script.js`,
-   `hexgeometry.js`, `boardinit.js`, `aistrategies.js`.
-2. Commit and push to the `main` branch.
-3. In the repository, go to **Settings → Pages**, set **Source** to
-   `Deploy from a branch`, branch `main`, folder `/ (root)`, and save.
-4. After a minute your game is live at
-   `https://<your-username>.github.io/<repo-name>/`.
+Al pasar el cursor por encima (o al hacer click, para dejarlo fijo abierto) se despliega un panel con las reglas disponibles. Marca las que quieras aplicar y escribe tu mensaje con normalidad: justo antes de enviarlo (al pulsar Enter o el botón de enviar), el script añade las instrucciones marcadas al final de tu mensaje, después de un salto de línea, para que no interrumpan visualmente lo que has escrito.
 
-## Project structure
+- **DeepSeek/ChatGPT**: el panel se despliega hacia abajo.
+- **Claude**: el panel se despliega hacia arriba (el icono está abajo del todo).
 
-| File              | Purpose                                                     |
-|-------------------|--------------------------------------------------------------|
-| `index.html`      | Page structure: top bar, options panel, board, setup panel  |
-| `style.css`        | Metallic/futuristic visual theme, responsive layout          |
-| `hexgeometry.js`   | Pure hex-grid math (axial coordinates, neighbors, pixel conversion) |
-| `boardinit.js`     | Empty-board / adjacency-map generation strategies             |
-| `aistrategies.js`  | Computer-player search strategies (alpha-beta minimax); also doubles as the Web Worker script that runs the search off the main thread |
-| `script.js`        | Game state machine, rendering, rules, online play (PeerJS), CPU turn wiring |
+## Cómo se inyectan los prompts
+
+El script recuerda, para la conversación actual, qué reglas estaban activas la última vez que enviaste un mensaje. En cada envío compara ese estado con el actual:
+
+- **Reglas recién marcadas**: se añade una frase por cada una, con este formato:
+
+  > A partir de ahora, sigue la regla "Explica paso a paso": Explica tu razonamiento paso a paso, de forma clara y detallada, como si se lo explicaras a alguien sin conocimientos previos del tema.
+
+- **Reglas recién desmarcadas**: se añade una única frase agrupándolas todas:
+
+  > Cancela las reglas "Explica paso a paso", "Sé conciso". El resto de instrucciones que te he dado siguen vigentes.
+
+- Si no cambia nada respecto al envío anterior (las mismas reglas siguen activas), no se añade ningún texto nuevo — evita repetir instrucciones ya dadas en la misma conversación.
+- Si no marcas ninguna regla, el script no toca tu mensaje.
+
+Al detectar una conversación realmente nueva (sin mensajes previos), el registro se reinicia.
+
+## Idiomas
+
+El icono muestra el código del idioma activo. Al hacer click sobre esas letras se abre un desplegable con los 13 idiomas disponibles, cada uno escrito en sí mismo:
+
+| Código | Idioma |
+|---|---|
+| ES | Español |
+| CA | Català |
+| EU | Euskara |
+| GL | Galego |
+| EN | English |
+| FR | Français |
+| DE | Deutsch |
+| IT | Italiano |
+| PT | Português |
+| RU | Русский |
+| ZH | 中文 |
+| JA | 日本語 |
+| KA | ქართული |
+
+Al elegir un idioma:
+
+- Los nombres y textos de las reglas se muestran (y se inyectan) en ese idioma.
+- Las reglas marcadas se mantienen (el estado marcado/desmarcado es independiente del idioma: los identificadores internos son comunes a todos los idiomas).
+- El idioma por defecto se detecta a partir del idioma del navegador; si no está entre los soportados, se usa español.
+
+Cada idioma incluye, de fábrica, cuatro reglas: *Sé conciso*, *Explica paso a paso*, *Lenguaje sencillo* y *Responder en [idioma]* (para forzar que el asistente conteste en ese idioma aunque le escribas en otro).
+
+## Prompts personalizados
+
+Puedes añadir tus propias reglas sin tocar el código, desde el propio panel:
+
+1. Abre el panel del idioma en el que quieras crear la regla.
+2. Rellena "Nombre corto" y el texto de la instrucción, y pulsa "+ Añadir prompt".
+3. La nueva regla aparece en la lista, marcable como cualquier otra, con una "×" para eliminarla.
+
+Estos prompts personalizados se guardan por separado del código del script (en el almacenamiento persistente del gestor de userscripts), así que **no se pierden si en el futuro actualizas el script a una versión nueva** — solo se sobrescriben los prompts "de fábrica" que vienen incluidos en el archivo.
+
+## Compatibilidad por sitio
+
+| Sitio | Anclaje del icono | Despliegue del panel |
+|---|---|---|
+| DeepSeek | Junto al botón "Share" (barra superior) | Hacia abajo |
+| ChatGPT | Junto al botón "Share" (barra superior) | Hacia abajo |
+| Claude | Fijo abajo a la derecha (no se inserta en el DOM de la página) | Hacia arriba |
+
+El script detecta automáticamente el editor de texto de cada sitio (`<textarea>` en DeepSeek, editor `contenteditable` tipo ProseMirror en ChatGPT y Claude) e inserta el texto de la forma adecuada en cada caso, incluyendo el manejo especial necesario para que estos editores registren el cambio correctamente.
+
+Si las páginas cambian su estructura interna en el futuro, es posible que el icono deje de encontrar su "botón ancla" y se quede en una posición de emergencia (fija, siempre visible) hasta que se ajusten los selectores en el código.
+
+## Personalización del código
+
+Dentro del archivo puedes ajustar, entre otras cosas:
+
+- `SITE_CONFIG`: posición de emergencia, dirección de despliegue y modo de anclaje por sitio.
+- `PROMPTS_BY_LANG`: las reglas "de fábrica" de cada idioma (mismo `id` en todos los idiomas).
+- `UI_STRINGS`: textos de interfaz y las plantillas de activación/desactivación, por idioma.
+- `PROMPT_JOIN` / `SEPARATOR`: cómo se separan las reglas entre sí y respecto a tu mensaje.
+
+## Almacenamiento y privacidad
+
+El script no hace ninguna llamada de red propia ni envía datos a ningún servidor. Todo lo que guarda se queda en tu navegador, vía `GM_setValue`/`GM_getValue` (o `localStorage` si tu gestor no soporta `GM_*`):
+
+- Qué reglas tienes marcadas.
+- El idioma seleccionado.
+- Tus prompts personalizados.
+
+Estos datos se comparten entre DeepSeek, ChatGPT y Claude porque es el mismo script instalado, pero no salen de tu equipo.
+
+## Solución de problemas
+
+- **El icono no aparece o se queda en una esquina fija**: el botón ancla del sitio no se ha encontrado; revisa la consola del navegador (busca líneas `[SystemPrompt]`) para más detalle.
+- **Los prompts no se inyectan**: comprueba en la consola el log `input encontrado:` — si señala un elemento oculto o vacío, el selector del campo de texto puede necesitar ajuste (el sitio pudo cambiar su HTML).
+- **Quiero ver qué está pasando paso a paso**: abre las herramientas de desarrollador (F12) → pestaña "Consola" antes de enviar un mensaje; el script registra cada paso con el prefijo `[SystemPrompt]`.
+
+## Apoya el proyecto
+
+Si te resulta útil, en la parte inferior del panel hay un pequeño enlace de apoyo (no intrusivo, no hace ninguna llamada de red ni recoge datos). Si prefieres no verlo, puedes borrar sin problema el bloque marcado `APOYO ... fin bloque APOYO` en el código; el resto del script sigue funcionando exactamente igual.
+
+Justo encima, hay un botón **"Compartir"** para recomendar el script a otras personas mediante el selector nativo de tu sistema (WhatsApp, Telegram, correo, etc.) o copiando el enlace a Greasy Fork si tu navegador no lo soporta.
+
+## Licencia
+
+GPL-3.0. Autor: Francisco Vico.

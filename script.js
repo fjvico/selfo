@@ -1,1934 +1,1224 @@
-"use strict";
+// ==UserScript==
+// @name         SyssPrompt
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  Icono junto al botón "Share" (DeepSeek/ChatGPT) o en la barra de envío (Claude) para marcar qué system prompt(s) añadir al primer mensaje de cada conversación nueva
+// @author       Francisco Vico
+// @license      GPL-3.0
+// @homepageURL   https://fjvico.github.io
+// @supportURL    mailto:fjvico@uma.es
+// @match        https://chat.deepseek.com/*
+// @match        https://chatgpt.com/*
+// @match        https://chat.openai.com/*
+// @match        https://claude.ai/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @run-at       document-idle
+// ==/UserScript==
 
-/**
- * Selfo — main application logic.
- *
- * Game phases:
- *   'setup' -> 'playing' -> 'ended' -> 'setup' (auto, new game) -> ...
- *
- * There's no "nothing configured yet" state: a mode is always active (see
- * CONFIG.DEFAULT_MODE) and the board always shows a live preview of what a
- * new game with the current settings would look like. Changing the mode
- * or a board parameter while in 'setup' just regenerates that preview.
- * The game actually begins ('setup' -> 'playing') the moment a piece
- * moves — no separate "Start" button. Ending a game (by connecting all
- * pieces, resigning, or agreeing a draw) enters 'ended', which shows the
- * final board for CONFIG.ENDED_PAUSE_MS and then automatically returns to
- * 'setup' with a fresh preview — using whatever mode/parameters are
- * current at that moment, since the setup controls stay live during the
- * pause too. Picking a mode (including the one already active) at any
- * time abandons the current game, if any, and jumps straight to a fresh
- * preview for it.
- *
- * NOTE on future extensibility (per spec, not exposed in UI yet):
- *   RULES.maxStepsPerMove  — a piece could move several cells in one
- *                            straight hop instead of exactly 1.
- *   RULES.movesPerTurn     — a player could chain up to N moves in a turn.
- *   Both are read by isValidMove()/the turn loop so a future UI only has
- *   to change these values and add controls for them.
- */
+(function () {
+    'use strict';
 
-// ---------------------------------------------------------------------
-// Configuration & rules (future-proofed)
-// ---------------------------------------------------------------------
-const CONFIG = {
-  MIN_RADIUS: 2,
-  MAX_RADIUS: 6,
-  DEFAULT_RADIUS: 3,
-  CELL_SIZE: 30, // px, constant regardless of board radius
-  DEFAULT_CPU_TIME_SECONDS: 5,
-  DEFAULT_CPU_DEPTH: 2,
-  TOUCH_LONG_PRESS_MS: 220,   // touch: hold-still time before a drag is "armed" (and page panning gets locked)
-  TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
-  MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
-  DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
-  ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
-  GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
-};
-
-const RULES = {
-  maxStepsPerMove: 1, // future: allow moving N cells in a straight line
-  movesPerTurn: 1,    // future: allow chaining N moves per turn
-};
-
-// ---------------------------------------------------------------------
-// Global mutable game state
-// ---------------------------------------------------------------------
-const Game = {
-  phase: "setup", // 'setup' | 'playing' | 'ended' — see file header for the flow
-  setupReady: false, // 'setup' only becomes interactive once this flips true, after the start-grace wait
-  mode: CONFIG.DEFAULT_MODE, // 'local2p' | 'online2p' | 'vscomputer' | 'computerself' — always set
-
-  radius: CONFIG.DEFAULT_RADIUS,
-  piecesPerColor: 0,
-
-  cells: new Map(),      // key "q,r" -> { q, r, color: null|'black'|'white' }
-  neighborKeys: new Map(),// key -> array of neighbor keys that exist on board
-
-  turn: "black",
-  pieRuleAvailable: false, // true only right before white's first move
-  selectedKey: null,
-  lastMove: null,          // { from, to } for highlight
-  winner: null,             // 'black' | 'white' | null
-  drawOffered: null,        // color that offered a draw, or null
-  endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | null
-  moveLog: [],              // [{ color, from, to }, ...] for the download button
-
-  players: {
-    black: { name: "Player 1", isLocal: true },
-    white: { name: "Player 2", isLocal: true },
-  },
-  localColor: null, // in online mode, which color this browser controls
-  humanColor: "black", // in vscomputer mode, which color the human plays
-  localNames: { black: null, white: null }, // set by editing a name label directly; null means "use the default" for that slot
-
-  // online play
-  gameId: null,
-  isHost: false,
-  peer: null,
-  conn: null,
-};
-
-// ---------------------------------------------------------------------
-// DOM references
-// ---------------------------------------------------------------------
-const dom = {
-  gameIdValue: document.getElementById("gameIdValue"),
-  copyLinkBtn: document.getElementById("copyLinkBtn"),
-  turnIndicator: document.getElementById("turnIndicator"),
-
-  playerNameBlack: document.getElementById("playerNameBlack"),
-  playerNameWhite: document.getElementById("playerNameWhite"),
-  editIconBlack: document.getElementById("editIconBlack"),
-  editIconWhite: document.getElementById("editIconWhite"),
-  playerYouBlack: document.getElementById("playerYouBlack"),
-  playerYouWhite: document.getElementById("playerYouWhite"),
-  playerBadgeBlack: document.getElementById("playerBadgeBlack"),
-  playerBadgeWhite: document.getElementById("playerBadgeWhite"),
-  playerRowBlack: document.getElementById("playerRowBlack"),
-  playerRowWhite: document.getElementById("playerRowWhite"),
-
-  swapColorBtn: document.getElementById("swapColorBtn"),
-  offerDrawBtn: document.getElementById("offerDrawBtn"),
-  resignBtn: document.getElementById("resignBtn"),
-  messageBox: document.getElementById("messageBox"),
-
-  boardSvg: document.getElementById("boardSvg"),
-
-  modeSelectBlock: document.getElementById("modeSelectBlock"),
-  modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
-
-  onlineBlock: document.getElementById("onlineBlock"),
-  createGameBtn: document.getElementById("createGameBtn"),
-  joinGameBtn: document.getElementById("joinGameBtn"),
-  joinCodeWrap: document.getElementById("joinCodeWrap"),
-  joinCodeInput: document.getElementById("joinCodeInput"),
-  joinCodeSubmit: document.getElementById("joinCodeSubmit"),
-  onlineStatus: document.getElementById("onlineStatus"),
-
-  colorChoiceBlock: document.getElementById("colorChoiceBlock"),
-  colorButtons: Array.from(document.querySelectorAll(".color-btn")),
-
-  boardParamsBlock: document.getElementById("boardParamsBlock"),
-  radiusRange: document.getElementById("radiusRange"),
-  radiusValue: document.getElementById("radiusValue"),
-  piecesRange: document.getElementById("piecesRange"),
-  piecesValue: document.getElementById("piecesValue"),
-  cpuParamsBlock: document.getElementById("cpuParamsBlock"),
-  cpuTimeRange: document.getElementById("cpuTimeRange"),
-  cpuTimeValue: document.getElementById("cpuTimeValue"),
-  cpuDepthRange: document.getElementById("cpuDepthRange"),
-  cpuDepthValue: document.getElementById("cpuDepthValue"),
-
-  boardFlash: document.getElementById("boardFlash"),
-
-  onboardingOverlay: document.getElementById("onboardingOverlay"),
-  onboardingDontShow: document.getElementById("onboardingDontShow"),
-  onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
-  downloadBtn: document.getElementById("downloadBtn"),
-};
-
-// =======================================================================
-// Utility helpers
-// =======================================================================
-
-function randomGameId() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
-  let out = "";
-  for (let i = 0; i < 6; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return out;
-}
-
-function showMessage(text) {
-  dom.messageBox.textContent = text;
-}
-
-function opponentOf(color) {
-  return color === "black" ? "white" : "black";
-}
-
-/** 'playing' is always interactive. 'setup' (the live preview) only
- *  becomes interactive once Game.setupReady is true — every fresh
- *  preview waits CONFIG.GAME_START_GRACE_MS first (controls stay fully
- *  usable during that wait), then flashes and only then can a piece
- *  actually be moved. Only 'ended' (showing the finished board) is
- *  never interactive. */
-function isInteractivePhase() {
-  return Game.phase === "playing" || (Game.phase === "setup" && Game.setupReady);
-}
-
-// =======================================================================
-// Board generation & piece placement
-// =======================================================================
-
-/** Fisher-Yates shuffle, returns a new shuffled array (does not mutate input). */
-function shuffled(array) {
-  const a = array.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/**
- * Splits all cells of a board into 3 "color classes" using (q - r) mod 3.
- * On a hex grid, any two adjacent cells always fall into different classes
- * (their (q - r) value always changes by +1 or +2 mod 3 across an edge),
- * so each class is, by construction, an independent set: no two cells
- * within the same class are ever adjacent. This is what lets us guarantee
- * "no two same-color pieces on adjacent cells" purely by picking pieces
- * from a single class per color.
- */
-function classifyCellsByIndependentSet(rawCells) {
-  const classes = [[], [], []];
-  for (const c of rawCells) {
-    const idx = ((c.q - c.r) % 3 + 3) % 3;
-    classes[idx].push(c);
-  }
-  return classes;
-}
-
-/** Min/max pieces per color allowed for a given radius, respecting the
- *  no-adjacent-same-color constraint (max = size of the smaller of the
- *  two independent-set classes used for black and white). */
-function pieceRangeForRadius(radius) {
-  const { cells } = BoardInit.init(radius);
-  const rawCells = Array.from(cells.values());
-  const classes = classifyCellsByIndependentSet(rawCells);
-  const sizes = classes.map((c) => c.length).sort((a, b) => b - a);
-  const maxPerColor = Math.max(1, sizes[1]); // 2nd-largest: the smaller of the 2 pools we'll actually use
-  const minPerColor = Math.max(1, Math.min(maxPerColor, 2));
-  return { min: minPerColor, max: maxPerColor };
-}
-
-/**
- * Build a fresh board of the given radius and randomly scatter
- * `piecesPerColor` black and white pieces so that no two pieces of the
- * same color ever sit on adjacent cells. The empty grid itself comes from
- * BoardInit (see boardinit.js), which is where alternative grid-generation
- * strategies live; this function only handles piece placement. Each
- * color's pieces are drawn from one of the 3 independent-set classes of
- * the hex grid (see classifyCellsByIndependentSet), so the constraint
- * holds by construction — not by trial and error — and the layout is
- * re-randomized every game.
- */
-function buildBoard(radius, piecesPerColor) {
-  const { cells, neighborKeys } = BoardInit.init(radius);
-  const rawCells = Array.from(cells.values());
-
-  // pick the 2 largest independent-set classes and randomly assign one to
-  // each color (order shuffled so the same board size doesn't always put
-  // black on the same class)
-  const classes = classifyCellsByIndependentSet(rawCells)
-    .slice()
-    .sort((a, b) => b.length - a.length);
-  const [blackPool, whitePool] = shuffled([classes[0], classes[1]]);
-
-  const blackCells = shuffled(blackPool).slice(0, piecesPerColor);
-  const whiteCells = shuffled(whitePool).slice(0, piecesPerColor);
-
-  for (const c of blackCells) cells.get(HexGeometry.key(c.q, c.r)).color = "black";
-  for (const c of whiteCells) cells.get(HexGeometry.key(c.q, c.r)).color = "white";
-
-  return { cells, neighborKeys };
-}
-
-// =======================================================================
-// Connectivity check (win condition)
-// =======================================================================
-
-/** True if every piece of `color` can reach every other piece of `color`
- *  through adjacent same-color cells (i.e. they form a single group). */
-function isFullyConnected(color) {
-  const ownKeys = [];
-  for (const [k, cell] of Game.cells) {
-    if (cell.color === color) ownKeys.push(k);
-  }
-  if (ownKeys.length <= 1) return ownKeys.length === 1; // 0 pieces = trivially not a win
-  const start = ownKeys[0];
-  const visited = new Set([start]);
-  const stack = [start];
-  while (stack.length) {
-    const k = stack.pop();
-    for (const nk of Game.neighborKeys.get(k)) {
-      if (visited.has(nk)) continue;
-      const nCell = Game.cells.get(nk);
-      if (nCell.color === color) {
-        visited.add(nk);
-        stack.push(nk);
-      }
+    // =========================================================
+    // 0) DETECCIÓN DE SITIO
+    // =========================================================
+    // De esto dependen: qué botón usamos como "ancla" para colocar el
+    // icono, y en qué dirección se despliega el panel (arriba/abajo).
+    const HOST = location.hostname;
+    let SITE = 'deepseek';
+    if (HOST.includes('chatgpt.com') || HOST.includes('chat.openai.com')) {
+        SITE = 'chatgpt';
+    } else if (HOST.includes('claude.ai')) {
+        SITE = 'claude';
     }
-  }
-  return visited.size === ownKeys.length;
-}
 
-// =======================================================================
-// Rendering
-// =======================================================================
+    // direction: 'down'  -> el panel se despliega hacia abajo (icono arriba, como en DeepSeek/ChatGPT)
+    // direction: 'up'    -> el panel se despliega hacia arriba (icono abajo, como en Claude)
+    // fallbackPos: posición de emergencia mientras no se localiza el botón ancla
+    // attachMode: 'inline' -> se intenta enganchar el icono junto a un botón real de la página
+    //             'fixed'  -> el icono se queda SIEMPRE en la posición fija (fallbackPos); no se
+    //                         inserta dentro del DOM de la página. Se usa en Claude porque su barra
+    //                         del composer centra sus hijos y el icono acababa apareciendo en medio
+    //                         del ancho en vez de pegado al margen derecho.
+    // inlineOffsetY: desplazamiento vertical extra (px) aplicado SOLO cuando attachMode es 'inline'
+    //                y el enganche tuvo éxito (para ChatGPT, 1.5 veces la altura del icono).
+    const ICON_HEIGHT = 28;
+    const SITE_CONFIG = {
+        deepseek: { direction: 'down', fallbackPos: { top: '12px', right: '64px' }, attachMode: 'inline', inlineOffsetY: 0 },
+        chatgpt:  { direction: 'down', fallbackPos: { top: '50px', right: '20px' }, attachMode: 'inline', inlineOffsetY: 0 },
+        claude:   { direction: 'up',   fallbackPos: { bottom: '12px', right: '20px' }, attachMode: 'fixed', inlineOffsetY: 0 },
+    };
+    const siteConfig = SITE_CONFIG[SITE];
 
-function renderBoard() {
-  const svg = dom.boardSvg;
-  svg.innerHTML = "";
+    // =========================================================
+    // 1) IDIOMAS Y PROMPTS (traducidos) — añade tantos como quieras
+    // =========================================================
+    // Los ids de cada prompt deben ser IGUALES en todos los idiomas (son la
+    // clave que se guarda al marcar/desmarcar); solo cambian "name" y "text".
+    const LANGUAGES = ['ES', 'CA', 'EU', 'GL', 'EN', 'FR', 'DE', 'IT', 'PT', 'RU', 'ZH', 'JA', 'KA'];
 
-  const size = CONFIG.CELL_SIZE;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const positions = new Map();
-  for (const [k, cell] of Game.cells) {
-    const p = HexGeometry.axialToPixel(cell.q, cell.r, size);
-    positions.set(k, p);
-    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-  }
-  const pad = size * 1.4;
-  const vbX = minX - pad, vbY = minY - pad;
-  const vbW = (maxX - minX) + pad * 2, vbH = (maxY - minY) + pad * 2;
-  svg.setAttribute("viewBox", `${vbX} ${vbY} ${vbW} ${vbH}`);
-  svg.setAttribute("width", Math.round(vbW));
-  svg.setAttribute("height", Math.round(vbH));
+    const PROMPTS_BY_LANG = {
+        ES: [
+            { id: 'concision', name: 'Sé conciso', text: 'Responde de forma extremadamente concisa, sin rodeos ni explicaciones innecesarias.' },
+            { id: 'paso_a_paso', name: 'Explica paso a paso', text: 'Explica tu razonamiento paso a paso, de forma clara y detallada, como si se lo explicaras a alguien sin conocimientos previos del tema.' },
+            { id: 'lenguaje_sencillo', name: 'Lenguaje sencillo', text: 'Usa un lenguaje sencillo y cercano, evitando tecnicismos y jerga innecesaria.' },
+            { id: 'idioma_respuesta', name: 'Responder en español', text: 'Contesta en español.' },
+        ],
+        CA: [
+            { id: 'concision', name: 'Sigues concís', text: 'Respon de manera extremadament concisa, sense rodejos ni explicacions innecessàries.' },
+            { id: 'paso_a_paso', name: 'Explica pas a pas', text: 'Explica el teu raonament pas a pas, de manera clara i detallada, com si ho expliquessis a algú sense coneixements previs del tema.' },
+            { id: 'lenguaje_sencillo', name: 'Llenguatge senzill', text: 'Fes servir un llenguatge senzill i proper, evitant tecnicismes i argot innecessari.' },
+            { id: 'idioma_respuesta', name: 'Respondre en català', text: 'Contesta en català.' },
+        ],
+        EU: [
+            { id: 'concision', name: 'Izan zaitez zehatza', text: 'Erantzun oso modu zehatzean, itzulinguruak eta beharrezkoak ez diren azalpenak saihestuz.' },
+            { id: 'paso_a_paso', name: 'Azaldu urratsez urrats', text: 'Azaldu zure arrazoiketa urratsez urrats, argi eta zehatz, gaiaren aurretiko ezagutzarik ez duen norbaiti azalduko bazenio bezala.' },
+            { id: 'lenguaje_sencillo', name: 'Hizkuntza erraza', text: 'Erabili hizkuntza erraz eta hurbila, teknizismoak eta beharrezkoa ez den jargoia saihestuz.' },
+            { id: 'idioma_respuesta', name: 'Euskaraz erantzun', text: 'Erantzun euskaraz.' },
+        ],
+        GL: [
+            { id: 'concision', name: 'Sé conciso', text: 'Responde de forma extremadamente concisa, sen rodeos nin explicacións innecesarias.' },
+            { id: 'paso_a_paso', name: 'Explica paso a paso', text: 'Explica o teu razoamento paso a paso, de forma clara e detallada, coma se llo estiveses a explicar a alguén sen coñecementos previos sobre o tema.' },
+            { id: 'lenguaje_sencillo', name: 'Linguaxe sinxela', text: 'Usa unha linguaxe sinxela e próxima, evitando tecnicismos e xerga innecesaria.' },
+            { id: 'idioma_respuesta', name: 'Responder en galego', text: 'Contesta en galego.' },
+        ],
+        EN: [
+            { id: 'concision', name: 'Be concise', text: 'Answer extremely concisely, without detours or unnecessary explanations.' },
+            { id: 'paso_a_paso', name: 'Explain step by step', text: 'Explain your reasoning step by step, clearly and in detail, as if explaining it to someone with no prior knowledge of the topic.' },
+            { id: 'lenguaje_sencillo', name: 'Plain language', text: 'Use simple, approachable language, avoiding jargon and unnecessary technical terms.' },
+            { id: 'idioma_respuesta', name: 'Reply in English', text: 'Answer in English.' },
+        ],
+        FR: [
+            { id: 'concision', name: 'Sois concis', text: 'Réponds de manière extrêmement concise, sans détours ni explications inutiles.' },
+            { id: 'paso_a_paso', name: 'Explique étape par étape', text: "Explique ton raisonnement étape par étape, de façon claire et détaillée, comme si tu l'expliquais à quelqu'un sans connaissances préalables du sujet." },
+            { id: 'lenguaje_sencillo', name: 'Langage simple', text: 'Utilise un langage simple et accessible, en évitant le jargon et les termes techniques inutiles.' },
+            { id: 'idioma_respuesta', name: 'Répondre en français', text: 'Réponds en français.' },
+        ],
+        DE: [
+            { id: 'concision', name: 'Sei prägnant', text: 'Antworte extrem knapp, ohne Umwege oder unnötige Erklärungen.' },
+            { id: 'paso_a_paso', name: 'Erkläre Schritt für Schritt', text: 'Erkläre deine Überlegungen Schritt für Schritt, klar und detailliert, so als würdest du es jemandem ohne Vorkenntnisse zum Thema erklären.' },
+            { id: 'lenguaje_sencillo', name: 'Einfache Sprache', text: 'Verwende eine einfache, zugängliche Sprache und vermeide unnötigen Fachjargon.' },
+            { id: 'idioma_respuesta', name: 'Auf Deutsch antworten', text: 'Antworte auf Deutsch.' },
+        ],
+        IT: [
+            { id: 'concision', name: 'Sii conciso', text: 'Rispondi in modo estremamente conciso, senza giri di parole o spiegazioni inutili.' },
+            { id: 'paso_a_paso', name: 'Spiega passo dopo passo', text: "Spiega il tuo ragionamento passo dopo passo, in modo chiaro e dettagliato, come se lo stessi spiegando a qualcuno senza conoscenze pregresse sull'argomento." },
+            { id: 'lenguaje_sencillo', name: 'Linguaggio semplice', text: 'Usa un linguaggio semplice e accessibile, evitando tecnicismi e gergo inutile.' },
+            { id: 'idioma_respuesta', name: 'Rispondere in italiano', text: 'Rispondi in italiano.' },
+        ],
+        PT: [
+            { id: 'concision', name: 'Sê conciso', text: 'Responde de forma extremamente concisa, sem rodeios nem explicações desnecessárias.' },
+            { id: 'paso_a_paso', name: 'Explica passo a passo', text: 'Explica o teu raciocínio passo a passo, de forma clara e detalhada, como se estivesses a explicar a alguém sem conhecimentos prévios sobre o tema.' },
+            { id: 'lenguaje_sencillo', name: 'Linguagem simples', text: 'Usa uma linguagem simples e próxima, evitando tecnicismos e jargão desnecessário.' },
+            { id: 'idioma_respuesta', name: 'Responder em português', text: 'Responde em português.' },
+        ],
+        RU: [
+            { id: 'concision', name: 'Будь краток', text: 'Отвечай предельно кратко, без лишних отступлений и ненужных объяснений.' },
+            { id: 'paso_a_paso', name: 'Объясняй пошагово', text: 'Объясняй свои рассуждения шаг за шагом, ясно и подробно, как будто объясняешь человеку, который впервые слышит об этой теме.' },
+            { id: 'lenguaje_sencillo', name: 'Простой язык', text: 'Используй простой и доступный язык, избегая терминов и ненужного жаргона.' },
+            { id: 'idioma_respuesta', name: 'Отвечать на русском', text: 'Отвечай на русском языке.' },
+        ],
+        ZH: [
+            { id: 'concision', name: '简洁回答', text: '请极其简洁地回答，不要绕圈子，也不要给出不必要的解释。' },
+            { id: 'paso_a_paso', name: '逐步解释', text: '请一步步清晰详细地解释你的推理过程，就像在向一个完全不了解该主题的人讲解一样。' },
+            { id: 'lenguaje_sencillo', name: '简单语言', text: '使用简单易懂、贴近日常的语言，避免使用行话和不必要的专业术语。' },
+            { id: 'idioma_respuesta', name: '用中文回答', text: '请用中文回答。' },
+        ],
+        JA: [
+            { id: 'concision', name: '簡潔に答える', text: '回り道や不要な説明をせず、極めて簡潔に答えてください。' },
+            { id: 'paso_a_paso', name: 'ステップごとに説明', text: 'そのトピックについて予備知識のない人に説明するかのように、あなたの推論をステップごとに明確かつ詳細に説明してください。' },
+            { id: 'lenguaje_sencillo', name: '平易な言葉', text: '専門用語や不要な業界用語を避け、シンプルで親しみやすい言葉を使ってください。' },
+            { id: 'idioma_respuesta', name: '日本語で回答', text: '日本語で答えてください。' },
+        ],
+        KA: [
+            { id: 'concision', name: 'იყავი ლაკონური', text: 'უპასუხე უკიდურესად მოკლედ, ზედმეტი გადახვევებისა და საჭირო არარსებული განმარტებების გარეშე.' },
+            { id: 'paso_a_paso', name: 'ახსენი ნაბიჯ-ნაბიჯ', text: 'ახსენი შენი მსჯელობა ნაბიჯ-ნაბიჯ, ნათლად და დეტალურად, თითქოს განუმარტავდი ვინმეს, ვისაც ამ თემის შესახებ წინასწარი ცოდნა არ აქვს.' },
+            { id: 'lenguaje_sencillo', name: 'მარტივი ენა', text: 'გამოიყენე მარტივი და ხელმისაწვდომი ენა, მოერიდე ჟარგონსა და საჭიროების გარეშე ტექნიკურ ტერმინებს.' },
+            { id: 'idioma_respuesta', name: 'უპასუხე ქართულად', text: 'უპასუხე ქართულად.' },
+        ],
+        // -> Añade más objetos aquí (mismo id en cada idioma): { id: 'xxx', name: '...', text: '...' }
+    };
 
-  // gradients for pieces (defined once per render, cheap enough)
-  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-  defs.innerHTML = `
-    <radialGradient id="pieceBlackGrad" cx="35%" cy="30%" r="75%">
-      <stop offset="0%" stop-color="#4b5158"/>
-      <stop offset="100%" stop-color="#05060a"/>
-    </radialGradient>
-    <radialGradient id="pieceWhiteGrad" cx="35%" cy="30%" r="75%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#aeb8c0"/>
-    </radialGradient>`;
-  svg.appendChild(defs);
+    // Textos de la interfaz (nota y plantilla de revocación) por idioma.
+    // activateTemplate(name, text): frase para CADA prompt recién activado.
+    // deactivateTemplate(namesList): frase única para TODOS los prompts recién
+    // desactivados en esta pasada (namesList ya viene formateado como
+    // "Nombre 1", "Nombre 2").
+    const UI_STRINGS = {
+        ES: { note: 'Si no marcas ninguno, no se añade nada.', title: 'System prompts',
+            namePlaceholder: 'Nombre corto', textPlaceholder: 'Texto de la instrucción...', addButton: '+ Añadir prompt',
+            shareLabel: 'Compartir', shareText: 'SyssPrompt: añade instrucciones a DeepSeek, ChatGPT y Claude con un clic.', copiedLabel: '¡Enlace copiado!',
+            activateTemplate: (name, text) => `A partir de ahora, sigue la regla "${name}": ${text}`,
+            deactivateTemplate: (names) => `Cancela las reglas ${names}. El resto de instrucciones que te he dado siguen vigentes.` },
+        CA: { note: "Si no en marques cap, no s'afegeix res.", title: 'System prompts',
+            namePlaceholder: 'Nom curt', textPlaceholder: 'Text de la instrucció...', addButton: '+ Afegir prompt',
+            shareLabel: 'Compartir', shareText: 'SyssPrompt: afegeix instruccions a DeepSeek, ChatGPT i Claude amb un clic.', copiedLabel: 'Enllaç copiat!',
+            activateTemplate: (name, text) => `A partir d'ara, segueix la regla "${name}": ${text}`,
+            deactivateTemplate: (names) => `Cancel·la les regles ${names}. La resta d'instruccions que t'he donat continuen vigents.` },
+        EU: { note: 'Bat ere markatzen ez baduzu, ez da ezer gehitzen.', title: 'System prompts',
+            namePlaceholder: 'Izen laburra', textPlaceholder: 'Jarraibidearen testua...', addButton: '+ Prompt bat gehitu',
+            shareLabel: 'Partekatu', shareText: 'SyssPrompt: gehitu jarraibideak DeepSeek, ChatGPT eta Claude-ri klik batean.', copiedLabel: 'Esteka kopiatuta!',
+            activateTemplate: (name, text) => `Hemendik aurrera, jarraitu "${name}" araua: ${text}`,
+            deactivateTemplate: (names) => `Ezeztatu ${names} arauak. Eman dizkizudan gainerako jarraibideek indarrean jarraitzen dute.` },
+        GL: { note: 'Se non marcas ningún, non se engade nada.', title: 'System prompts',
+            namePlaceholder: 'Nome curto', textPlaceholder: 'Texto da instrución...', addButton: '+ Engadir prompt',
+            shareLabel: 'Compartir', shareText: 'SyssPrompt: engade instrucións a DeepSeek, ChatGPT e Claude cun clic.', copiedLabel: 'Ligazón copiada!',
+            activateTemplate: (name, text) => `A partir de agora, segue a regra "${name}": ${text}`,
+            deactivateTemplate: (names) => `Cancela as regras ${names}. O resto das instrucións que che dei seguen vixentes.` },
+        EN: { note: "If you don't check any, nothing is added.", title: 'System prompts',
+            namePlaceholder: 'Short name', textPlaceholder: 'Instruction text...', addButton: '+ Add prompt',
+            shareLabel: 'Share', shareText: 'SyssPrompt: add instructions to DeepSeek, ChatGPT and Claude with one click.', copiedLabel: 'Link copied!',
+            activateTemplate: (name, text) => `From now on, follow the rule "${name}": ${text}`,
+            deactivateTemplate: (names) => `Cancel the rules ${names}. The rest of the instructions I gave you remain in effect.` },
+        FR: { note: "Si vous n'en cochez aucun, rien n'est ajouté.", title: 'System prompts',
+            namePlaceholder: 'Nom court', textPlaceholder: "Texte de l'instruction...", addButton: '+ Ajouter un prompt',
+            shareLabel: 'Partager', shareText: "SyssPrompt : ajoute des instructions à DeepSeek, ChatGPT et Claude en un clic.", copiedLabel: 'Lien copié !',
+            activateTemplate: (name, text) => `À partir de maintenant, suis la règle "${name}" : ${text}`,
+            deactivateTemplate: (names) => `Annule les règles ${names}. Le reste des instructions que je t'ai données reste en vigueur.` },
+        DE: { note: 'Wenn du keinen auswählst, wird nichts hinzugefügt.', title: 'System prompts',
+            namePlaceholder: 'Kurzer Name', textPlaceholder: 'Text der Anweisung...', addButton: '+ Prompt hinzufügen',
+            shareLabel: 'Teilen', shareText: 'SyssPrompt: fügt DeepSeek, ChatGPT und Claude mit einem Klick Anweisungen hinzu.', copiedLabel: 'Link kopiert!',
+            activateTemplate: (name, text) => `Ab jetzt befolge die Regel "${name}": ${text}`,
+            deactivateTemplate: (names) => `Widerrufe die Regeln ${names}. Die übrigen Anweisungen, die ich dir gegeben habe, bleiben weiterhin gültig.` },
+        IT: { note: 'Se non ne selezioni nessuno, non viene aggiunto nulla.', title: 'System prompts',
+            namePlaceholder: 'Nome breve', textPlaceholder: "Testo dell'istruzione...", addButton: '+ Aggiungi prompt',
+            shareLabel: 'Condividi', shareText: 'SyssPrompt: aggiunge istruzioni a DeepSeek, ChatGPT e Claude con un clic.', copiedLabel: 'Link copiato!',
+            activateTemplate: (name, text) => `Da ora in poi, segui la regola "${name}": ${text}`,
+            deactivateTemplate: (names) => `Annulla le regole ${names}. Il resto delle istruzioni che ti ho dato resta valido.` },
+        PT: { note: 'Se não marcares nenhum, nada é adicionado.', title: 'System prompts',
+            namePlaceholder: 'Nome curto', textPlaceholder: 'Texto da instrução...', addButton: '+ Adicionar prompt',
+            shareLabel: 'Partilhar', shareText: 'SyssPrompt: adiciona instruções ao DeepSeek, ChatGPT e Claude com um clique.', copiedLabel: 'Link copiado!',
+            activateTemplate: (name, text) => `A partir de agora, segue a regra "${name}": ${text}`,
+            deactivateTemplate: (names) => `Cancela as regras ${names}. O resto das instruções que te dei continuam válidas.` },
+        RU: { note: 'Если ничего не отмечено, ничего не добавляется.', title: 'System prompts',
+            namePlaceholder: 'Короткое название', textPlaceholder: 'Текст инструкции...', addButton: '+ Добавить промпт',
+            shareLabel: 'Поделиться', shareText: 'SyssPrompt: добавляет инструкции в DeepSeek, ChatGPT и Claude в один клик.', copiedLabel: 'Ссылка скопирована!',
+            activateTemplate: (name, text) => `С этого момента следуй правилу "${name}": ${text}`,
+            deactivateTemplate: (names) => `Отмени правила ${names}. Остальные данные тебе инструкции остаются в силе.` },
+        ZH: { note: '如果不勾选任何一项，则不会添加任何内容。', title: 'System prompts',
+            namePlaceholder: '简短名称', textPlaceholder: '指令内容...', addButton: '+ 添加提示词',
+            shareLabel: '分享', shareText: 'SyssPrompt：一键为 DeepSeek、ChatGPT 和 Claude 添加指令。', copiedLabel: '链接已复制！',
+            activateTemplate: (name, text) => `从现在起，请遵循规则"${name}"：${text}`,
+            deactivateTemplate: (names) => `取消规则${names}。我给你的其他指令仍然有效。` },
+        JA: { note: '何もチェックしない場合、何も追加されません。', title: 'System prompts',
+            namePlaceholder: '短い名前', textPlaceholder: '指示の内容...', addButton: '+ プロンプトを追加',
+            shareLabel: '共有', shareText: 'SyssPrompt：ワンクリックでDeepSeek、ChatGPT、Claudeに指示を追加。', copiedLabel: 'リンクをコピーしました！',
+            activateTemplate: (name, text) => `これからは「${name}」というルールに従ってください：${text}`,
+            deactivateTemplate: (names) => `ルール${names}を取り消してください。これまでに伝えた他の指示は引き続き有効です。` },
+        KA: { note: 'თუ არცერთს არ მონიშნავ, არაფერი დაემატება.', title: 'System prompts',
+            namePlaceholder: 'მოკლე სახელი', textPlaceholder: 'ინსტრუქციის ტექსტი...', addButton: '+ პრომპტის დამატება',
+            shareLabel: 'გაზიარება', shareText: 'SyssPrompt: დაამატე ინსტრუქციები DeepSeek-ს, ChatGPT-ს და Claude-ს ერთი დაწკაპუნებით.', copiedLabel: 'ბმული დაკოპირდა!',
+            activateTemplate: (name, text) => `ამიერიდან მიჰყევი წესს "${name}": ${text}`,
+            deactivateTemplate: (names) => `გააუქმე წესები ${names}. დანარჩენი მითითებები, რომლებიც მოგეცი, ძალაში რჩება.` },
+    };
 
-  const cellsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  cellsGroup.setAttribute("id", "cellsGroup");
-  const piecesGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  piecesGroup.setAttribute("id", "piecesGroup");
-
-  for (const [k, cell] of Game.cells) {
-    const p = positions.get(k);
-    const corners = HexGeometry.hexCorners(p.x, p.y, size);
-    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-    poly.setAttribute("points", corners.map((pt) => pt.join(",")).join(" "));
-    poly.setAttribute("class", "hex-cell");
-    poly.dataset.key = k;
-    poly.addEventListener("click", () => onCellClick(k));
-    attachHoverDwellClick(poly, k);
-    cellsGroup.appendChild(poly);
-  }
-
-  svg.appendChild(cellsGroup);
-  svg.appendChild(piecesGroup);
-
-  renderPieces(positions);
-  applyHighlights();
-}
-
-function renderPieces(positions) {
-  const piecesGroup = document.getElementById("piecesGroup");
-  piecesGroup.innerHTML = "";
-  const r = CONFIG.CELL_SIZE * 0.62;
-
-  for (const [k, cell] of Game.cells) {
-    if (!cell.color) continue;
-    const p = positions.get(k) || HexGeometry.axialToPixel(cell.q, cell.r, CONFIG.CELL_SIZE);
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("cx", p.x);
-    circle.setAttribute("cy", p.y);
-    circle.setAttribute("r", r);
-    circle.setAttribute("class", `piece piece-${cell.color}`);
-    circle.dataset.key = k;
-
-    const canDrag = isInteractivePhase() && cell.color === Game.turn && isMyTurnLocally();
-    if (canDrag) {
-      circle.classList.add("own-piece", "draggable");
-      circle.addEventListener("pointerdown", (ev) => onPieceDragStart(ev, k));
+    // Convierte una lista de nombres en 'name1", "name2' formateado para
+    // insertar dentro de deactivateTemplate (que ya pone las comillas del extremo).
+    function quotedNames(names) {
+        return names.map(n => `"${n}"`).join(', ');
     }
-    circle.addEventListener("click", (ev) => { ev.stopPropagation(); onCellClick(k); });
-    attachHoverDwellClick(circle, k);
 
-    piecesGroup.appendChild(circle);
-  }
-}
+    // Si este script te resulta útil y quieres apoyar el trabajo detrás de él,
+    // abajo del todo del panel se muestra un pequeño enlace de apoyo (no
+    // intrusivo, no hace ninguna llamada de red ni recoge datos). Si prefieres
+    // no verlo, puedes borrar sin problema el bloque "APOYO" más abajo (busca
+    // "APOYO" en este archivo); el resto del script funciona exactamente igual.
+    const SUPPORT_URL = 'https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48';
 
-function applyHighlights() {
-  const polys = dom.boardSvg.querySelectorAll(".hex-cell");
-  const selected = Game.selectedKey;
-  const targets = selected ? Game.neighborKeys.get(selected).filter((nk) => !Game.cells.get(nk).color) : [];
+    // Página del script en Greasy Fork: la forma más sencilla de instalarlo
+    // (botón de instalación de un clic, detecta si falta el gestor de userscripts).
+    const SITE_URL = 'https://greasyfork.org/en/scripts/593175-syssprompt';
+    const SUPPORT_TEXT_PRE = 'Buy me a ';
+    const SUPPORT_TEXT_LINK = 'book';
+    const SUPPORT_TEXT_POST = ' ❤️';
 
-  polys.forEach((poly) => {
-    const k = poly.dataset.key;
-    poly.classList.remove("selected", "move-target", "selectable", "last-move");
-    const cell = Game.cells.get(k);
-
-    if (isInteractivePhase() && isMyTurnLocally()) {
-      if (cell.color === Game.turn) poly.classList.add("selectable");
-      if (targets.includes(k)) poly.classList.add("selectable", "move-target");
+    function getPrompts() {
+        const builtIn = PROMPTS_BY_LANG[currentLang] || PROMPTS_BY_LANG.ES;
+        // Los "de fábrica" vienen del código (pueden cambiar en una futura
+        // actualización del script); los personalizados del usuario se leen
+        // de almacenamiento persistente y sobreviven a esas actualizaciones.
+        return builtIn.concat(getCustomPrompts(currentLang));
     }
-    if (k === selected) poly.classList.add("selected");
-    if (Game.lastMove && (k === Game.lastMove.from || k === Game.lastMove.to)) {
-      poly.classList.add("last-move");
+    function getUIStrings() {
+        return UI_STRINGS[currentLang] || UI_STRINGS.ES;
     }
-  });
 
-  dom.boardSvg.querySelectorAll(".piece").forEach((p) => {
-    p.classList.toggle("selected-piece", p.dataset.key === selected);
-  });
-}
+    // Cómo se combinan los prompts marcados entre sí (un único párrafo, separados por espacio)
+    const PROMPT_JOIN = " ";
+    // Cómo se separa el mensaje del usuario del bloque de prompts (una línea en blanco)
+    const SEPARATOR = "\n\n";
 
-// =======================================================================
-// Interaction: click-click move
-// =======================================================================
+    // =========================================================
+    // 2) PERSISTENCIA (qué prompts están marcados)
+    // =========================================================
+    // Misma clave en los tres sitios: si usas Tampermonkey, la selección de
+    // prompts se comparte entre DeepSeek, ChatGPT y Claude (es el mismo script).
+    const STORAGE_KEY_SELECTED_IDS = 'ds_sysprompt_selected_ids';
 
-function onCellClick(key) {
-  if (!isInteractivePhase() || !isMyTurnLocally()) return;
-  const cell = Game.cells.get(key);
+    const hasGM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
 
-  if (Game.selectedKey === null) {
-    if (cell.color === Game.turn) {
-      Game.selectedKey = key;
-      applyHighlights();
+    function loadValue(key, def) {
+        try {
+            if (hasGM) {
+                const v = GM_getValue(key, undefined);
+                return v === undefined ? def : v;
+            }
+            const v = localStorage.getItem(key);
+            return v === null ? def : JSON.parse(v);
+        } catch (err) {
+            console.error('[SystemPrompt] Error leyendo valor guardado:', err);
+            return def;
+        }
     }
-    return;
-  }
-
-  if (key === Game.selectedKey) {
-    Game.selectedKey = null; // deselect
-    applyHighlights();
-    return;
-  }
-
-  const targets = Game.neighborKeys.get(Game.selectedKey).filter((nk) => !Game.cells.get(nk).color);
-  if (targets.includes(key)) {
-    performMove(Game.selectedKey, key);
-    return;
-  }
-
-  // clicked a different own piece -> reselect; anything else -> deselect
-  if (cell.color === Game.turn) {
-    Game.selectedKey = key;
-  } else {
-    Game.selectedKey = null;
-  }
-  applyHighlights();
-}
-
-// =======================================================================
-// Interaction: drag & drop move
-// =======================================================================
-//
-// Mouse/pen: drag starts immediately on pointerdown (no scrolling to
-// conflict with on a desktop).
-//
-// Touch: starting the drag immediately — and locking page panning for
-// it — made any touch that merely swept across a piece while scrolling
-// get hijacked into a drag, which fought with the page's own scroll
-// gesture (worse on a diagonal swipe, since the vertical component kept
-// racing the native scroll). Instead, a touch on a piece "arms" a
-// possible drag; if the finger lifts or moves more than a few pixels
-// before a short hold completes, it's treated as an ordinary
-// scroll/tap and nothing about page panning is touched. Only once the
-// hold is confirmed does the drag actually begin — from that moment
-// page panning is locked (via touch-action) until the piece is
-// dropped, at which point it's unlocked immediately.
-
-let dragState = null;
-
-function svgUserPoint(svg, clientX, clientY) {
-  const pt = svg.createSVGPoint();
-  pt.x = clientX; pt.y = clientY;
-  const ctm = svg.getScreenCTM();
-  if (!ctm) return { x: 0, y: 0 };
-  const transformed = pt.matrixTransform(ctm.inverse());
-  return { x: transformed.x, y: transformed.y };
-}
-
-function onPieceDragStart(ev, key) {
-  if (!isInteractivePhase() || !isMyTurnLocally()) return;
-  if (dragState) return; // a drag is already in progress
-  const cell = Game.cells.get(key);
-  if (cell.color !== Game.turn) return;
-
-  const circle = ev.currentTarget;
-
-  if (ev.pointerType !== "touch") {
-    // mouse / pen: no page-scroll conflict, so start dragging right away
-    ev.preventDefault();
-    beginDrag(ev, key, circle);
-    return;
-  }
-
-  armTouchDrag(ev, key, circle);
-}
-
-/** Touch only: waits for a short, still hold before treating the touch as
- *  a drag. A quick tap or a swipe that moves before the hold completes
- *  is left completely alone — the browser scrolls the page as normal,
- *  since nothing here ever called preventDefault() or touched
- *  touch-action for it. */
-function armTouchDrag(ev, key, circle) {
-  const pointerId = ev.pointerId;
-  const startX = ev.clientX;
-  const startY = ev.clientY;
-  let settled = false;
-
-  const cleanup = () => {
-    settled = true;
-    clearTimeout(armTimer);
-    circle.removeEventListener("pointermove", onEarlyMove);
-    circle.removeEventListener("pointerup", onEarlyEnd);
-    circle.removeEventListener("pointercancel", onEarlyEnd);
-  };
-
-  const onEarlyMove = (mv) => {
-    if (mv.pointerId !== pointerId || settled) return;
-    const dx = mv.clientX - startX;
-    const dy = mv.clientY - startY;
-    if (Math.hypot(dx, dy) > CONFIG.TOUCH_LONG_PRESS_TOLERANCE_PX) {
-      cleanup(); // moved too much before the hold completed: let it scroll
+    function saveValue(key, value) {
+        try {
+            if (hasGM) {
+                GM_setValue(key, value);
+            } else {
+                localStorage.setItem(key, JSON.stringify(value));
+            }
+        } catch (err) {
+            console.error('[SystemPrompt] Error guardando valor:', err);
+        }
     }
-  };
-  const onEarlyEnd = () => cleanup(); // lifted (or interrupted) before the hold completed
 
-  const armTimer = setTimeout(() => {
-    if (settled) return;
-    cleanup();
-    // Hold confirmed and the finger hasn't wandered: safe to lock page
-    // panning now and hand off to the normal drag flow.
-    beginDrag(ev, key, circle);
-  }, CONFIG.TOUCH_LONG_PRESS_MS);
+    // Array de ids marcados. Por defecto, ninguno (nada se inyecta hasta que el usuario marque algo).
+    let selectedIds = loadValue(STORAGE_KEY_SELECTED_IDS, []);
 
-  circle.addEventListener("pointermove", onEarlyMove);
-  circle.addEventListener("pointerup", onEarlyEnd);
-  circle.addEventListener("pointercancel", onEarlyEnd);
-}
-
-/** Shared by both entry points above: actually engages the drag. For
- *  touch, this is also the moment page panning gets locked (via
- *  touch-action on the dragged piece), released again in onUp. */
-function beginDrag(ev, key, circle) {
-  Game.selectedKey = key;
-  applyHighlights();
-
-  const svg = dom.boardSvg;
-  circle.setPointerCapture(ev.pointerId);
-  circle.classList.add("dragging");
-  circle.style.touchAction = "none"; // lock page panning for the duration of this drag
-
-  dragState = { key, circle, pointerId: ev.pointerId };
-
-  const onMove = (mv) => {
-    const p = svgUserPoint(svg, mv.clientX, mv.clientY);
-    circle.setAttribute("cx", p.x);
-    circle.setAttribute("cy", p.y);
-  };
-
-  const onUp = (up) => {
-    circle.removeEventListener("pointermove", onMove);
-    circle.removeEventListener("pointerup", onUp);
-    circle.removeEventListener("pointercancel", onUp);
-    circle.classList.remove("dragging");
-    circle.style.touchAction = ""; // unlock page panning again, right away
-
-    const p = svgUserPoint(svg, up.clientX, up.clientY);
-    const axial = HexGeometry.pixelToAxial(p.x, p.y, CONFIG.CELL_SIZE);
-    const targetKey = HexGeometry.key(axial.q, axial.r);
-    const targets = Game.neighborKeys.get(key) ? Game.neighborKeys.get(key).filter((nk) => !Game.cells.get(nk).color) : [];
-
-    if (targets.includes(targetKey)) {
-      performMove(key, targetKey);
-    } else {
-      renderPieces(currentPositions()); // snap back
-      applyHighlights();
+    function isSelected(id) {
+        return selectedIds.includes(id);
     }
-    dragState = null;
-  };
-
-  circle.addEventListener("pointermove", onMove);
-  circle.addEventListener("pointerup", onUp);
-  circle.addEventListener("pointercancel", onUp);
-}
-
-// =======================================================================
-// Interaction: hover-to-click (desktop mouse only)
-// -----------------------------------------------------------------------
-// Resting the mouse over a piece or cell for a short dwell acts exactly
-// like clicking it — so hovering a piece selects it, then hovering an
-// adjacent cell completes the move, all without pressing a button.
-// Scoped to pointerType "mouse" only: touch devices don't have a real
-// hover, and this must never interfere with the touch drag logic above.
-// =======================================================================
-
-function attachHoverDwellClick(el, key) {
-  let timer = null;
-  const cancel = () => { clearTimeout(timer); timer = null; };
-
-  el.addEventListener("pointerenter", (ev) => {
-    if (ev.pointerType !== "mouse") return;
-    if (!isInteractivePhase() || !isMyTurnLocally()) return;
-    cancel();
-    timer = setTimeout(() => { timer = null; onCellClick(key); }, CONFIG.MOUSE_HOVER_MOVE_MS);
-  });
-  el.addEventListener("pointerleave", cancel);
-  el.addEventListener("pointerdown", cancel); // an actual click/drag shouldn't also fire the pending hover timer
-}
-
-function currentPositions() {
-  const positions = new Map();
-  for (const [k, cell] of Game.cells) {
-    positions.set(k, HexGeometry.axialToPixel(cell.q, cell.r, CONFIG.CELL_SIZE));
-  }
-  return positions;
-}
-
-// =======================================================================
-// Move execution, turn flow, win/draw handling
-// =======================================================================
-
-function isMyTurnLocally() {
-  if (Game.mode === "online2p") return Game.turn === Game.localColor;
-  if (Game.mode === "vscomputer" || Game.mode === "computerself") {
-    return Boolean(Game.players[Game.turn] && Game.players[Game.turn].isLocal);
-  }
-  return true; // local2p: both colors are played on this device
-}
-
-/** Applies a move to the model, re-renders, checks for a win, advances turn.
- *  If this is called while still in "setup" (the live preview), this is
- *  the move that actually starts the game — for both the mover and, via
- *  the identical "move" message, the remote peer in online play. */
-function performMove(fromKey, toKey, opts = {}) {
-  const { fromRemote = false } = opts;
-
-  if (Game.phase === "setup") {
-    Game.phase = "playing";
-    updateSetupVisibility();
-    flashBoardStart();
-  }
-
-  const fromCell = Game.cells.get(fromKey);
-  const toCell = Game.cells.get(toKey);
-  const color = fromCell.color;
-
-  toCell.color = color;
-  fromCell.color = null;
-  Game.selectedKey = null;
-  Game.lastMove = { from: fromKey, to: toKey };
-  Game.moveLog.push({ color, from: fromKey, to: toKey });
-  // the pie-rule swap is only ever offered on white's very first move, so a
-  // black move must never cancel it — only white moving normally does.
-  if (color === "white") Game.pieRuleAvailable = false;
-  Game.drawOffered = null;
-
-  if (Game.mode === "online2p" && !fromRemote) {
-    sendToRemote({ type: "move", from: fromKey, to: toKey });
-  }
-
-  if (isFullyConnected(color)) {
-    endGame(color, "connection"); // endGame() renders the finished board itself
-    return;
-  }
-
-  // Advance the turn *before* re-rendering: renderPieces() decides which
-  // pieces get drag handlers based on Game.turn, so rendering while it
-  // still held the color that just moved left the wrong pieces draggable
-  // (and the pieces that should now be draggable never got the handler).
-  Game.turn = opponentOf(color);
-  renderBoard();
-  updateStatusUI();
-  maybeTriggerCpuMove();
-}
-
-function endGame(winnerColor, reason) {
-  cancelScheduledCpuMove();
-  Game.phase = "ended";
-  Game.winner = winnerColor;
-  Game.endReason = reason;
-  Game.lastMove = null; // the finished board doesn't need the last-move trail highlighted anymore
-  updateSetupVisibility();
-  renderBoard();
-  updateButtonsForPhase();
-  updateStatusUI();
-  flashBoardEnd();
-  dom.downloadBtn.disabled = false;
-  showMessage("");
-  scheduleEndedAutoRestart();
-}
-
-function endGameDraw() {
-  cancelScheduledCpuMove();
-  Game.phase = "ended";
-  Game.winner = null;
-  Game.endReason = "draw";
-  Game.lastMove = null;
-  updateSetupVisibility();
-  renderBoard();
-  updateButtonsForPhase();
-  updateStatusUI();
-  flashBoardEnd();
-  dom.downloadBtn.disabled = false;
-  showMessage("");
-  scheduleEndedAutoRestart();
-}
-
-/** How long the finished board stays on screen before a fresh preview
- *  (using whatever mode/parameters are current at that moment — the
- *  setup controls stay live during this pause) automatically appears. */
-let endedAutoRestartTimer = null;
-
-function scheduleEndedAutoRestart() {
-  cancelEndedAutoRestart();
-  endedAutoRestartTimer = setTimeout(() => {
-    endedAutoRestartTimer = null;
-    if (Game.phase !== "ended") return; // state moved on already (mode switch, etc.)
-    beginSetupPreview();
-  }, CONFIG.ENDED_PAUSE_MS);
-}
-
-function cancelEndedAutoRestart() {
-  if (endedAutoRestartTimer !== null) {
-    clearTimeout(endedAutoRestartTimer);
-    endedAutoRestartTimer = null;
-  }
-}
-
-/** Brief, non-blocking glow across the board to mark that the game just
- *  ended — retriggerable, since the class is removed once the animation
- *  finishes (or after a timeout fallback, in case animationend doesn't
- *  fire for some reason). */
-function flashBoardEnd() {
-  const el = dom.boardFlash;
-  if (!el) return;
-  el.classList.remove("flashing");
-  // force reflow so re-adding the class restarts the animation even if
-  // the previous flash hadn't finished yet
-  void el.offsetWidth;
-  el.classList.add("flashing");
-  const clear = () => el.classList.remove("flashing");
-  el.addEventListener("animationend", clear, { once: true });
-  setTimeout(clear, 1200);
-}
-
-/** Same idea as flashBoardEnd(), but green instead of cyan, and fired the
- *  moment "setup" (the live preview) becomes "playing" — i.e. right when
- *  a game actually begins, whichever side made the first move. */
-function flashBoardStart() {
-  const el = dom.boardFlash;
-  if (!el) return;
-  el.classList.remove("flashing-start");
-  void el.offsetWidth;
-  el.classList.add("flashing-start");
-  const clear = () => el.classList.remove("flashing-start");
-  el.addEventListener("animationend", clear, { once: true });
-  setTimeout(clear, 1000);
-}
-
-// =======================================================================
-// Pie rule (swap colors on white's first move)
-// =======================================================================
-
-function swapColors() {
-  if (Game.phase !== "playing" || !Game.pieRuleAvailable) return;
-  if (Game.turn !== "white") return;
-
-  // The pie rule reassigns *who controls which color*, not the pieces
-  // already on the board: the player who was "white" takes over the
-  // black pieces/position exactly as they stand right now, and the
-  // player who was "black" becomes "white" for the rest of the game.
-  // The board itself (Game.cells) must NOT be touched.
-  const tmp = Game.players.black;
-  Game.players.black = Game.players.white;
-  Game.players.white = tmp;
-  if (Game.localColor) Game.localColor = opponentOf(Game.localColor);
-
-  Game.pieRuleAvailable = false;
-  // swapping takes the place of white's move, so the turn slot that's
-  // next is still "white" — now played by whoever was just reassigned
-  // to that seat (the original black player).
-  Game.turn = "white";
-
-  if (Game.mode === "online2p" && Game.isHost) {
-    sendToRemote({ type: "swap" });
-  }
-
-  renderBoard();
-  updateStatusUI();
-  updatePlayersUI();
-  maybeTriggerCpuMove();
-}
-
-// =======================================================================
-// Resign / draw
-// =======================================================================
-
-function resign() {
-  if (Game.phase !== "playing") return;
-  if (!confirm("Resign this game?")) return;
-  cancelScheduledCpuMove();
-  let resigningColor;
-  if (Game.mode === "online2p") {
-    resigningColor = Game.localColor;
-  } else if (Game.mode === "vscomputer") {
-    // find whichever color the human currently controls (a pie-rule swap
-    // may have changed this since the game started), and resign as them
-    // regardless of whose turn it currently is
-    resigningColor = Game.players.black.isLocal ? "black" : "white";
-  } else {
-    resigningColor = isMyTurnLocally() ? Game.turn : opponentOf(Game.turn);
-  }
-  if (Game.mode === "online2p") {
-    sendToRemote({ type: "resign", color: resigningColor });
-  }
-  endGame(opponentOf(resigningColor), "resign");
-}
-
-function offerDraw() {
-  if (Game.phase !== "playing") return;
-  if (Game.mode === "online2p") {
-    Game.drawOffered = Game.localColor;
-    sendToRemote({ type: "draw-offer" });
-    showMessage("Draw offer sent. Waiting for opponent...");
-  } else if (Game.mode === "vscomputer" || Game.mode === "computerself") {
-    return; // draw offers don't apply against/between computer players
-  } else {
-    if (confirm("Both players agree to a draw?")) {
-      endGameDraw();
+    function toggleSelected(id, checked) {
+        if (checked && !selectedIds.includes(id)) {
+            selectedIds.push(id);
+        } else if (!checked) {
+            selectedIds = selectedIds.filter(x => x !== id);
+        }
+        saveValue(STORAGE_KEY_SELECTED_IDS, selectedIds);
     }
-  }
-}
 
-// =======================================================================
-// Computer play (vs computer / computer vs computer)
-// -----------------------------------------------------------------------
-// The alpha-beta search normally runs off the main thread in a Web
-// Worker (aistrategies.js doubles as the worker script — see its bottom
-// section), so a slow/deep search never freezes the page. Some
-// environments block Workers entirely — notably opening the page via
-// `file://` instead of `http(s)://`, which several browsers refuse for
-// security reasons (same-origin restrictions don't apply cleanly to
-// local files). When that happens this falls back to running the exact
-// same search synchronously on the main thread instead of leaving the
-// CPU stuck forever — the trade-off is that the tab will briefly stop
-// responding while it thinks, same as before Workers were added. See
-// the readme for how to serve the page so that trade-off never applies.
-// =======================================================================
+    // =========================================================
+    // 2.1) PROMPTS PERSONALIZADOS DEL USUARIO
+    // =========================================================
+    // Los prompts de PROMPTS_BY_LANG viven en el código del script: si algún
+    // día se actualiza el archivo (nueva versión), ese array se sobrescribe
+    // entero. Para que los prompts que el propio usuario añada desde el panel
+    // NO se pierdan al actualizar, se guardan aparte, en almacenamiento
+    // persistente (independiente del código), y se combinan en tiempo de
+    // ejecución con los "de fábrica" en getPrompts().
+    const STORAGE_KEY_CUSTOM_PROMPTS = 'ai_sysprompt_custom_prompts';
 
-let cpuWorker = null;             // the Worker instance, created lazily
-let cpuWorkerUnavailable = false; // set once Workers are known not to work
-                                   // here, so we stop retrying them
-let cpuRequestId = 0;             // bumped on every dispatch/cancel so
-                                   // stale replies (e.g. after New game)
-                                   // are detected and ignored
-let cpuPendingRequest = null;     // { requestId, color, state, options }
-                                   // for the outstanding request, kept
-                                   // around so a Worker failure can be
-                                   // retried locally without recomputing
-let cpuThinkDelayId = null;       // setTimeout id for the pre-dispatch pause
+    let customPromptsByLang = loadValue(STORAGE_KEY_CUSTOM_PROMPTS, {});
 
-function ensureCpuWorker() {
-  if (cpuWorkerUnavailable) return null;
-  if (!cpuWorker) {
-    try {
-      cpuWorker = new Worker("aistrategies.js");
-      cpuWorker.onmessage = onCpuWorkerMessage;
-      cpuWorker.onerror = onCpuWorkerError;
-    } catch (err) {
-      console.warn("Web Worker unavailable, falling back to main-thread CPU search:", err);
-      cpuWorkerUnavailable = true;
-      cpuWorker = null;
-      return null;
+    function getCustomPrompts(langCode) {
+        return Array.isArray(customPromptsByLang[langCode]) ? customPromptsByLang[langCode] : [];
     }
-  }
-  return cpuWorker;
-}
 
-function onCpuWorkerMessage(e) {
-  const { requestId, ok, move, error } = e.data || {};
-  if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return; // stale reply
-  const color = cpuPendingRequest.color;
-  cpuPendingRequest = null;
-
-  if (!ok) {
-    console.error("CPU search failed:", error);
-    showMessage("The computer player hit an error \u2014 check the console.");
-    return;
-  }
-  applyCpuResult(color, move);
-}
-
-function onCpuWorkerError(err) {
-  // The Worker script itself failed to load/run (e.g. blocked under
-  // file://, or a restrictive Content-Security-Policy). Stop trying to
-  // use Workers for the rest of the session and, if a request was in
-  // flight, run it locally instead of leaving the CPU stuck.
-  console.warn("Web Worker failed \u2014 blocked by the browser (often happens under file://); falling back to running the search on the main thread. Serve the page over http(s) to avoid this.", err);
-  cpuWorkerUnavailable = true;
-  if (cpuWorker) {
-    try { cpuWorker.terminate(); } catch (e) { /* already gone */ }
-    cpuWorker = null;
-  }
-  if (cpuPendingRequest) {
-    runCpuSearchLocally(cpuPendingRequest);
-  }
-}
-
-/** Fallback path: runs AiStrategies.pickMove() directly (aistrategies.js
- *  is already loaded on the main thread via <script>), used only when
- *  Web Workers aren't available. Freezes the tab for up to the chosen
- *  think-time budget, same as a build with no Worker support at all. */
-function runCpuSearchLocally(req) {
-  showMessage(`${Game.players[req.color].name} is thinking... (running locally \u2014 serve over http(s) for a smoother experience)`);
-  // brief delay so the message above actually paints before the
-  // synchronous, blocking search starts
-  setTimeout(() => {
-    if (!cpuPendingRequest || req.requestId !== cpuPendingRequest.requestId) return;
-    if (Game.phase !== "playing" || Game.turn !== req.color) return;
-    cpuPendingRequest = null;
-    try {
-      const result = AiStrategies.pickMove(req.state, req.options);
-      applyCpuResult(req.color, result.move);
-    } catch (err) {
-      console.error("CPU local search failed:", err);
-      showMessage("The computer player hit an error \u2014 check the console.");
+    function addCustomPrompt(langCode, name, text) {
+        const id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const list = getCustomPrompts(langCode).concat([{ id, name, text }]);
+        customPromptsByLang = Object.assign({}, customPromptsByLang, { [langCode]: list });
+        saveValue(STORAGE_KEY_CUSTOM_PROMPTS, customPromptsByLang);
+        return id;
     }
-  }, 30);
-}
 
-/** Shared by both the Worker and local-fallback paths once a move (or
- *  lack thereof) has actually been decided. */
-function applyCpuResult(color, move) {
-  if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
-  if (move) {
-    performMove(move.from, move.to);
-  } else {
-    // no legal move for this color (shouldn't normally happen on a
-    // freshly-generated board, but handle it rather than freezing)
-    endGame(opponentOf(color), "no-moves");
-  }
-}
-
-/** Stops any pending or in-flight CPU move: cancels the pre-dispatch
- *  delay, drops the outstanding request (so a late reply is ignored),
- *  and terminates the worker so an actually-running search stops
- *  burning CPU right away. Used whenever the game state is reset or
- *  ended out from under a scheduled move (new game, resign, back to
- *  mode select, etc.). A fresh worker is created on the next request
- *  (unless Workers were already found to be unavailable this session). */
-function cancelScheduledCpuMove() {
-  if (cpuThinkDelayId !== null) {
-    clearTimeout(cpuThinkDelayId);
-    cpuThinkDelayId = null;
-  }
-  cpuRequestId += 1;
-  cpuPendingRequest = null;
-  if (cpuWorker) {
-    cpuWorker.terminate();
-    cpuWorker = null;
-  }
-}
-
-/** Call after any turn change: schedules a CPU move if the color now on
- *  the move is computer-controlled. No-op for human-controlled turns or
- *  outside vscomputer/computerself. */
-function maybeTriggerCpuMove() {
-  if (Game.phase !== "playing") return;
-  if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
-  if (Game.players[Game.turn] && Game.players[Game.turn].isLocal) return;
-  scheduleCpuMove();
-}
-
-function scheduleCpuMove() {
-  const color = Game.turn;
-  showMessage(`${Game.players[color].name} is thinking...`);
-
-  // small delay so the "thinking" message paints and moves don't feel
-  // instantaneous/robotic; the actual search then runs in the worker
-  // (off the main thread), so this is purely cosmetic pacing
-  cpuThinkDelayId = setTimeout(() => {
-    cpuThinkDelayId = null;
-    // guard: game state may have moved on while we were waiting
-    // (new game started, resign, mode switch, etc.)
-    if (Game.phase !== "playing" || Game.turn !== color) return;
-    if (Game.players[color] && Game.players[color].isLocal) return;
-
-    const maxDepth = Number(dom.cpuDepthRange.value);
-    const maxTimeSeconds = Number(dom.cpuTimeRange.value);
-    const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color };
-
-    cpuRequestId += 1;
-    const req = { requestId: cpuRequestId, color, state, options: { maxDepth, maxTimeSeconds } };
-    cpuPendingRequest = req;
-
-    const worker = ensureCpuWorker();
-    if (!worker) {
-      runCpuSearchLocally(req);
-      return;
+    function deleteCustomPrompt(langCode, id) {
+        const list = getCustomPrompts(langCode).filter(p => p.id !== id);
+        customPromptsByLang = Object.assign({}, customPromptsByLang, { [langCode]: list });
+        saveValue(STORAGE_KEY_CUSTOM_PROMPTS, customPromptsByLang);
+        if (isSelected(id)) toggleSelected(id, false); // si estaba marcado, se desmarca también
     }
-    try {
-      worker.postMessage({ requestId: req.requestId, state: req.state, options: req.options });
-    } catch (err) {
-      console.warn("Failed to dispatch to CPU worker, falling back to main thread:", err);
-      cpuWorkerUnavailable = true;
-      runCpuSearchLocally(req);
+
+    // =========================================================
+    // 2.1) PERSISTENCIA DEL IDIOMA SELECCIONADO
+    // =========================================================
+    const STORAGE_KEY_LANG = 'ai_sysprompt_lang';
+
+    function detectDefaultLang() {
+        const nav = (navigator.language || 'es').slice(0, 2).toUpperCase();
+        return LANGUAGES.includes(nav) ? nav : 'ES';
     }
-  }, 350);
-}
 
-// =======================================================================
-// UI state / phase management
-// =======================================================================
+    let currentLang = loadValue(STORAGE_KEY_LANG, detectDefaultLang());
+    if (!LANGUAGES.includes(currentLang)) currentLang = 'ES';
 
-/** Shows/hides the setup controls based on the current mode. Board
- *  radius/pieces and the mode buttons are always visible, in a fixed
- *  position, in every phase — including while a game is being played,
- *  so the player never loses access to them (e.g. while the CPU is
- *  thinking). Changing any of them mid-game asks for confirmation
- *  first — see the confirmSettingChange() helper and each control's
- *  listeners below. Mode-specific blocks (online connection, nickname,
- *  CPU search settings, color choice) show/hide purely based on the
- *  current mode, in every phase, for the same reason. */
-function updateSetupVisibility() {
-  const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
-  const guestOnline = Game.mode === "online2p" && !Game.isHost;
-
-  dom.onlineBlock.hidden = Game.mode !== "online2p";
-  dom.colorChoiceBlock.hidden = Game.mode !== "vscomputer";
-  dom.cpuParamsBlock.hidden = !isCpuMode;
-  dom.copyLinkBtn.title = Game.mode === "online2p" ? "Copy invite link" : "Copy a link that opens with this setup";
-
-  // a guest doesn't control the host's board — visible (fixed position),
-  // just inert
-  dom.radiusRange.disabled = guestOnline;
-  dom.piecesRange.disabled = guestOnline;
-
-  updateButtonsForPhase();
-}
-
-function updateButtonsForPhase() {
-  const playing = Game.phase === "playing";
-  dom.swapColorBtn.disabled = !(playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally());
-  dom.offerDrawBtn.disabled = !playing || Game.mode === "vscomputer" || Game.mode === "computerself";
-  dom.resignBtn.disabled = !playing || Game.mode === "computerself";
-}
-
-function updateStatusUI() {
-  const ind = dom.turnIndicator;
-  ind.classList.remove("turn-black", "turn-white", "turn-over");
-  if (Game.phase === "setup" || Game.phase === "playing") {
-    ind.hidden = false;
-    const name = Game.players[Game.turn].name;
-    ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
-    ind.classList.add(Game.turn === "black" ? "turn-black" : "turn-white");
-  } else {
-    ind.hidden = true;
-    ind.textContent = "";
-  }
-  updatePlayersUI();
-  updateButtonsForPhase();
-}
-
-function updatePlayersUI() {
-  if (document.activeElement !== dom.playerNameBlack) dom.playerNameBlack.textContent = Game.players.black.name;
-  if (document.activeElement !== dom.playerNameWhite) dom.playerNameWhite.textContent = Game.players.white.name;
-  dom.playerYouBlack.textContent = Game.mode === "online2p" && Game.localColor === "black" ? "(you)" : "";
-  dom.playerYouWhite.textContent = Game.mode === "online2p" && Game.localColor === "white" ? "(you)" : "";
-  dom.playerRowBlack.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "black");
-  dom.playerRowWhite.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "white");
-
-  const blackWon = Game.phase === "ended" && Game.winner === "black";
-  const whiteWon = Game.phase === "ended" && Game.winner === "white";
-  const isDraw = Game.phase === "ended" && Game.winner === null;
-  dom.playerRowBlack.classList.toggle("winner", blackWon);
-  dom.playerRowWhite.classList.toggle("winner", whiteWon);
-  dom.playerBadgeBlack.textContent = blackWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
-  dom.playerBadgeWhite.textContent = whiteWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
-  dom.playerBadgeBlack.classList.toggle("badge-icon", blackWon);
-  dom.playerBadgeWhite.classList.toggle("badge-icon", whiteWon);
-  dom.playerBadgeBlack.title = blackWon ? "Winner" : "";
-  dom.playerBadgeWhite.title = whiteWon ? "Winner" : "";
-
-  updateNameEditability();
-}
-
-/** A player's own name label (next to their piece color) doubles as the
- *  nickname field: it's directly editable, but only for your own row,
- *  and only before the game actually starts — there's no separate
- *  "your nickname" input anymore. */
-function updateNameEditability() {
-  for (const color of ["black", "white"]) {
-    const el = color === "black" ? dom.playerNameBlack : dom.playerNameWhite;
-    const icon = color === "black" ? dom.editIconBlack : dom.editIconWhite;
-    const editable = Game.phase === "setup"
-      && Boolean(Game.players[color] && Game.players[color].isLocal)
-      && (Game.mode === "online2p" || Game.mode === "vscomputer" || Game.mode === "local2p");
-    icon.hidden = !editable;
-    if (editable) {
-      if (el.getAttribute("contenteditable") !== "true") el.setAttribute("contenteditable", "true");
-      el.title = "Click to rename";
-    } else {
-      if (el.hasAttribute("contenteditable")) {
-        if (document.activeElement === el) el.blur();
-        el.removeAttribute("contenteditable");
-      }
-      el.removeAttribute("title");
+    function setLang(code) {
+        if (!LANGUAGES.includes(code)) return;
+        currentLang = code;
+        saveValue(STORAGE_KEY_LANG, currentLang);
     }
-  }
-}
 
-/** The placeholder a name reverts to when left empty — "Player 1"/"Player
- *  2" in local2p (two distinct people sharing this device), "Host"/
- *  "Guest" in online2p (so an unedited name still tells the two apart —
- *  both defaulting to "You" was confusing), "You" in vscomputer (a
- *  single local identity next to the computer's own name). */
-function defaultNameFor(color) {
-  if (Game.mode === "local2p") return color === "black" ? "Player 1" : "Player 2";
-  if (Game.mode === "online2p") return Game.isHost ? "Host" : "Guest";
-  return "You";
-}
+    // =========================================================
+    // 3) INYECCIÓN EN EL CAMPO DE TEXTO
+    // =========================================================
+    // Guarda los ids de los prompts que estaban activos la última vez que se
+    // tocó el mensaje en ESTE chat. Se resetea a [] al cambiar de conversación.
+    let lastInjectedIds = [];
 
-/** Wires the actual click-to-edit behavior for one player-name label:
- *  select-all on focus (so typing replaces the placeholder immediately),
- *  Enter commits, Escape reverts, and losing focus either way commits
- *  whatever's there (falling back to this mode's default if left empty). */
-function wireEditableName(el, color) {
-  let previousText = "";
-
-  el.addEventListener("focus", () => {
-    if (el.getAttribute("contenteditable") !== "true") return;
-    previousText = el.textContent;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  });
-
-  el.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") { ev.preventDefault(); el.blur(); }
-    else if (ev.key === "Escape") { ev.preventDefault(); el.textContent = previousText; el.blur(); }
-  });
-
-  el.addEventListener("blur", () => {
-    if (el.getAttribute("contenteditable") !== "true") return;
-    const fallback = defaultNameFor(color);
-    const nick = el.textContent.replace(/\s+/g, " ").trim().slice(0, 18);
-    const finalName = nick || fallback;
-    el.textContent = finalName;
-    Game.localNames[color] = finalName === fallback ? null : finalName;
-    if (Game.players[color]) Game.players[color].name = finalName;
-    if (Game.mode === "online2p" && Game.conn && Game.conn.open) {
-      sendToRemote({ type: "nickname", color, name: finalName });
+    function sameIdSet(a, b) {
+        if (a.length !== b.length) return false;
+        const setB = new Set(b);
+        return a.every(id => setB.has(id));
     }
-    updatePlayersUI();
-  });
-}
 
-wireEditableName(dom.playerNameBlack, "black");
-wireEditableName(dom.playerNameWhite, "white");
-dom.editIconBlack.addEventListener("click", () => dom.playerNameBlack.focus());
-dom.editIconWhite.addEventListener("click", () => dom.playerNameWhite.focus());
-
-// =======================================================================
-// Setup panel wiring
-// =======================================================================
-
-function refreshPieceRangeUI(radius = Game.radius) {
-  const { min, max } = pieceRangeForRadius(radius);
-  dom.piecesRange.min = String(min);
-  dom.piecesRange.max = String(max);
-  const mid = Math.round((min + max) / 2);
-  dom.piecesRange.value = String(Math.min(max, Math.max(min, mid)));
-  dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
-}
-
-/** Used by every control that defines the board itself (radius, pieces,
- *  color choice) when changed while a game is in progress: asks whether
- *  to abandon the current game and start a fresh one with the new
- *  value. Returns true if the change should go ahead (not playing, or
- *  confirmed); false if the caller must revert its control back to the
- *  last committed value. CPU think-time/depth deliberately skip this —
- *  they don't affect the board, so they just apply to the CPU's next
- *  move without needing to restart anything. */
-function confirmSettingChange() {
-  if (Game.phase !== "playing") return true;
-  return confirm("End the current game and start a new one with these settings?");
-}
-
-dom.radiusRange.addEventListener("input", () => {
-  // live label/bounds feedback while dragging, even before it's
-  // committed (during play, committing only happens on release — see
-  // the "change" listener below)
-  dom.radiusValue.textContent = dom.radiusRange.value;
-  refreshPieceRangeUI(Number(dom.radiusRange.value));
-  if (Game.phase !== "playing") beginSetupPreview();
-});
-dom.radiusRange.addEventListener("change", () => {
-  if (Game.phase !== "playing") return; // already applied live above
-  if (confirmSettingChange()) {
-    beginSetupPreview();
-  } else {
-    dom.radiusRange.value = String(Game.radius);
-    dom.radiusValue.textContent = String(Game.radius);
-    refreshPieceRangeUI(Game.radius);
-  }
-});
-dom.piecesRange.addEventListener("input", () => {
-  const { min, max } = pieceRangeForRadius(Game.phase === "playing" ? Game.radius : Number(dom.radiusRange.value));
-  dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
-  if (Game.phase !== "playing") beginSetupPreview();
-});
-dom.piecesRange.addEventListener("change", () => {
-  if (Game.phase !== "playing") return;
-  if (confirmSettingChange()) {
-    beginSetupPreview();
-  } else {
-    dom.piecesRange.value = String(Game.piecesPerColor);
-    const { min, max } = pieceRangeForRadius(Game.radius);
-    dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
-  }
-});
-
-// CPU think-time/depth don't define the board, so they apply live to the
-// CPU's *next* move — no need to interrupt or restart the game for these.
-dom.cpuTimeRange.addEventListener("input", () => {
-  dom.cpuTimeValue.textContent = dom.cpuTimeRange.value;
-});
-dom.cpuDepthRange.addEventListener("input", () => {
-  dom.cpuDepthValue.textContent = dom.cpuDepthRange.value;
-});
-
-dom.modeButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    if (btn.disabled) return;
-    selectMode(btn.dataset.mode);
-  });
-});
-
-/** Switches to (or restarts) a mode: abandons any game in progress (with
- *  confirmation), tears down any online connection, and immediately
- *  shows a fresh live preview for the chosen mode. Mode buttons are
- *  always visible/clickable, including the one already active — clicking
- *  it again is how you get a fresh board without changing anything. */
-function selectMode(mode) {
-  if (!confirmSettingChange()) {
-    syncModeButtonsSelection();
-    return;
-  }
-
-  cancelScheduledCpuMove();
-  cancelEndedAutoRestart();
-
-  // Re-picking "online2p" while already connected there is how a new
-  // online game gets started with the same opponent — it must NOT sever
-  // the connection. Destroying the host's Peer object releases its
-  // fixed room code for good (PeerJS never lets it be reclaimed), which
-  // would strand the guest with no way back in. Any other mode change,
-  // or picking online2p from scratch (no live connection yet), still
-  // tears down as before.
-  const keepOnlineConnection = mode === "online2p" && Game.mode === "online2p" && Boolean(Game.conn);
-
-  if (keepOnlineConnection) {
-    syncModeButtonsSelection();
-    beginSetupPreview();
-    return;
-  }
-
-  teardownOnline();
-  Game.mode = mode;
-  Game.isHost = mode === "online2p" ? true : Game.isHost; // default assumption until join overrides
-  Game.gameId = null;
-  dom.gameIdValue.textContent = "\u2014";
-  dom.copyLinkBtn.disabled = true;
-  dom.onlineStatus.textContent = "";
-  dom.onlineStatus.className = "online-status";
-  dom.joinCodeWrap.hidden = true;
-
-  syncModeButtonsSelection();
-  beginSetupPreview();
-}
-
-function syncModeButtonsSelection() {
-  dom.modeButtons.forEach((b) => b.classList.toggle("selected", b.dataset.mode === Game.mode));
-}
-
-dom.colorButtons.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    if (btn.dataset.color === Game.humanColor) return; // no actual change
-    if (!confirmSettingChange()) {
-      syncColorButtonsSelection();
-      return;
+    // DeepSeek usa un <textarea> normal. ChatGPT y Claude usan un editor
+    // "contenteditable" (tipo ProseMirror) como campo real, pero ADEMÁS
+    // mantienen un <textarea> oculto (fallback de accesibilidad/autofill,
+    // vacío y con display:none) que NO hay que confundir con el campo real.
+    function isVisible(el) {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        if (el.offsetWidth === 0 && el.offsetHeight === 0 && style.position !== 'fixed') return false;
+        return true;
     }
-    Game.humanColor = btn.dataset.color;
-    syncColorButtonsSelection();
-    if (Game.mode === "vscomputer") beginSetupPreview();
-  });
-});
 
-function syncColorButtonsSelection() {
-  dom.colorButtons.forEach((b) => b.classList.toggle("selected", b.dataset.color === Game.humanColor));
-}
+    function getInputElement() {
+        if (SITE === 'deepseek') {
+            return document.querySelector('textarea');
+        }
 
-dom.swapColorBtn.addEventListener("click", swapColors);
-dom.offerDrawBtn.addEventListener("click", offerDraw);
-dom.resignBtn.addEventListener("click", resign);
+        // ChatGPT / Claude: priorizar el editor contenteditable visible.
+        const ceCandidates = [
+            '#prompt-textarea[contenteditable="true"]',
+            'div[contenteditable="true"].ProseMirror',
+            'div[contenteditable="true"]',
+        ];
+        for (const sel of ceCandidates) {
+            const el = document.querySelector(sel);
+            if (el && isVisible(el)) return el;
+        }
 
-// =======================================================================
-// The live preview / game start
-// -----------------------------------------------------------------------
-// There's no explicit "Start" step: (re)building the board here is what
-// "always shows the current configuration" means. Every fresh preview
-// then waits CONFIG.GAME_START_GRACE_MS — setup controls stay fully
-// live and usable the whole time, but the board itself isn't playable
-// yet — before flashing to mark the moment it actually becomes playable.
-// After that flash: if the color to move is computer-controlled, there's
-// no human gesture to wait for, so it moves immediately; otherwise the
-// game just waits for a human to click/drag a piece, which is what
-// commits "setup" to "playing" (see performMove()).
-// =======================================================================
+        // Fallback: un <textarea> visible (si el sitio cambia y vuelve a usar uno real)
+        const visibleTextarea = Array.from(document.querySelectorAll('textarea')).find(isVisible);
+        if (visibleTextarea) return visibleTextarea;
 
-function beginSetupPreview() {
-  cancelScheduledCpuMove();
-  cancelEndedAutoRestart();
-  cancelGameStartGrace();
-
-  Game.phase = "setup";
-  Game.setupReady = false;
-  Game.radius = Number(dom.radiusRange.value);
-  Game.piecesPerColor = Number(dom.piecesRange.value);
-  const built = buildBoard(Game.radius, Game.piecesPerColor);
-  Game.cells = built.cells;
-  Game.neighborKeys = built.neighborKeys;
-  Game.turn = "black";
-  Game.pieRuleAvailable = true;
-  Game.selectedKey = null;
-  Game.lastMove = null;
-  Game.winner = null;
-  Game.endReason = null;
-  Game.drawOffered = null;
-  Game.moveLog = [];
-  if (Game.mode !== "online2p") Game.gameId = randomGameId(); // online2p keeps its room code, if any
-
-  assignPreviewPlayers();
-  syncColorButtonsSelection();
-
-  dom.gameIdValue.textContent = Game.gameId || "\u2014";
-  dom.copyLinkBtn.disabled = !Game.gameId;
-  dom.downloadBtn.disabled = true;
-
-  updateSetupVisibility();
-  renderBoard();
-  updateStatusUI();
-
-  if (Game.mode === "online2p" && Game.isHost) broadcastSync();
-
-  scheduleGameStartGrace();
-}
-
-/** Fills in Game.players for whatever the current mode is. Re-run every
- *  time the preview regenerates, so nickname/color-choice edits and
- *  (for online play) newly-known opponent names all stay reflected. */
-function assignPreviewPlayers() {
-  if (Game.mode === "local2p") {
-    Game.players.black = { name: Game.localNames.black || "Player 1", isLocal: true };
-    Game.players.white = { name: Game.localNames.white || "Player 2", isLocal: true };
-  } else if (Game.mode === "online2p") {
-    const myDefault = Game.isHost ? "Host" : "Guest";
-    if (Game.localColor) {
-      Game.players[Game.localColor] = { name: Game.localNames[Game.localColor] || myDefault, isLocal: true };
-      const other = opponentOf(Game.localColor);
-      if (!Game.players[other] || Game.players[other].isLocal) {
-        Game.players[other] = { name: "Waiting\u2026", isLocal: false };
-      }
-    } else {
-      Game.players.black = { name: Game.localNames.black || myDefault, isLocal: true };
-      Game.players.white = { name: "Waiting\u2026", isLocal: false };
+        // Último recurso: lo que haya, aunque no esté marcado como visible
+        return document.querySelector('div[contenteditable="true"]') || document.querySelector('textarea') || null;
     }
-  } else if (Game.mode === "vscomputer") {
-    const human = Game.humanColor || "black";
-    const cpu = opponentOf(human);
-    Game.players[human] = { name: Game.localNames[human] || "You", isLocal: true };
-    Game.players[cpu] = { name: "AI", isLocal: false };
-  } else if (Game.mode === "computerself") {
-    Game.players.black = { name: "AI \u00b7 Black", isLocal: false };
-    Game.players.white = { name: "AI \u00b7 White", isLocal: false };
-  }
-}
 
-function setupMessageForMode() {
-  if (Game.mode === "local2p") {
-    return "Move a piece to begin \u2014 black moves first. White may swap colors instead of moving, on their first turn only.";
-  }
-  if (Game.mode === "online2p") {
-    if (!Game.conn || !Game.conn.open) return "Create a game to host, or join one with a code.";
-    return Game.isHost ? "Move a piece to begin." : "Waiting for the host to move first.";
-  }
-  if (Game.mode === "vscomputer") return `You are playing ${Game.humanColor}. Move a piece to begin.`;
-  if (Game.mode === "computerself") return "Two computer players will begin automatically.";
-  return "";
-}
-
-/** Every fresh preview — any mode, whoever moves first — waits here
- *  before becoming playable, controls fully live the whole time. Once
- *  the wait completes: the board flashes to mark the moment, and if the
- *  color to move is computer-controlled it moves right away (no human
- *  gesture to wait for); otherwise it just sits ready for a human to
- *  move whenever they like. */
-let gameStartGraceTimer = null;
-
-function cancelGameStartGrace() {
-  if (gameStartGraceTimer !== null) {
-    clearTimeout(gameStartGraceTimer);
-    gameStartGraceTimer = null;
-  }
-}
-
-function scheduleGameStartGrace() {
-  cancelGameStartGrace();
-  if (Game.phase !== "setup") return;
-
-  const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
-  const graceSeconds = Math.round(CONFIG.GAME_START_GRACE_MS / 1000);
-  const mover = Game.players[Game.turn];
-  const cpuFirst = isCpuMode && Boolean(mover && !mover.isLocal);
-  showMessage(
-    cpuFirst
-      ? `The AI moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`
-      : `Starting in ${graceSeconds}s\u2026 change any setting above to adjust first.`
-  );
-
-  gameStartGraceTimer = setTimeout(() => {
-    gameStartGraceTimer = null;
-    if (Game.phase !== "setup") return; // state moved on already (mode/param change, etc.)
-
-    Game.setupReady = true;
-    renderBoard(); // now interactive: (re)attaches drag/click/hover handlers
-    flashBoardStart();
-
-    const nowMover = Game.players[Game.turn];
-    const nowCpuControlled = isCpuMode && Boolean(nowMover && !nowMover.isLocal);
-    if (nowCpuControlled) {
-      // genuinely computer-controlled — no human gesture to wait for, so
-      // it moves now. A remote *human* opponent (online2p) is also
-      // "not local" but must NOT trigger this — the game stays in
-      // "setup" (still editable/waiting) until they actually move.
-      Game.phase = "playing";
-      updateSetupVisibility();
-      updateStatusUI();
-      maybeTriggerCpuMove();
-    } else {
-      showMessage(setupMessageForMode());
+    function isTextarea(el) {
+        return el && el.tagName === 'TEXTAREA';
     }
-  }, CONFIG.GAME_START_GRACE_MS);
-}
 
-// =======================================================================
-// Online play (PeerJS) — host creates a room, guest joins with the code
-// =======================================================================
-
-function teardownOnline() {
-  if (Game.conn) { try { Game.conn.close(); } catch (e) {} Game.conn = null; }
-  if (Game.peer) { try { Game.peer.destroy(); } catch (e) {} Game.peer = null; }
-  Game.localColor = null;
-  updateOnlineButtonsState();
-}
-
-function sendToRemote(payload) {
-  if (Game.conn && Game.conn.open) Game.conn.send(payload);
-}
-
-function wireConnection(conn) {
-  Game.conn = conn;
-  updateOnlineButtonsState();
-  conn.on("open", () => {
-    dom.onlineStatus.textContent = Game.isHost
-      ? "Opponent connected."
-      : "Connected. Waiting for the host's board.";
-    dom.onlineStatus.className = "online-status ok";
-    const myName = Game.localNames[Game.localColor] || (Game.isHost ? "Host" : "Guest");
-    sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
-    if (Game.isHost) broadcastSync();
-    updateStatusUI();
-  });
-  conn.on("data", (payload) => handleRemoteMessage(payload));
-  conn.on("close", () => {
-    dom.onlineStatus.textContent = "Opponent disconnected.";
-    dom.onlineStatus.className = "online-status err";
-    showMessage("Your opponent disconnected.");
-    Game.conn = null;
-    updateOnlineButtonsState();
-  });
-  conn.on("error", (err) => {
-    dom.onlineStatus.textContent = "Connection error.";
-    dom.onlineStatus.className = "online-status err";
-    Game.conn = null;
-    updateOnlineButtonsState();
-  });
-}
-
-/** Host only: sends the complete current game state to the connected
- *  guest, so their screen matches exactly — sent on every (re)connect,
- *  any time the host changes radius/pieces while still in "setup", and
- *  whenever a new connection supersedes an old one (see below). Unlike
- *  the old "preview-only" broadcast, this always includes the real
- *  turn/phase, so a guest reconnecting mid-game (e.g. from a new tab)
- *  is placed correctly instead of being reset to "black to move". */
-function broadcastSync() {
-  sendToRemote({
-    type: "sync",
-    radius: Game.radius,
-    piecesPerColor: Game.piecesPerColor,
-    cells: Array.from(Game.cells.values()),
-    players: Game.players,
-    turn: Game.turn,
-    phase: Game.phase,
-    pieRuleAvailable: Game.pieRuleAvailable,
-    winner: Game.winner,
-    endReason: Game.endReason,
-  });
-}
-
-function handleRemoteMessage(msg) {
-  switch (msg.type) {
-    case "sync": {
-      Game.radius = msg.radius;
-      Game.piecesPerColor = msg.piecesPerColor;
-      const cells = new Map();
-      for (const c of msg.cells) cells.set(HexGeometry.key(c.q, c.r), { q: c.q, r: c.r, color: c.color });
-      Game.cells = cells;
-      Game.neighborKeys = BoardInit.buildNeighborMap(cells);
-      Game.turn = msg.turn;
-      Game.pieRuleAvailable = msg.pieRuleAvailable;
-      Game.selectedKey = null;
-      Game.lastMove = null;
-      Game.winner = msg.winner;
-      Game.endReason = msg.endReason;
-      // The board radius/pieces bars are always visible and are never
-      // ours to control here (we're the guest), but they should still
-      // reflect the host's actual values rather than staying stuck at
-      // whatever this browser had before connecting.
-      dom.radiusRange.value = String(Game.radius);
-      dom.radiusValue.textContent = String(Game.radius);
-      {
-        const { min, max } = pieceRangeForRadius(Game.radius);
-        dom.piecesRange.min = String(min);
-        dom.piecesRange.max = String(max);
-        dom.piecesRange.value = String(Game.piecesPerColor);
-        dom.piecesValue.textContent = `${Game.piecesPerColor} (${min}-${max})`;
-      }
-      // Only adopt the sender's info for the *other* color. Never let an
-      // incoming sync clobber our own name/isLocal — msg.players was
-      // built from the sender's point of view, where our color is just
-      // a "Waiting..." placeholder (a race: they broadcast before
-      // hearing our own nickname), so blindly replacing Game.players
-      // wholesale wiped out our own chosen name and made it stop being
-      // editable (isLocal flipped to false).
-      const otherColor = opponentOf(Game.localColor);
-      if (msg.players && msg.players[otherColor]) {
-        Game.players[otherColor] = { name: msg.players[otherColor].name, isLocal: false };
-      }
-
-      if (msg.phase === "playing") {
-        Game.phase = "playing";
-        Game.setupReady = true;
-        updateSetupVisibility();
-        renderBoard();
-        updateStatusUI();
-        showMessage("Reconnected \u2014 rejoining the game in progress.");
-      } else if (msg.phase === "ended") {
-        Game.phase = "ended";
-        updateSetupVisibility();
-        renderBoard();
-        updateButtonsForPhase();
-        updateStatusUI();
-        scheduleEndedAutoRestart();
-      } else {
-        Game.phase = "setup";
-        Game.setupReady = false;
-        updateSetupVisibility();
-        renderBoard();
-        updateStatusUI();
-        scheduleGameStartGrace();
-      }
-      break;
+    function getInputText(el) {
+        return isTextarea(el) ? el.value : (el.innerText || '');
     }
-    case "superseded": {
-      // Another connection (almost always ourselves, from a new
-      // tab/window) has taken our place with the host. There's nothing
-      // to recover here — just say so clearly and clean up.
-      showMessage("You've been disconnected \u2014 this game is now connected from another tab or window.");
-      dom.onlineStatus.textContent = "Disconnected (reconnected elsewhere).";
-      dom.onlineStatus.className = "online-status err";
-      teardownOnline();
-      break;
+
+    function isInputEmpty(el) {
+        return !getInputText(el).trim();
     }
-    case "move": {
-      performMove(msg.from, msg.to, { fromRemote: true });
-      break;
+
+    function setTextareaValue(el, value) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype,
+            'value'
+        ).set;
+        nativeSetter.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // Mantener el scroll y el cursor arriba, para que el texto añadido
+        // (que queda por debajo, tras el mensaje del usuario) no se vea al
+        // insertarlo: no queremos que salte a mostrar el final del contenido.
+        requestAnimationFrame(() => {
+            try {
+                el.setSelectionRange(0, 0);
+                el.scrollTop = 0;
+            } catch (err) {
+                // Algunos navegadores/inputs pueden no soportar setSelectionRange en este momento
+            }
+        });
     }
-    case "swap": {
-      const tmp = Game.players.black;
-      Game.players.black = Game.players.white;
-      Game.players.white = tmp;
-      Game.localColor = opponentOf(Game.localColor);
-      Game.pieRuleAvailable = false;
-      Game.turn = "white";
-      renderBoard();
-      updateStatusUI();
-      updatePlayersUI();
-      break;
+
+    // Editores contenteditable (ChatGPT / Claude, tipo ProseMirror) no basta
+    // con tocar el innerHTML: el editor mantiene su propio modelo interno de
+    // documento y, si lo modificamos "a mano" por fuera de su pipeline de
+    // edición, no se entera del cambio y al enviar el mensaje usa su propio
+    // contenido (sin lo que hayamos insertado). Por eso aquí simulamos una
+    // inserción real: colocamos el cursor al final y usamos execCommand
+    // ('insertText'), que dispara los eventos nativos (beforeinput/input)
+    // que estos editores sí escuchan para actualizar su estado interno.
+    function appendToContentEditable(el, addition) {
+        el.focus();
+
+        // Cursor al final del contenido actual
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        let inserted = false;
+        try {
+            inserted = document.execCommand('insertText', false, addition);
+        } catch (err) {
+            inserted = false;
+        }
+
+        if (!inserted) {
+            // Fallback si execCommand no está disponible: disparamos los
+            // eventos nativos manualmente tras insertar el texto.
+            el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: addition }));
+            document.execCommand ? null : (el.textContent += addition);
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: addition }));
+        }
+
+        // Ocultar el bloque insertado: devolver el cursor al principio y el
+        // scroll arriba, igual que se hace con el textarea de DeepSeek.
+        requestAnimationFrame(() => {
+            try {
+                const range2 = document.createRange();
+                range2.selectNodeContents(el);
+                range2.collapse(true);
+                const sel2 = window.getSelection();
+                sel2.removeAllRanges();
+                sel2.addRange(range2);
+                el.scrollTop = 0;
+            } catch (err) {
+                // Algunos editores pueden gestionar la selección de otra forma
+            }
+        });
     }
-    case "resign": {
-      endGame(opponentOf(msg.color), "resign");
-      break;
+
+    function tryInject() {
+        const PROMPTS = getPrompts();
+        const currentIds = PROMPTS.filter(p => isSelected(p.id)).map(p => p.id);
+        console.log('[SystemPrompt] tryInject(). currentIds=', currentIds, 'lastInjectedIds=', lastInjectedIds, 'lang=', currentLang);
+
+        // Sin cambios respecto a la última vez que se aplicó en este chat -> no tocar nada
+        if (sameIdSet(currentIds, lastInjectedIds)) {
+            console.log('[SystemPrompt] Sin cambios respecto a la última vez, no se inyecta nada.');
+            return;
+        }
+
+        const addedIds = currentIds.filter(id => !lastInjectedIds.includes(id));
+        const removedIds = lastInjectedIds.filter(id => !currentIds.includes(id));
+        console.log('[SystemPrompt] addedIds=', addedIds, 'removedIds=', removedIds);
+
+        // Frase por cada prompt recién activado: activateTemplate(nombre, texto)
+        let block = '';
+        if (addedIds.length > 0) {
+            const ui = getUIStrings();
+            block = PROMPTS.filter(p => addedIds.includes(p.id))
+                .map(p => ui.activateTemplate(p.name, p.text))
+                .join(PROMPT_JOIN);
+        }
+        // Una única frase agrupando TODOS los prompts recién desactivados en esta pasada
+        if (removedIds.length > 0) {
+            const removedNames = PROMPTS.filter(p => removedIds.includes(p.id)).map(p => p.name);
+            if (block) block += ' ';
+            block += getUIStrings().deactivateTemplate(quotedNames(removedNames));
+        }
+        console.log('[SystemPrompt] Bloque a insertar:', JSON.stringify(block));
+
+        if (!block) {
+            lastInjectedIds = currentIds;
+            console.log('[SystemPrompt] Bloque vacío, no hay nada que insertar.');
+            return;
+        }
+
+        const input = getInputElement();
+        console.log('[SystemPrompt] input encontrado:', input, 'valor actual:', input ? JSON.stringify(getInputText(input)) : null);
+        if (!input || isInputEmpty(input)) {
+            console.log('[SystemPrompt] No se inyecta: no hay campo de texto o está vacío.');
+            return;
+        }
+
+        // El mensaje del usuario va primero (visible), el bloque de prompts se
+        // añade DESPUÉS, oculto por debajo del scroll.
+        const addition = SEPARATOR + block;
+        if (isTextarea(input)) {
+            setTextareaValue(input, getInputText(input) + addition);
+        } else {
+            appendToContentEditable(input, addition);
+        }
+        lastInjectedIds = currentIds;
+        console.log('[SystemPrompt] Inyectado. Bloque añadido:', JSON.stringify(addition));
     }
-    case "draw-offer": {
-      if (confirm("Your opponent offers a draw. Accept?")) {
-        sendToRemote({ type: "draw-accept" });
-        endGameDraw();
-      } else {
-        sendToRemote({ type: "draw-decline" });
-      }
-      break;
+
+    document.addEventListener(
+        'keydown',
+        (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                tryInject();
+            }
+        },
+        true
+    );
+
+    document.addEventListener(
+        'click',
+        (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const label = (btn.getAttribute('aria-label') || btn.textContent || '').toLowerCase();
+            if (label.includes('send') || label.includes('enviar')) {
+                tryInject();
+            }
+        },
+        true
+    );
+
+    // Al cambiar de conversación (nueva URL), olvidamos lo aplicado hasta
+    // ahora — pero SOLO si de verdad es una conversación nueva (sin mensajes
+    // todavía). Muchos sitios cambian la URL justo después del primer envío
+    // (para asignarle un ID real a la conversación) sin que sea una
+    // conversación distinta; en ese caso NO hay que resetear.
+    let lastUrl = location.href;
+    setInterval(() => {
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            const bubbles = document.querySelectorAll(
+                '[class*="message"], [data-testid*="message"], [class*="chat-message"], [data-message-author-role], [data-testid*="conversation-turn"]'
+            );
+            if (bubbles.length === 0) {
+                lastInjectedIds = [];
+                console.log('[SystemPrompt] Nueva conversación detectada, se reinicia el registro.');
+            } else {
+                console.log('[SystemPrompt] Cambio de URL sin conversación nueva (ya hay mensajes), no se reinicia.');
+            }
+        }
+    }, 500);
+
+    // =========================================================
+    // 4) LOCALIZAR EL BOTÓN "ANCLA" JUNTO AL QUE COLGAR EL ICONO
+    // =========================================================
+    // - DeepSeek y ChatGPT: el botón "Share" de la barra superior.
+    // - Claude: no hay un "Share" cómodo en la barra del composer, así que
+    //   usamos el botón de enviar mensaje (abajo a la derecha), que es lo
+    //   que hace que el icono quede "abajo" como pide el usuario.
+    function findShareButtonGeneric() {
+        const candidates = [
+            'button[aria-label*="share" i]',
+            'button[title*="share" i]',
+            '[data-testid*="share" i]',
+            'a[aria-label*="share" i]',
+        ];
+        for (const sel of candidates) {
+            const el = document.querySelector(sel);
+            if (el) return el;
+        }
+        const buttons = Array.from(document.querySelectorAll('button, a'));
+        return buttons.find(b => /^(share|compartir)$/i.test((b.textContent || '').trim())) || null;
     }
-    case "draw-accept": {
-      endGameDraw();
-      break;
+
+    function findSendButtonClaude() {
+        const candidates = [
+            'button[aria-label*="send message" i]',
+            'button[aria-label*="send" i]',
+            '[data-testid="send-message-button"]',
+        ];
+        for (const sel of candidates) {
+            const el = document.querySelector(sel);
+            if (el) return el;
+        }
+        return null;
     }
-    case "draw-decline": {
-      showMessage("Your opponent declined the draw offer.");
-      break;
+
+    function findAnchorButton() {
+        if (SITE === 'claude') return findSendButtonClaude();
+        return findShareButtonGeneric(); // deepseek y chatgpt
     }
-    case "nickname": {
-      if (Game.players[msg.color]) {
-        Game.players[msg.color] = { name: msg.name, isLocal: false };
-        updatePlayersUI();
-      }
-      break;
+
+    // =========================================================
+    // 5) ICONO REDONDO + DESPLEGABLE (Shadow DOM, aislado del CSS del sitio)
+    // =========================================================
+    const HOST_ID = 'ds-sysprompt-host';
+    const PANEL_ID = 'ds-sysprompt-panel-host';
+    let hostEl = null;      // icono, se inserta dentro de la barra junto al botón ancla
+    let panelHostEl = null; // panel desplegable, SIEMPRE flotante en <body>, posicionado por JS
+    let panelDropdown = null;
+    let iconEl = null;
+    let langLabelEl = null; // <span> con el código de idioma (ES/EN/...) dentro del icono
+    let openLanguagePicker = null; // se asigna dentro de buildWidget()
+    let checkboxEls = {}; // id -> input
+
+    function buildWidget() {
+        if (document.getElementById(HOST_ID)) return;
+
+        // ---------- 1) ICONO ----------
+        hostEl = document.createElement('div');
+        hostEl.id = HOST_ID;
+        // Posición de emergencia (SIEMPRE visible) mientras no se localiza el botón ancla.
+        const fp = siteConfig.fallbackPos;
+        let fallbackStyle =
+            'all: initial !important;' +
+            'position: fixed !important;' +
+            'z-index: 2147483647 !important;' +
+            'pointer-events: auto !important;' +
+            `right: ${fp.right} !important;`;
+        fallbackStyle += fp.top ? `top: ${fp.top} !important;` : `bottom: ${fp.bottom} !important;`;
+        hostEl.setAttribute('style', fallbackStyle);
+
+        const shadow = hostEl.attachShadow({ mode: 'open' });
+        const style = document.createElement('style');
+        style.textContent = `
+            :host { all: initial; }
+            * { box-sizing: border-box; }
+            .icon {
+                height: ${ICON_HEIGHT}px;
+                padding: 0 10px;
+                border-radius: ${ICON_HEIGHT / 2}px;
+                background: #2a2a2a;
+                border: 1px solid #555;
+                color: #eee;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                font-size: 14px;
+                cursor: pointer;
+                user-select: none;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+                white-space: nowrap;
+            }
+            .icon.active {
+                border-color: #7aa2ff;
+                box-shadow: 0 0 0 2px rgba(122,162,255,0.4);
+            }
+            .icon .gear {
+                font-size: 14px;
+                line-height: 1;
+            }
+            .icon .lang-code {
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                color: #cfd8ff;
+                border-left: 1px solid #555;
+                padding-left: 6px;
+                cursor: pointer;
+            }
+            .icon .lang-code:hover {
+                color: #7aa2ff;
+            }
+        `;
+
+        iconEl = document.createElement('div');
+        iconEl.className = 'icon';
+        iconEl.title = getUIStrings().title;
+
+        const gearSpan = document.createElement('span');
+        gearSpan.className = 'gear';
+        gearSpan.textContent = '🐍';
+
+        const langSpan = document.createElement('span');
+        langSpan.className = 'lang-code';
+        langSpan.textContent = currentLang;
+        langSpan.title = 'Click para elegir idioma / choose language';
+        langSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLanguagePicker();
+        });
+        langLabelEl = langSpan;
+
+        iconEl.appendChild(gearSpan);
+        iconEl.appendChild(langSpan);
+
+        shadow.appendChild(style);
+        shadow.appendChild(iconEl);
+        document.body.appendChild(hostEl);
+
+        // ---------- 2) PANEL DESPLEGABLE (independiente, flotante en <body>) ----------
+        panelHostEl = document.createElement('div');
+        panelHostEl.id = PANEL_ID;
+        panelHostEl.setAttribute(
+            'style',
+            'all: initial !important;' +
+            'position: fixed !important;' +
+            'z-index: 2147483647 !important;' +
+            'pointer-events: auto !important;' +
+            'display: none !important;'
+        );
+
+        const panelShadow = panelHostEl.attachShadow({ mode: 'open' });
+        const panelStyle = document.createElement('style');
+        panelStyle.textContent = `
+            :host { all: initial; }
+            * { box-sizing: border-box; }
+            .dropdown {
+                font-family: system-ui, sans-serif;
+                background: #1e1e1e;
+                border: 1px solid #555;
+                border-radius: 8px;
+                padding: 8px;
+                min-width: 220px;
+                max-width: 280px;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+                color: #eee;
+                font-size: 12px;
+            }
+            .item {
+                display: flex;
+                align-items: flex-start;
+                gap: 6px;
+                padding: 4px 2px;
+                cursor: pointer;
+            }
+            .item:hover { background: rgba(255,255,255,0.06); border-radius: 4px; }
+            .item input { margin-top: 2px; cursor: pointer; }
+            .item-label { line-height: 1.3; flex: 1; }
+            .del-btn {
+                color: #999;
+                cursor: pointer;
+                padding: 0 3px;
+                font-size: 14px;
+                line-height: 1;
+            }
+            .del-btn:hover { color: #ff6b6b; }
+            .add-form {
+                margin-top: 6px;
+                padding-top: 6px;
+                border-top: 1px solid #444;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .add-form input,
+            .add-form textarea {
+                background: #2a2a2a;
+                border: 1px solid #555;
+                border-radius: 4px;
+                color: #eee;
+                font-family: inherit;
+                font-size: 11px;
+                padding: 4px 6px;
+                resize: vertical;
+            }
+            .add-form button {
+                background: #2a2a2a;
+                border: 1px solid #555;
+                border-radius: 4px;
+                color: #cfd8ff;
+                cursor: pointer;
+                font-size: 11px;
+                padding: 4px 6px;
+            }
+            .add-form button:hover { border-color: #7aa2ff; }
+            .empty-note {
+                margin-top: 4px;
+                padding-top: 6px;
+                border-top: 1px solid #444;
+                font-size: 11px;
+                color: #999;
+            }
+            .support-line {
+                margin-top: 6px;
+                padding-top: 6px;
+                border-top: 1px solid #444;
+                font-size: 11px;
+                color: #999;
+            }
+            .support-line a {
+                color: #7aa2ff;
+                text-decoration: none;
+            }
+            .support-line a:hover {
+                text-decoration: underline;
+            }
+            .share-line {
+                margin-top: 6px;
+                padding-top: 6px;
+                border-top: 1px solid #444;
+                font-size: 11px;
+                color: #cfd8ff;
+                cursor: pointer;
+            }
+            .share-line:hover {
+                color: #7aa2ff;
+            }
+            .lang-list {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                max-height: 260px;
+                overflow-y: auto;
+            }
+            .lang-item {
+                padding: 6px 8px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            .lang-item:hover {
+                background: rgba(255,255,255,0.08);
+            }
+            .lang-item.active {
+                color: #7aa2ff;
+                font-weight: 600;
+            }
+        `;
+
+        panelDropdown = document.createElement('div');
+        panelDropdown.className = 'dropdown';
+        renderPanelContents();
+        panelShadow.appendChild(panelStyle);
+        panelShadow.appendChild(panelDropdown);
+        document.body.appendChild(panelHostEl);
+
+        // ---------- 3) ABRIR / CERRAR con retraso (evita cierres al mover el cursor) ----------
+        let closeTimer = null;
+        let pinned = false; // true tras un click, se mantiene abierto hasta click fuera
+        let pickerOpen = false; // true mientras se muestra la lista de idiomas en vez de los prompts
+
+        function openPanel() {
+            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+            positionPanel();
+            panelHostEl.style.setProperty('display', 'block', 'important');
+        }
+        function scheduleClose() {
+            if (pinned) return;
+            if (closeTimer) clearTimeout(closeTimer);
+            closeTimer = setTimeout(() => {
+                panelHostEl.style.setProperty('display', 'none', 'important');
+            }, 300);
+        }
+        function cancelClose() {
+            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        }
+
+        // Abre el panel mostrando la lista de idiomas (cada uno en su propio
+        // idioma) en vez de los checkboxes de prompts. Al elegir uno, se
+        // vuelve automáticamente a la vista de prompts.
+        openLanguagePicker = function () {
+            pinned = true;
+            cancelClose();
+            openPanel();
+            pickerOpen = true;
+            renderLanguagePicker((code) => {
+                setLang(code);
+                if (langLabelEl) langLabelEl.textContent = currentLang;
+                if (iconEl) iconEl.title = getUIStrings().title;
+                pickerOpen = false;
+                renderPanelContents();
+                positionPanel();
+                console.log('[SystemPrompt] Idioma cambiado a', currentLang);
+            });
+        };
+
+        iconEl.addEventListener('mouseenter', () => { cancelClose(); openPanel(); });
+        iconEl.addEventListener('mouseleave', scheduleClose);
+        panelHostEl.addEventListener('mouseenter', cancelClose);
+        panelHostEl.addEventListener('mouseleave', scheduleClose);
+
+        iconEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            pinned = !pinned;
+            if (pinned) {
+                if (pickerOpen) {
+                    pickerOpen = false;
+                    renderPanelContents();
+                }
+                openPanel();
+            } else {
+                panelHostEl.style.setProperty('display', 'none', 'important');
+            }
+        });
+        document.addEventListener('click', (e) => {
+            if (pinned && !panelHostEl.contains(e.target) && e.target !== iconEl) {
+                pinned = false;
+                panelHostEl.style.setProperty('display', 'none', 'important');
+            }
+        });
+
+        updateIconState();
+        console.log('[SystemPrompt] Widget inyectado. Sitio detectado:', SITE, '- dirección de despliegue:', siteConfig.direction, '- idioma:', currentLang);
+
+        function updateIconState() {
+            const anySelected = getPrompts().some(p => isSelected(p.id));
+            iconEl.classList.toggle('active', anySelected);
+        }
     }
-  }
-}
 
-/** Grays out (disables) "Join game" and "Connect" whenever they wouldn't
- *  do anything right now — while a connection attempt is already under
- *  way or already succeeded. Re-enabled after teardownOnline() (fresh
- *  start) or if the connection drops/fails, so retrying is possible. */
-function updateOnlineButtonsState() {
-  const busy = Boolean(Game.conn);
-  dom.joinGameBtn.disabled = busy;
-  dom.joinCodeSubmit.disabled = busy;
-}
+    // Reconstruye el contenido del panel (checkboxes, nota y línea de apoyo)
+    // con los textos del idioma actualmente seleccionado. El estado marcado
+    // de cada checkbox se conserva porque depende de "selectedIds" (los ids
+    // son iguales en todos los idiomas), no del DOM.
+    function renderPanelContents() {
+        if (!panelDropdown) return;
+        panelDropdown.innerHTML = '';
+        checkboxEls = {};
 
-dom.createGameBtn.addEventListener("click", () => {
-  if (!confirmSettingChange()) return;
-  teardownOnline();
-  Game.isHost = true;
-  Game.localColor = "black";
-  const id = "selfo-" + randomGameId();
-  Game.gameId = id.replace("selfo-", "");
-  beginSetupPreview(); // Game.gameId is preserved (online2p keeps its own id) — this just refreshes players/message
-  dom.onlineStatus.textContent = "Opening room...";
-  dom.onlineStatus.className = "online-status";
+        const prompts = getPrompts();
+        const ui = getUIStrings();
 
-  Game.peer = new Peer(id);
-  Game.peer.on("open", () => {
-    dom.gameIdValue.textContent = Game.gameId;
-    dom.copyLinkBtn.disabled = false;
-    dom.onlineStatus.textContent = `Room open. Share code ${Game.gameId} with your opponent.`;
-    dom.onlineStatus.className = "online-status ok";
-  });
-  Game.peer.on("connection", (conn) => {
-    // A new connection always takes over from whatever was here before —
-    // e.g. the same guest reconnecting from a new tab/window without
-    // closing the old one. The superseded side just gets a clear
-    // disconnect notice; the new one gets wired up normally and, once
-    // open, receives a full sync (not just a fresh "setup" preview) so
-    // it lands on the correct turn/phase if a game is already underway.
-    const previous = Game.conn;
-    if (previous) {
-      try { previous.send({ type: "superseded" }); } catch (e) { /* already gone */ }
-      setTimeout(() => { try { previous.close(); } catch (e) {} }, 200);
+        prompts.forEach(p => {
+            const item = document.createElement('label');
+            item.className = 'item';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = isSelected(p.id);
+            cb.addEventListener('change', () => {
+                toggleSelected(p.id, cb.checked);
+                if (iconEl) {
+                    const anySelected = getPrompts().some(pp => isSelected(pp.id));
+                    iconEl.classList.toggle('active', anySelected);
+                }
+            });
+            checkboxEls[p.id] = cb;
+
+            const label = document.createElement('span');
+            label.className = 'item-label';
+            label.textContent = p.name;
+
+            item.appendChild(cb);
+            item.appendChild(label);
+
+            // Los prompts personalizados (creados por el usuario, id "custom_...")
+            // llevan un botón para borrarlos; los "de fábrica" no se pueden borrar.
+            if (p.id.startsWith('custom_')) {
+                const del = document.createElement('span');
+                del.className = 'del-btn';
+                del.textContent = '×';
+                del.title = 'Eliminar este prompt';
+                del.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    deleteCustomPrompt(currentLang, p.id);
+                    renderPanelContents();
+                    positionPanel();
+                });
+                item.appendChild(del);
+            }
+
+            panelDropdown.appendChild(item);
+        });
+
+        // ---------- Formulario para añadir un prompt propio ----------
+        // Se guarda en almacenamiento persistente (no en el código), así que
+        // no se pierde si el script se actualiza más adelante.
+        const addForm = document.createElement('div');
+        addForm.className = 'add-form';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = ui.namePlaceholder;
+        nameInput.maxLength = 60;
+
+        const textInput = document.createElement('textarea');
+        textInput.placeholder = ui.textPlaceholder;
+        textInput.rows = 2;
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.textContent = ui.addButton;
+        addBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const name = nameInput.value.trim();
+            const text = textInput.value.trim();
+            if (!name || !text) return;
+            addCustomPrompt(currentLang, name, text);
+            renderPanelContents();
+            positionPanel();
+        });
+
+        addForm.appendChild(nameInput);
+        addForm.appendChild(textInput);
+        addForm.appendChild(addBtn);
+        panelDropdown.appendChild(addForm);
+
+        const note = document.createElement('div');
+        note.className = 'empty-note';
+        note.textContent = ui.note;
+        panelDropdown.appendChild(note);
+
+        // ---------- Compartir (instalación fácil vía Greasy Fork) ----------
+        const shareLine = document.createElement('div');
+        shareLine.className = 'share-line';
+        const shareIcon = document.createElement('span');
+        shareIcon.textContent = '📤 ';
+        const shareLabelSpan = document.createElement('span');
+        shareLabelSpan.textContent = ui.shareLabel;
+        shareLine.appendChild(shareIcon);
+        shareLine.appendChild(shareLabelSpan);
+        shareLine.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const uiNow = getUIStrings();
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'SyssPrompt', text: uiNow.shareText, url: SITE_URL });
+                    return;
+                } catch (err) {
+                    // El usuario canceló el selector nativo, o no hay soporte real: seguir al fallback
+                }
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(SITE_URL);
+                    const original = shareLabelSpan.textContent;
+                    shareLabelSpan.textContent = uiNow.copiedLabel;
+                    setTimeout(() => { shareLabelSpan.textContent = original; }, 1500);
+                    return;
+                } catch (err) {
+                    // Sin permiso de portapapeles: último recurso, abrir la página
+                }
+            }
+            window.open(SITE_URL, '_blank', 'noopener,noreferrer');
+        });
+        panelDropdown.appendChild(shareLine);
+
+        // ---------- APOYO (opcional): borra este bloque si no lo quieres ----------
+        const supportLine = document.createElement('div');
+        supportLine.className = 'support-line';
+        supportLine.append(SUPPORT_TEXT_PRE);
+        const supportBookLink = document.createElement('a');
+        supportBookLink.href = SUPPORT_URL;
+        supportBookLink.target = '_blank';
+        supportBookLink.rel = 'noopener noreferrer';
+        supportBookLink.textContent = SUPPORT_TEXT_LINK;
+        supportLine.appendChild(supportBookLink);
+        supportLine.append(SUPPORT_TEXT_POST);
+        panelDropdown.appendChild(supportLine);
+        // ---------- fin bloque APOYO ----------
     }
-    wireConnection(conn);
-  });
-  Game.peer.on("error", (err) => {
-    dom.onlineStatus.textContent = "Could not open room (network/relay issue).";
-    dom.onlineStatus.className = "online-status err";
-  });
 
-  dom.joinCodeWrap.hidden = true;
-  updatePlayersUI();
-});
+    // Nombre de cada idioma escrito en sí mismo (para el desplegable de selección).
+    const LANGUAGE_NATIVE_NAMES = {
+        ES: 'Español',
+        CA: 'Català',
+        EU: 'Euskara',
+        GL: 'Galego',
+        EN: 'English',
+        FR: 'Français',
+        DE: 'Deutsch',
+        IT: 'Italiano',
+        PT: 'Português',
+        RU: 'Русский',
+        ZH: '中文',
+        JA: '日本語',
+        KA: 'ქართული',
+    };
 
-dom.joinGameBtn.addEventListener("click", () => {
-  dom.joinCodeWrap.hidden = false;
-  const urlCode = new URLSearchParams(location.search).get("join");
-  if (urlCode) dom.joinCodeInput.value = urlCode;
-});
+    // Sustituye el contenido del panel por la lista de idiomas disponibles
+    // (cada uno escrito en su propio idioma). onPick(code) se llama al elegir uno.
+    function renderLanguagePicker(onPick) {
+        if (!panelDropdown) return;
+        panelDropdown.innerHTML = '';
 
-/** Actually connects as a guest to the given room code. Used both by the
- *  manual "Connect" button (type/paste a code you were given some other
- *  way) and, directly, by an invite-link visit — which skips straight to
- *  this instead of making the visitor also click "Connect" themselves;
- *  the manual code-entry flow above just stays available as an option. */
-function connectToRoom(code) {
-  if (!code) return;
-  if (!confirmSettingChange()) return;
-  teardownOnline();
-  Game.isHost = false;
-  Game.localColor = "white";
-  Game.gameId = code;
-  beginSetupPreview(); // a local placeholder, replaced the moment the host's "sync" message arrives
-  dom.gameIdValue.textContent = code;
+        const list = document.createElement('div');
+        list.className = 'lang-list';
 
-  dom.onlineStatus.textContent = "Connecting...";
-  dom.onlineStatus.className = "online-status";
+        LANGUAGES.forEach((code) => {
+            const item = document.createElement('div');
+            item.className = 'lang-item' + (code === currentLang ? ' active' : '');
+            item.textContent = LANGUAGE_NATIVE_NAMES[code] || code;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onPick(code);
+            });
+            list.appendChild(item);
+        });
 
-  Game.peer = new Peer();
-  Game.peer.on("open", () => {
-    const conn = Game.peer.connect("selfo-" + code, { reliable: true });
-    wireConnection(conn);
-  });
-  Game.peer.on("error", () => {
-    dom.onlineStatus.textContent = "Could not connect. Check the code.";
-    dom.onlineStatus.className = "online-status err";
-    updateOnlineButtonsState();
-  });
-}
+        panelDropdown.appendChild(list);
+    }
 
-dom.joinCodeSubmit.addEventListener("click", () => {
-  connectToRoom(dom.joinCodeInput.value.trim());
-});
+    // =========================================================
+    // 5.5) POSICIONAR EL PANEL FLOTANTE, alineado a la derecha del icono
+    // =========================================================
+    // - direction 'down' (DeepSeek/ChatGPT): el panel cae justo debajo del icono.
+    // - direction 'up' (Claude): el panel sube justo encima del icono, para que
+    //   quepa en pantalla al estar el icono abajo del todo (junto al botón de enviar).
+    // En ambos casos el orden de las opciones dentro del panel es el mismo
+    // (de arriba a abajo), solo cambia el punto de anclaje vertical.
+    function positionPanel() {
+        if (!hostEl || !panelHostEl) return;
+        const rect = hostEl.getBoundingClientRect();
+        const gap = 6;
+        const right = Math.max(4, window.innerWidth - rect.right);
 
-dom.copyLinkBtn.addEventListener("click", () => {
-  const url = Game.mode === "online2p"
-    ? `${location.origin}${location.pathname}?join=${Game.gameId}`
-    : buildSetupUrl();
-  navigator.clipboard?.writeText(url).then(
-    () => showMessage("Link copied to clipboard."),
-    () => showMessage(`Link: ${url}`)
-  );
-});
+        panelHostEl.style.setProperty('right', `${right}px`, 'important');
+        panelHostEl.style.setProperty('left', 'auto', 'important');
 
-// =======================================================================
-// First-run onboarding
-// =======================================================================
+        if (siteConfig.direction === 'up') {
+            const bottom = Math.max(4, window.innerHeight - rect.top + gap);
+            panelHostEl.style.setProperty('bottom', `${bottom}px`, 'important');
+            panelHostEl.style.setProperty('top', 'auto', 'important');
+        } else {
+            const top = rect.bottom + gap;
+            panelHostEl.style.setProperty('top', `${top}px`, 'important');
+            panelHostEl.style.setProperty('bottom', 'auto', 'important');
+        }
+    }
 
-const ONBOARDING_KEY = "selfo_hide_onboarding";
+    // =========================================================
+    // 6) INSERTAR EL ICONO JUNTO AL BOTÓN ANCLA (en el propio DOM de la barra)
+    // =========================================================
+    // En vez de superponer un elemento con position:fixed (que puede quedar
+    // tapado por elementos de la página con su propia capa de apilamiento),
+    // insertamos el icono como un hermano más del botón ancla, dentro de
+    // su mismo contenedor. Así hereda la misma visibilidad y alineación.
+    // - DeepSeek/ChatGPT: ese contenedor es la barra superior (icono arriba).
+    // - Claude: ese contenedor es la barra del composer (icono abajo).
+    let attachedInline = false;
 
-function showOnboarding() {
-  dom.onboardingOverlay.hidden = false;
-}
+    function attachNextToAnchor() {
+        // Claude: el icono se queda SIEMPRE en su posición fija (bottom/right),
+        // nunca se inserta dentro del DOM de la página. Esto evita que la barra
+        // del composer (que centra sus hijos) lo empuje hacia el centro.
+        if (siteConfig.attachMode === 'fixed') return false;
 
-function closeOnboarding() {
-  dom.onboardingOverlay.hidden = true;
-  if (dom.onboardingDontShow.checked) {
-    try { localStorage.setItem(ONBOARDING_KEY, "1"); } catch (e) { /* file:// or private mode: ignore */ }
-  }
-}
+        if (!hostEl) return false;
+        const anchorBtn = findAnchorButton();
+        if (!anchorBtn || !anchorBtn.parentElement) return false;
 
-dom.onboardingCloseBtn.addEventListener("click", closeOnboarding);
+        // Si ya está correctamente colocado justo antes del botón ancla, no tocar nada
+        if (hostEl.parentElement === anchorBtn.parentElement && hostEl.nextElementSibling === anchorBtn) {
+            return true;
+        }
 
-// =======================================================================
-// Download finished game summary
-// =======================================================================
+        hostEl.style.setProperty('all', 'unset', 'important');
+        hostEl.style.setProperty('position', 'static', 'important');
+        hostEl.style.setProperty('display', 'inline-flex', 'important');
+        hostEl.style.setProperty('align-items', 'center', 'important');
+        hostEl.style.setProperty('margin-right', '6px', 'important');
+        if (siteConfig.inlineOffsetY) {
+            hostEl.style.setProperty('margin-top', `${siteConfig.inlineOffsetY}px`, 'important');
+        }
+        hostEl.style.setProperty('vertical-align', 'middle', 'important');
+        hostEl.style.setProperty('z-index', '2147483647', 'important');
 
-dom.downloadBtn.addEventListener("click", () => {
-  if (dom.downloadBtn.disabled || Game.phase !== "ended") return;
+        anchorBtn.parentElement.insertBefore(hostEl, anchorBtn);
+        console.log('[SystemPrompt] Icono insertado junto al botón ancla (', SITE, ').');
+        return true;
+    }
 
-  const summary = {
-    game: "Selfo",
-    gameId: Game.gameId,
-    mode: Game.mode,
-    radius: Game.radius,
-    piecesPerColor: Game.piecesPerColor,
-    players: {
-      black: Game.players.black.name,
-      white: Game.players.white.name,
-    },
-    result: Game.winner ? `${Game.winner} wins` : "draw",
-    endReason: Game.endReason,
-    moveCount: Game.moveLog.length,
-    moves: Game.moveLog,
-    finishedAt: new Date().toISOString(),
-  };
+    function repositionWidget() {
+        if (!hostEl) return;
+        attachedInline = attachNextToAnchor();
+        if (!attachedInline && siteConfig.attachMode !== 'fixed') {
+            console.log('[SystemPrompt] Botón ancla no encontrado todavía; icono en posición de emergencia.');
+        }
+        if (panelHostEl && panelHostEl.style.display === 'block') {
+            positionPanel();
+        }
+    }
 
-  const blob = new Blob([JSON.stringify(summary, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `selfo-game-${Game.gameId || "summary"}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-});
+    // Construir el widget y engancharlo junto al botón ancla en cuanto exista.
+    // Seguimos comprobando indefinidamente (baja frecuencia) porque una SPA puede
+    // re-renderizar esa barra y desenganchar nuestro nodo del DOM.
+    const initInterval = setInterval(() => {
+        try {
+            if (document.documentElement) {
+                buildWidget();
+                repositionWidget();
+                // Mientras no hayamos podido engancharlo junto al botón ancla (fallback fijo),
+                // lo reinsertamos como último hijo de <body> para ganar cualquier empate
+                // de z-index frente a overlays que la página añada después.
+                if (!attachedInline && hostEl && hostEl.parentNode === document.body &&
+                    hostEl.parentNode.lastElementChild !== hostEl) {
+                    hostEl.parentNode.appendChild(hostEl);
+                }
+            }
+        } catch (err) {
+            console.error('[SystemPrompt] Error inicializando el widget:', err);
+        }
+    }, 1000);
 
-// =======================================================================
-// Boot
-// =======================================================================
-
-// =======================================================================
-// URL configuration ("web API")
-// -----------------------------------------------------------------------
-// The interface can be pre-configured entirely from the page URL's query
-// string, so a link alone can hand someone a ready-to-play setup instead
-// of them clicking through the setup panel. Supported parameters (all
-// optional, all safe to combine, unknown/invalid values are ignored):
-//
-//   mode      local2p | online2p | vscomputer | computerself
-//   radius    2-6 (board radius)
-//   pieces    integer, clamped to whatever's valid for the radius
-//   color     black | white — which color the human plays in vscomputer
-//   cpuTime   1-30 — CPU max think time, in seconds
-//   cpuDepth  1-5  — CPU max search depth
-//   name      up to 18 chars — pre-fills your own name (same slot the
-//             editable name label writes to)
-//   join      an online2p room code — connects directly (see below),
-//             and implies mode=online2p regardless of any other mode=…
-//
-// Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4
-//
-// This is also how "Copy link" builds its URL for non-online modes (see
-// buildSetupUrl()) — the round trip is: configure the panel, copy the
-// link, and reopening it reproduces the same setup.
-// =======================================================================
-
-function applyUrlConfig() {
-  const params = new URLSearchParams(location.search);
-
-  const mode = params.get("mode");
-  if (["local2p", "online2p", "vscomputer", "computerself"].includes(mode)) {
-    Game.mode = mode;
-  }
-
-  const radius = parseInt(params.get("radius"), 10);
-  if (Number.isFinite(radius) && radius >= CONFIG.MIN_RADIUS && radius <= CONFIG.MAX_RADIUS) {
-    dom.radiusRange.value = String(radius);
-    dom.radiusValue.textContent = String(radius);
-  }
-  refreshPieceRangeUI(Number(dom.radiusRange.value)); // recompute bounds for the (possibly overridden) radius
-
-  const pieces = parseInt(params.get("pieces"), 10);
-  if (Number.isFinite(pieces)) {
-    const { min, max } = pieceRangeForRadius(Number(dom.radiusRange.value));
-    const clamped = Math.min(max, Math.max(min, pieces));
-    dom.piecesRange.value = String(clamped);
-    dom.piecesValue.textContent = `${clamped} (${min}-${max})`;
-  }
-
-  const color = params.get("color");
-  if (color === "black" || color === "white") Game.humanColor = color;
-
-  const cpuTime = parseInt(params.get("cpuTime"), 10);
-  if (Number.isFinite(cpuTime) && cpuTime >= 1 && cpuTime <= 30) {
-    dom.cpuTimeRange.value = String(cpuTime);
-    dom.cpuTimeValue.textContent = String(cpuTime);
-  }
-
-  const cpuDepth = parseInt(params.get("cpuDepth"), 10);
-  if (Number.isFinite(cpuDepth) && cpuDepth >= 1 && cpuDepth <= 5) {
-    dom.cpuDepthRange.value = String(cpuDepth);
-    dom.cpuDepthValue.textContent = String(cpuDepth);
-  }
-
-  const name = (params.get("name") || "").trim().slice(0, 18);
-  if (name) {
-    // Stored under both slots; assignPreviewPlayers() only ever reads
-    // whichever one actually ends up local, so this is harmless — it
-    // just avoids having to know in advance which color that'll be.
-    Game.localNames.black = name;
-    Game.localNames.white = name;
-  }
-
-  // A join code always means online2p, regardless of any mode= param —
-  // and connects directly rather than stopping at the code-entry UI.
-  const joinCode = params.get("join");
-  if (joinCode) Game.mode = "online2p";
-
-  return joinCode;
-}
-
-/** Builds a link that reproduces the current setup panel — used by
- *  "Copy link" outside online2p (which instead copies a room-join link;
- *  see its click handler). */
-function buildSetupUrl() {
-  const url = new URL(location.href);
-  url.search = "";
-  url.searchParams.set("mode", Game.mode);
-  url.searchParams.set("radius", String(Game.radius));
-  url.searchParams.set("pieces", String(Game.piecesPerColor));
-  if (Game.mode === "vscomputer") {
-    url.searchParams.set("color", Game.humanColor);
-    url.searchParams.set("cpuTime", dom.cpuTimeRange.value);
-    url.searchParams.set("cpuDepth", dom.cpuDepthRange.value);
-  } else if (Game.mode === "computerself") {
-    url.searchParams.set("cpuTime", dom.cpuTimeRange.value);
-    url.searchParams.set("cpuDepth", dom.cpuDepthRange.value);
-  }
-  return url.toString();
-}
-
-function boot() {
-  resetAllRangeInputs();
-  Game.mode = CONFIG.DEFAULT_MODE;
-  const joinCode = applyUrlConfig(); // may override mode/radius/pieces/color/cpu params/name from the URL
-  syncModeButtonsSelection();
-  beginSetupPreview();
-
-  let hideOnboarding = false;
-  try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }
-  if (!hideOnboarding) showOnboarding();
-
-  // an invite link connects directly — no need to also click "Connect";
-  // the code-entry UI (revealed by "Join game") stays available as an
-  // option for codes you were given some other way
-  if (joinCode) {
-    dom.joinGameBtn.click(); // reveals the code UI too, showing the code being used
-    connectToRoom(joinCode);
-  }
-}
-
-/** Forces every slider's actual DOM value (not just its number label) back
- *  to its intended default, and syncs the label from that same value.
- *
- * Why this is needed: browsers can restore <input type="range"> values
- * left over from a previous visit/reload (form/session restoration),
- * independently of the page's own JS state. Without this, the on-screen
- * number (set from a hardcoded JS default) could disagree with the
- * slider's real, browser-restored position — showing e.g. "3" while the
- * thumb actually sits at 4, which then visibly "jumps" the moment the
- * user first touches it. Setting both the DOM value and the label here,
- * together, from the same source, guarantees they start in sync. */
-function resetAllRangeInputs() {
-  Game.radius = CONFIG.DEFAULT_RADIUS;
-  dom.radiusRange.value = String(Game.radius);
-  dom.radiusValue.textContent = String(Game.radius);
-  refreshPieceRangeUI(); // also forces piecesRange's value + label together, from Game.radius
-
-  dom.cpuTimeRange.value = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
-  dom.cpuTimeValue.textContent = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
-  dom.cpuDepthRange.value = String(CONFIG.DEFAULT_CPU_DEPTH);
-  dom.cpuDepthValue.textContent = String(CONFIG.DEFAULT_CPU_DEPTH);
-}
-
-boot();
+    // También reposicionar en scroll/resize, por si el botón ancla se mueve
+    window.addEventListener('resize', repositionWidget, true);
+    window.addEventListener('scroll', repositionWidget, true);
+})();
