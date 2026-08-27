@@ -1095,10 +1095,13 @@ function updateNameEditability() {
 }
 
 /** The placeholder a name reverts to when left empty — "Player 1"/"Player
- *  2" in local2p (two distinct people sharing this device), "You"
- *  everywhere else (online2p/vscomputer, a single local identity). */
+ *  2" in local2p (two distinct people sharing this device), "Host"/
+ *  "Guest" in online2p (so an unedited name still tells the two apart —
+ *  both defaulting to "You" was confusing), "You" in vscomputer (a
+ *  single local identity next to the computer's own name). */
 function defaultNameFor(color) {
   if (Game.mode === "local2p") return color === "black" ? "Player 1" : "Player 2";
+  if (Game.mode === "online2p") return Game.isHost ? "Host" : "Guest";
   return "You";
 }
 
@@ -1333,14 +1336,15 @@ function assignPreviewPlayers() {
     Game.players.black = { name: Game.localNames.black || "Player 1", isLocal: true };
     Game.players.white = { name: Game.localNames.white || "Player 2", isLocal: true };
   } else if (Game.mode === "online2p") {
+    const myDefault = Game.isHost ? "Host" : "Guest";
     if (Game.localColor) {
-      Game.players[Game.localColor] = { name: Game.localNames[Game.localColor] || "You", isLocal: true };
+      Game.players[Game.localColor] = { name: Game.localNames[Game.localColor] || myDefault, isLocal: true };
       const other = opponentOf(Game.localColor);
       if (!Game.players[other] || Game.players[other].isLocal) {
         Game.players[other] = { name: "Waiting\u2026", isLocal: false };
       }
     } else {
-      Game.players.black = { name: Game.localNames.black || "You", isLocal: true };
+      Game.players.black = { name: Game.localNames.black || myDefault, isLocal: true };
       Game.players.white = { name: "Waiting\u2026", isLocal: false };
     }
   } else if (Game.mode === "vscomputer") {
@@ -1386,9 +1390,10 @@ function scheduleGameStartGrace() {
   cancelGameStartGrace();
   if (Game.phase !== "setup") return;
 
+  const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const graceSeconds = Math.round(CONFIG.GAME_START_GRACE_MS / 1000);
   const mover = Game.players[Game.turn];
-  const cpuFirst = mover && !mover.isLocal;
+  const cpuFirst = isCpuMode && Boolean(mover && !mover.isLocal);
   showMessage(
     cpuFirst
       ? `The AI moves first in ${graceSeconds}s\u2026 change any setting above to adjust before it does.`
@@ -1404,8 +1409,12 @@ function scheduleGameStartGrace() {
     flashBoardStart();
 
     const nowMover = Game.players[Game.turn];
-    if (nowMover && !nowMover.isLocal) {
-      // computer-controlled — no human gesture to wait for, so it moves now
+    const nowCpuControlled = isCpuMode && Boolean(nowMover && !nowMover.isLocal);
+    if (nowCpuControlled) {
+      // genuinely computer-controlled — no human gesture to wait for, so
+      // it moves now. A remote *human* opponent (online2p) is also
+      // "not local" but must NOT trigger this — the game stays in
+      // "setup" (still editable/waiting) until they actually move.
       Game.phase = "playing";
       updateSetupVisibility();
       updateStatusUI();
@@ -1439,7 +1448,7 @@ function wireConnection(conn) {
       ? "Opponent connected."
       : "Connected. Waiting for the host's board.";
     dom.onlineStatus.className = "online-status ok";
-    const myName = Game.localNames[Game.localColor] || "You";
+    const myName = Game.localNames[Game.localColor] || (Game.isHost ? "Host" : "Guest");
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
     if (Game.isHost) broadcastPreview();
     updateStatusUI();
