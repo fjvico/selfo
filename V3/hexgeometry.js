@@ -3,16 +3,8 @@
 /**
  * HexGeometry
  * -----------
- * Pure math helpers for a flat-top hexagonal grid arranged as a big
+ * Pure math helpers for a pointy-top hexagonal grid arranged as a big
  * hexagon-shaped board, addressed with axial coordinates (q, r).
- *
- * Note on orientation: individual cells are flat-top (flat edge up/down,
- * pointed left/right). Tiling flat-top cells into an axial-range hexagon
- * of this shape makes the *board's* overall silhouette come out pointy-top
- * (narrower left-to-right than top-to-bottom) — the two are always
- * rotated 30° from each other for this kind of "hexagon of hexagons"
- * layout. Pointy-top board = flat-top cells; that's the trade this file
- * makes, chosen because a narrower board is friendlier on mobile widths.
  *
  * "radius" here means "number of rings including the center cell":
  *   radius = 1  -> only the center cell (1 cell)
@@ -66,18 +58,18 @@ const HexGeometry = (() => {
     return DIRECTIONS.map((d) => ({ q: q + d.q, r: r + d.r }));
   }
 
-  /** Axial -> pixel center, flat-top orientation. */
+  /** Axial -> pixel center, pointy-top orientation. */
   function axialToPixel(q, r, size) {
-    const x = size * 1.5 * q;
-    const y = size * Math.sqrt(3) * (r + q / 2);
+    const x = size * Math.sqrt(3) * (q + r / 2);
+    const y = size * 1.5 * r;
     return { x, y };
   }
 
-  /** Corner points of a flat-top hexagon centered at (cx, cy). */
+  /** Corner points of a pointy-top hexagon centered at (cx, cy). */
   function hexCorners(cx, cy, size) {
     const pts = [];
     for (let i = 0; i < 6; i++) {
-      const angleDeg = 60 * i;
+      const angleDeg = 60 * i - 30;
       const angleRad = (Math.PI / 180) * angleDeg;
       pts.push([cx + size * Math.cos(angleRad), cy + size * Math.sin(angleRad)]);
     }
@@ -94,11 +86,11 @@ const HexGeometry = (() => {
     return { q: rx, r: rz };
   }
 
-  /** Pixel -> axial (nearest cell), flat-top orientation, inverse of axialToPixel. */
+  /** Pixel -> axial (nearest cell), pointy-top orientation, inverse of axialToPixel. */
   function pixelToAxial(x, y, size) {
-    const qFrac = (2 / 3) * (x / size);
-    const rFrac = ((-1 / 3) * (x / size)) + ((Math.sqrt(3) / 3) * (y / size));
-    const sFrac = -qFrac - rFrac; // cube y-component (since q + r + s = 0)
+    const rFrac = (2 / 3) * (y / size);
+    const qFrac = (x / (size * Math.sqrt(3))) - (rFrac / 2);
+    const sFrac = -qFrac - rFrac; // cube y-component (since y = -x - z)
     return cubeRound(qFrac, sFrac, rFrac);
   }
 
