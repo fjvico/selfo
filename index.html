@@ -21,12 +21,46 @@
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
         <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
         <div class="share-wrap">
-          <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup">&#128228;</button>
+          <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup" aria-label="Share this setup">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+              <circle cx="18" cy="5" r="2.6"/>
+              <circle cx="6" cy="12" r="2.6"/>
+              <circle cx="18" cy="19" r="2.6"/>
+              <line x1="8.3" y1="10.6" x2="15.7" y2="6.3"/>
+              <line x1="8.3" y1="13.4" x2="15.7" y2="17.7"/>
+            </svg>
+          </button>
           <div class="share-menu" id="shareMenu" hidden>
-            <a id="shareMenuEmail" class="share-menu-item" target="_blank" rel="noopener">&#9993;&#65039; Email</a>
-            <a id="shareMenuWhatsApp" class="share-menu-item" target="_blank" rel="noopener">&#128241; WhatsApp</a>
-            <a id="shareMenuTelegram" class="share-menu-item" target="_blank" rel="noopener">&#9992;&#65039; Telegram</a>
-            <button id="shareMenuCopy" class="share-menu-item" type="button">&#128279; Copy link</button>
+            <a id="shareMenuEmail" class="share-menu-item" target="_blank" rel="noopener">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <rect x="3" y="5.5" width="18" height="13" rx="2"/>
+                <path d="M3.4 6.6 12 13l8.6-6.4"/>
+              </svg>
+              <span>Email</span>
+            </a>
+            <a id="shareMenuWhatsApp" class="share-menu-item" target="_blank" rel="noopener">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="M12 3.2c-4.9 0-8.8 3.8-8.8 8.5 0 1.9.7 3.7 1.9 5.1L4 20.8l4.2-1.2c1.2.6 2.5.9 3.8.9 4.9 0 8.8-3.8 8.8-8.5S16.9 3.2 12 3.2z"/>
+                <path d="M9.1 9.5c-.2.5-.5 1.2-.3 1.9.4 1.6 2.7 3.9 4.3 4.5.7.3 1.3.1 1.8-.3l.4-.5-1.6-1.4-.4.4c-.2.2-.5.2-.7 0-.6-.4-1.4-1.1-1.8-1.8-.1-.2-.1-.5.1-.7l.4-.5-1.1-1.7-.6-.1z"/>
+              </svg>
+              <span>WhatsApp</span>
+            </a>
+            <a id="shareMenuTelegram" class="share-menu-item" target="_blank" rel="noopener">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="8.8"/>
+                <path d="M6.6 12.1 17 7.9l-2.9 9.9-2.9-2.9-2 1.8-.6-2.9z"/>
+                <path d="M8.5 13.4 16.7 8"/>
+              </svg>
+              <span>Telegram</span>
+            </a>
+            <button id="shareMenuCopy" class="share-menu-item" type="button">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="M9.6 14.4 14.4 9.6"/>
+                <path d="M11 7.4 12.3 6a3.4 3.4 0 0 1 4.9 4.8L15.8 12.3"/>
+                <path d="M13 16.6 11.7 18a3.4 3.4 0 0 1-4.9-4.8L8.2 11.7"/>
+              </svg>
+              <span>Copy link</span>
+            </button>
           </div>
         </div>
       </div>

@@ -346,11 +346,23 @@ body {
 }
 .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
 .chip-btn.icon-btn {
-  font-size: 13px;
-  line-height: 1;
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
 }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* wireframe icons: stroke only, no fill, inherit color from the palette */
+.icon-wire {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  display: block;
+}
 
 .share-wrap { position: relative; display: inline-flex; }
 .share-menu {
@@ -370,7 +382,9 @@ body {
 }
 .share-menu[hidden] { display: none; }
 .share-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   text-align: left;
   font-family: var(--font-body), sans-serif;
