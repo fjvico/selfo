@@ -1014,6 +1014,7 @@ function updateSetupVisibility() {
   dom.onlineBlock.hidden = Game.mode !== "online2p";
   dom.colorChoiceBlock.hidden = Game.mode !== "vscomputer";
   dom.cpuParamsBlock.hidden = !isCpuMode;
+  dom.copyLinkBtn.title = Game.mode === "online2p" ? "Copy invite link" : "Copy a link that opens with this setup";
 
   // a guest doesn't control the host's board — visible (fixed position),
   // just inert
@@ -1719,10 +1720,12 @@ dom.joinCodeSubmit.addEventListener("click", () => {
 });
 
 dom.copyLinkBtn.addEventListener("click", () => {
-  const url = `${location.origin}${location.pathname}?join=${Game.gameId}`;
+  const url = Game.mode === "online2p"
+    ? `${location.origin}${location.pathname}?join=${Game.gameId}`
+    : buildSetupUrl();
   navigator.clipboard?.writeText(url).then(
-    () => showMessage("Invite link copied to clipboard."),
-    () => showMessage(`Invite link: ${url}`)
+    () => showMessage("Link copied to clipboard."),
+    () => showMessage(`Link: ${url}`)
   );
 });
 
@@ -1784,9 +1787,111 @@ dom.downloadBtn.addEventListener("click", () => {
 // Boot
 // =======================================================================
 
+// =======================================================================
+// URL configuration ("web API")
+// -----------------------------------------------------------------------
+// The interface can be pre-configured entirely from the page URL's query
+// string, so a link alone can hand someone a ready-to-play setup instead
+// of them clicking through the setup panel. Supported parameters (all
+// optional, all safe to combine, unknown/invalid values are ignored):
+//
+//   mode      local2p | online2p | vscomputer | computerself
+//   radius    2-6 (board radius)
+//   pieces    integer, clamped to whatever's valid for the radius
+//   color     black | white — which color the human plays in vscomputer
+//   cpuTime   1-30 — CPU max think time, in seconds
+//   cpuDepth  1-5  — CPU max search depth
+//   name      up to 18 chars — pre-fills your own name (same slot the
+//             editable name label writes to)
+//   join      an online2p room code — connects directly (see below),
+//             and implies mode=online2p regardless of any other mode=…
+//
+// Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4
+//
+// This is also how "Copy link" builds its URL for non-online modes (see
+// buildSetupUrl()) — the round trip is: configure the panel, copy the
+// link, and reopening it reproduces the same setup.
+// =======================================================================
+
+function applyUrlConfig() {
+  const params = new URLSearchParams(location.search);
+
+  const mode = params.get("mode");
+  if (["local2p", "online2p", "vscomputer", "computerself"].includes(mode)) {
+    Game.mode = mode;
+  }
+
+  const radius = parseInt(params.get("radius"), 10);
+  if (Number.isFinite(radius) && radius >= CONFIG.MIN_RADIUS && radius <= CONFIG.MAX_RADIUS) {
+    dom.radiusRange.value = String(radius);
+    dom.radiusValue.textContent = String(radius);
+  }
+  refreshPieceRangeUI(Number(dom.radiusRange.value)); // recompute bounds for the (possibly overridden) radius
+
+  const pieces = parseInt(params.get("pieces"), 10);
+  if (Number.isFinite(pieces)) {
+    const { min, max } = pieceRangeForRadius(Number(dom.radiusRange.value));
+    const clamped = Math.min(max, Math.max(min, pieces));
+    dom.piecesRange.value = String(clamped);
+    dom.piecesValue.textContent = `${clamped} (${min}-${max})`;
+  }
+
+  const color = params.get("color");
+  if (color === "black" || color === "white") Game.humanColor = color;
+
+  const cpuTime = parseInt(params.get("cpuTime"), 10);
+  if (Number.isFinite(cpuTime) && cpuTime >= 1 && cpuTime <= 30) {
+    dom.cpuTimeRange.value = String(cpuTime);
+    dom.cpuTimeValue.textContent = String(cpuTime);
+  }
+
+  const cpuDepth = parseInt(params.get("cpuDepth"), 10);
+  if (Number.isFinite(cpuDepth) && cpuDepth >= 1 && cpuDepth <= 5) {
+    dom.cpuDepthRange.value = String(cpuDepth);
+    dom.cpuDepthValue.textContent = String(cpuDepth);
+  }
+
+  const name = (params.get("name") || "").trim().slice(0, 18);
+  if (name) {
+    // Stored under both slots; assignPreviewPlayers() only ever reads
+    // whichever one actually ends up local, so this is harmless — it
+    // just avoids having to know in advance which color that'll be.
+    Game.localNames.black = name;
+    Game.localNames.white = name;
+  }
+
+  // A join code always means online2p, regardless of any mode= param —
+  // and connects directly rather than stopping at the code-entry UI.
+  const joinCode = params.get("join");
+  if (joinCode) Game.mode = "online2p";
+
+  return joinCode;
+}
+
+/** Builds a link that reproduces the current setup panel — used by
+ *  "Copy link" outside online2p (which instead copies a room-join link;
+ *  see its click handler). */
+function buildSetupUrl() {
+  const url = new URL(location.href);
+  url.search = "";
+  url.searchParams.set("mode", Game.mode);
+  url.searchParams.set("radius", String(Game.radius));
+  url.searchParams.set("pieces", String(Game.piecesPerColor));
+  if (Game.mode === "vscomputer") {
+    url.searchParams.set("color", Game.humanColor);
+    url.searchParams.set("cpuTime", dom.cpuTimeRange.value);
+    url.searchParams.set("cpuDepth", dom.cpuDepthRange.value);
+  } else if (Game.mode === "computerself") {
+    url.searchParams.set("cpuTime", dom.cpuTimeRange.value);
+    url.searchParams.set("cpuDepth", dom.cpuDepthRange.value);
+  }
+  return url.toString();
+}
+
 function boot() {
   resetAllRangeInputs();
   Game.mode = CONFIG.DEFAULT_MODE;
+  const joinCode = applyUrlConfig(); // may override mode/radius/pieces/color/cpu params/name from the URL
   syncModeButtonsSelection();
   beginSetupPreview();
 
@@ -1797,11 +1902,9 @@ function boot() {
   // an invite link connects directly — no need to also click "Connect";
   // the code-entry UI (revealed by "Join game") stays available as an
   // option for codes you were given some other way
-  const urlCode = new URLSearchParams(location.search).get("join");
-  if (urlCode) {
-    dom.modeButtons.find((b) => b.dataset.mode === "online2p")?.click();
+  if (joinCode) {
     dom.joinGameBtn.click(); // reveals the code UI too, showing the code being used
-    connectToRoom(urlCode);
+    connectToRoom(joinCode);
   }
 }
 

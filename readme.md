@@ -46,6 +46,33 @@ and still works straight from disk.
   a single object in `script.js`, so this only needs new UI controls,
   not a rewrite.
 
+## Pre-configuring via the URL
+
+The whole setup panel can be filled in from the page's own URL, so a
+link alone can open the game with a specific mode, board size, color,
+or CPU settings already chosen — no clicking through the panel first.
+All parameters are optional and safe to combine; unknown or invalid
+values are just ignored.
+
+| Parameter  | Values                                              |
+|------------|------------------------------------------------------|
+| `mode`     | `local2p`, `online2p`, `vscomputer`, `computerself`  |
+| `radius`   | `2`–`6` — board radius                                |
+| `pieces`   | integer — pieces per player (clamped to what's valid for `radius`) |
+| `color`    | `black` or `white` — which color the human plays in `vscomputer` |
+| `cpuTime`  | `1`–`30` — CPU max think time, in seconds             |
+| `cpuDepth` | `1`–`5` — CPU max search depth                        |
+| `name`     | up to 18 characters — pre-fills your own name          |
+| `join`     | an online room code — connects directly as a guest (implies `mode=online2p`, and overrides any other `mode=`) |
+
+Example: `index.html?mode=vscomputer&color=white&radius=4&cpuDepth=4`
+opens straight into "vs computer," human playing white, a radius-4
+board, and the CPU searching 4 moves ahead.
+
+The **LINK** button in the top bar builds one of these automatically
+from whatever's currently configured (or, in online mode, an invite
+link with a room code instead) and copies it to the clipboard.
+
 ## Install on GitHub Pages
 
 1. Create a new repository (or use an existing one) and add these six
