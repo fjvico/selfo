@@ -1236,8 +1236,23 @@ function selectMode(mode) {
 
   cancelScheduledCpuMove();
   cancelEndedAutoRestart();
-  teardownOnline();
 
+  // Re-picking "online2p" while already connected there is how a new
+  // online game gets started with the same opponent — it must NOT sever
+  // the connection. Destroying the host's Peer object releases its
+  // fixed room code for good (PeerJS never lets it be reclaimed), which
+  // would strand the guest with no way back in. Any other mode change,
+  // or picking online2p from scratch (no live connection yet), still
+  // tears down as before.
+  const keepOnlineConnection = mode === "online2p" && Game.mode === "online2p" && Boolean(Game.conn);
+
+  if (keepOnlineConnection) {
+    syncModeButtonsSelection();
+    beginSetupPreview();
+    return;
+  }
+
+  teardownOnline();
   Game.mode = mode;
   Game.isHost = mode === "online2p" ? true : Game.isHost; // default assumption until join overrides
   Game.gameId = null;
@@ -1323,7 +1338,7 @@ function beginSetupPreview() {
   renderBoard();
   updateStatusUI();
 
-  if (Game.mode === "online2p" && Game.isHost) broadcastPreview();
+  if (Game.mode === "online2p" && Game.isHost) broadcastSync();
 
   scheduleGameStartGrace();
 }
@@ -1450,7 +1465,7 @@ function wireConnection(conn) {
     dom.onlineStatus.className = "online-status ok";
     const myName = Game.localNames[Game.localColor] || (Game.isHost ? "Host" : "Guest");
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
-    if (Game.isHost) broadcastPreview();
+    if (Game.isHost) broadcastSync();
     updateStatusUI();
   });
   conn.on("data", (payload) => handleRemoteMessage(payload));
@@ -1469,36 +1484,43 @@ function wireConnection(conn) {
   });
 }
 
-/** Host only: sends the current live preview board (and player names) to
- *  the connected guest, so their screen matches — sent once on connect,
- *  and again any time the host changes radius/pieces while still in
- *  "setup". The actual game start is a "move" message, same as any other
- *  move, once the host (always black, moving first) actually moves. */
-function broadcastPreview() {
+/** Host only: sends the complete current game state to the connected
+ *  guest, so their screen matches exactly — sent on every (re)connect,
+ *  any time the host changes radius/pieces while still in "setup", and
+ *  whenever a new connection supersedes an old one (see below). Unlike
+ *  the old "preview-only" broadcast, this always includes the real
+ *  turn/phase, so a guest reconnecting mid-game (e.g. from a new tab)
+ *  is placed correctly instead of being reset to "black to move". */
+function broadcastSync() {
   sendToRemote({
-    type: "preview",
+    type: "sync",
     radius: Game.radius,
     piecesPerColor: Game.piecesPerColor,
     cells: Array.from(Game.cells.values()),
     players: Game.players,
+    turn: Game.turn,
+    phase: Game.phase,
+    pieRuleAvailable: Game.pieRuleAvailable,
+    winner: Game.winner,
+    endReason: Game.endReason,
   });
 }
 
 function handleRemoteMessage(msg) {
   switch (msg.type) {
-    case "preview": {
+    case "sync": {
       Game.radius = msg.radius;
       Game.piecesPerColor = msg.piecesPerColor;
       const cells = new Map();
       for (const c of msg.cells) cells.set(HexGeometry.key(c.q, c.r), { q: c.q, r: c.r, color: c.color });
       Game.cells = cells;
       Game.neighborKeys = BoardInit.buildNeighborMap(cells);
-      Game.turn = "black";
-      Game.pieRuleAvailable = true;
+      Game.turn = msg.turn;
+      Game.pieRuleAvailable = msg.pieRuleAvailable;
       Game.selectedKey = null;
       Game.lastMove = null;
-      Game.winner = null;
-      Game.endReason = null;
+      Game.winner = msg.winner;
+      Game.endReason = msg.endReason;
       // The board radius/pieces bars are always visible and are never
       // ours to control here (we're the guest), but they should still
       // reflect the host's actual values rather than staying stuck at
@@ -1513,7 +1535,7 @@ function handleRemoteMessage(msg) {
         dom.piecesValue.textContent = `${Game.piecesPerColor} (${min}-${max})`;
       }
       // Only adopt the sender's info for the *other* color. Never let an
-      // incoming preview clobber our own name/isLocal — msg.players was
+      // incoming sync clobber our own name/isLocal — msg.players was
       // built from the sender's point of view, where our color is just
       // a "Waiting..." placeholder (a race: they broadcast before
       // hearing our own nickname), so blindly replacing Game.players
@@ -1523,12 +1545,39 @@ function handleRemoteMessage(msg) {
       if (msg.players && msg.players[otherColor]) {
         Game.players[otherColor] = { name: msg.players[otherColor].name, isLocal: false };
       }
-      Game.phase = "setup";
-      Game.setupReady = false;
-      updateSetupVisibility();
-      renderBoard();
-      updateStatusUI();
-      scheduleGameStartGrace();
+
+      if (msg.phase === "playing") {
+        Game.phase = "playing";
+        Game.setupReady = true;
+        updateSetupVisibility();
+        renderBoard();
+        updateStatusUI();
+        showMessage("Reconnected \u2014 rejoining the game in progress.");
+      } else if (msg.phase === "ended") {
+        Game.phase = "ended";
+        updateSetupVisibility();
+        renderBoard();
+        updateButtonsForPhase();
+        updateStatusUI();
+        scheduleEndedAutoRestart();
+      } else {
+        Game.phase = "setup";
+        Game.setupReady = false;
+        updateSetupVisibility();
+        renderBoard();
+        updateStatusUI();
+        scheduleGameStartGrace();
+      }
+      break;
+    }
+    case "superseded": {
+      // Another connection (almost always ourselves, from a new
+      // tab/window) has taken our place with the host. There's nothing
+      // to recover here — just say so clearly and clean up.
+      showMessage("You've been disconnected \u2014 this game is now connected from another tab or window.");
+      dom.onlineStatus.textContent = "Disconnected (reconnected elsewhere).";
+      dom.onlineStatus.className = "online-status err";
+      teardownOnline();
       break;
     }
     case "move": {
@@ -1607,6 +1656,17 @@ dom.createGameBtn.addEventListener("click", () => {
     dom.onlineStatus.className = "online-status ok";
   });
   Game.peer.on("connection", (conn) => {
+    // A new connection always takes over from whatever was here before —
+    // e.g. the same guest reconnecting from a new tab/window without
+    // closing the old one. The superseded side just gets a clear
+    // disconnect notice; the new one gets wired up normally and, once
+    // open, receives a full sync (not just a fresh "setup" preview) so
+    // it lands on the correct turn/phase if a game is already underway.
+    const previous = Game.conn;
+    if (previous) {
+      try { previous.send({ type: "superseded" }); } catch (e) { /* already gone */ }
+      setTimeout(() => { try { previous.close(); } catch (e) {} }, 200);
+    }
     wireConnection(conn);
   });
   Game.peer.on("error", (err) => {
@@ -1636,7 +1696,7 @@ function connectToRoom(code) {
   Game.isHost = false;
   Game.localColor = "white";
   Game.gameId = code;
-  beginSetupPreview(); // a local placeholder, replaced the moment the host's "preview" message arrives
+  beginSetupPreview(); // a local placeholder, replaced the moment the host's "sync" message arrives
   dom.gameIdValue.textContent = code;
 
   dom.onlineStatus.textContent = "Connecting...";
