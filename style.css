@@ -345,6 +345,11 @@ body {
   cursor: pointer;
 }
 .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+.chip-btn.icon-btn {
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 8px;
+}
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ---------------------------------------------------------------
