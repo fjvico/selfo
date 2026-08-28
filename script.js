@@ -43,6 +43,7 @@ const CONFIG = {
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
   DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
+  BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
 };
 
@@ -147,6 +148,7 @@ const dom = {
   cpuDepthValue: document.getElementById("cpuDepthValue"),
 
   boardFlash: document.getElementById("boardFlash"),
+  boardFadeOverlay: document.getElementById("boardFadeOverlay"),
 
   onboardingOverlay: document.getElementById("onboardingOverlay"),
   onboardingDontShow: document.getElementById("onboardingDontShow"),
@@ -313,7 +315,8 @@ function renderBoard() {
   svg.setAttribute("width", Math.round(vbW));
   svg.setAttribute("height", Math.round(vbH));
 
-  // gradients for pieces (defined once per render, cheap enough)
+  // gradients for pieces, plus a soft gray outline that hugs the board's
+  // actual outer silhouette (defined once per render, cheap enough)
   const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
   defs.innerHTML = `
     <radialGradient id="pieceBlackGrad" cx="35%" cy="30%" r="75%">
@@ -323,11 +326,23 @@ function renderBoard() {
     <radialGradient id="pieceWhiteGrad" cx="35%" cy="30%" r="75%">
       <stop offset="0%" stop-color="#ffffff"/>
       <stop offset="100%" stop-color="#aeb8c0"/>
-    </radialGradient>`;
+    </radialGradient>
+    <filter id="boardOutline">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="dilated"/>
+      <feComposite in="dilated" in2="SourceAlpha" operator="out" result="ring"/>
+      <feFlood flood-color="#5b6168" result="ringColor"/>
+      <feComposite in="ringColor" in2="ring" operator="in" result="outline"/>
+      <feGaussianBlur in="outline" stdDeviation="0.6" result="outlineSoft"/>
+      <feMerge>
+        <feMergeNode in="outlineSoft"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>`;
   svg.appendChild(defs);
 
   const cellsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
   cellsGroup.setAttribute("id", "cellsGroup");
+  cellsGroup.setAttribute("filter", "url(#boardOutline)"); // softens the jagged outer edge of the whole board
   const piecesGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
   piecesGroup.setAttribute("id", "piecesGroup");
 
@@ -707,7 +722,7 @@ function scheduleEndedAutoRestart() {
   endedAutoRestartTimer = setTimeout(() => {
     endedAutoRestartTimer = null;
     if (Game.phase !== "ended") return; // state moved on already (mode switch, etc.)
-    beginSetupPreview();
+    fadeToBlackThenRestart();
   }, CONFIG.ENDED_PAUSE_MS);
 }
 
@@ -716,6 +731,39 @@ function cancelEndedAutoRestart() {
     clearTimeout(endedAutoRestartTimer);
     endedAutoRestartTimer = null;
   }
+  cancelBoardFade();
+}
+
+/** Incremented every time a fade is started or cancelled, so a
+ *  transitionend callback from a superseded fade (e.g. the player picked
+ *  a new mode mid-fade) can recognize it's stale and skip acting. */
+let boardFadeToken = 0;
+
+/** Fades the board to black, swaps in the fresh setup preview at the
+ *  exact moment the screen is fully black (via transitionend — no guessing
+ *  at a matching setTimeout delay), then fades back in on the new board. */
+function fadeToBlackThenRestart() {
+  const overlay = dom.boardFadeOverlay;
+  if (!overlay) { beginSetupPreview(); return; } // safety net if the overlay isn't in the DOM
+  const token = ++boardFadeToken;
+
+  overlay.classList.add("active");
+  overlay.addEventListener("transitionend", function onFadedIn() {
+    overlay.removeEventListener("transitionend", onFadedIn);
+    if (token !== boardFadeToken) return; // cancelled/superseded while fading out
+    beginSetupPreview();
+    void overlay.offsetWidth; // force reflow so removing .active retriggers the fade-out transition
+    overlay.classList.remove("active");
+  }, { once: true });
+}
+
+/** Invalidates any fade in flight and snaps the overlay back to
+ *  transparent immediately — used whenever something interrupts the
+ *  normal end-of-game -> new-game flow (mode switch, resign, etc.) so the
+ *  board never gets stuck hidden behind a black screen. */
+function cancelBoardFade() {
+  boardFadeToken++;
+  dom.boardFadeOverlay?.classList.remove("active");
 }
 
 /** Brief, non-blocking glow across the board to mark that the game just
@@ -1169,16 +1217,15 @@ function refreshPieceRangeUI(radius = Game.radius) {
 }
 
 /** Used by every control that defines the board itself (radius, pieces,
- *  color choice) when changed while a game is in progress: asks whether
- *  to abandon the current game and start a fresh one with the new
- *  value. Returns true if the change should go ahead (not playing, or
- *  confirmed); false if the caller must revert its control back to the
- *  last committed value. CPU think-time/depth deliberately skip this —
+ *  color choice) when changed while a game is in progress: changing any
+ *  of these abandons the current game and starts a fresh one with the
+ *  new value, immediately and without asking — the player is expected to
+ *  learn through experience that touching these controls mid-game costs
+ *  the game in progress. CPU think-time/depth deliberately skip this —
  *  they don't affect the board, so they just apply to the CPU's next
  *  move without needing to restart anything. */
 function confirmSettingChange() {
-  if (Game.phase !== "playing") return true;
-  return confirm("End the current game and start a new one with these settings?");
+  return true;
 }
 
 dom.radiusRange.addEventListener("input", () => {

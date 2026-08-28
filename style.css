@@ -184,6 +184,23 @@ body {
   100% { opacity: 0; }
 }
 
+/* Fade-to-black transition between a finished game and the next one.
+   Opacity is driven by toggling .active from script.js (fadeToBlackThenRestart()),
+   which swaps the board's contents at the exact moment the fade-in
+   finishes (via the transitionend event), then removes .active to fade
+   back in on the fresh board — see the CONFIG.BOARD_FADE_MS comment. */
+.board-fade-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  background: #000;
+  opacity: 0;
+  z-index: 5;
+  transition: opacity 450ms ease;
+}
+.board-fade-overlay.active { opacity: 1; }
+
 .board-scroll {
   width: 100%;
   height: 100%;
