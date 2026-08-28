@@ -328,13 +328,13 @@ function renderBoard() {
       <stop offset="100%" stop-color="#aeb8c0"/>
     </radialGradient>
     <filter id="boardOutline">
-      <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="dilated"/>
-      <feComposite in="dilated" in2="SourceAlpha" operator="out" result="ring"/>
-      <feFlood flood-color="#5b6168" result="ringColor"/>
+      <feMorphology in="SourceAlpha" operator="dilate" radius="5" result="dilated"/>
+      <feGaussianBlur in="dilated" stdDeviation="2.2" result="dilatedSoft"/>
+      <feComposite in="dilatedSoft" in2="SourceAlpha" operator="out" result="ring"/>
+      <feFlood flood-color="#808080" result="ringColor"/>
       <feComposite in="ringColor" in2="ring" operator="in" result="outline"/>
-      <feGaussianBlur in="outline" stdDeviation="0.6" result="outlineSoft"/>
       <feMerge>
-        <feMergeNode in="outlineSoft"/>
+        <feMergeNode in="outline"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>`;
