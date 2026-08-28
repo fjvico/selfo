@@ -348,13 +348,31 @@ function renderBoard() {
   }
   const bgPadding = size * 0.15; // "a little bigger" than the minimal enclosing hexagon
   const bgRadius = (apothem / Math.cos(Math.PI / 6)) + bgPadding;
-  const bgCorners = [];
+  const bgPoints = [];
   for (let i = 0; i < 6; i++) {
-    const angleRad = (Math.PI / 180) * (60 * i - 30); // pointy-top corners, matching the board's own overall orientation
-    bgCorners.push(`${bgRadius * Math.cos(angleRad)},${bgRadius * Math.sin(angleRad)}`);
+    const angleRad = (Math.PI / 180) * (60 * i - 30); // pointy-top corners, matching the board's own orientation
+    bgPoints.push({ x: bgRadius * Math.cos(angleRad), y: bgRadius * Math.sin(angleRad) });
   }
-  const bgHex = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-  bgHex.setAttribute("points", bgCorners.join(" "));
+  // Round each corner a touch: replace the sharp vertex with a quadratic
+  // curve between two points pulled back along its adjacent edges, using
+  // the original vertex as the curve's control point.
+  const cornerRound = size * 0.25;
+  let bgPath = "";
+  for (let i = 0; i < 6; i++) {
+    const curr = bgPoints[i];
+    const prev = bgPoints[(i - 1 + 6) % 6];
+    const next = bgPoints[(i + 1) % 6];
+    const toPrev = { x: prev.x - curr.x, y: prev.y - curr.y };
+    const toNext = { x: next.x - curr.x, y: next.y - curr.y };
+    const prevLen = Math.hypot(toPrev.x, toPrev.y), nextLen = Math.hypot(toNext.x, toNext.y);
+    const before = { x: curr.x + (toPrev.x / prevLen) * cornerRound, y: curr.y + (toPrev.y / prevLen) * cornerRound };
+    const after = { x: curr.x + (toNext.x / nextLen) * cornerRound, y: curr.y + (toNext.y / nextLen) * cornerRound };
+    bgPath += (i === 0 ? `M ${before.x} ${before.y} ` : `L ${before.x} ${before.y} `);
+    bgPath += `Q ${curr.x} ${curr.y} ${after.x} ${after.y} `;
+  }
+  bgPath += "Z";
+  const bgHex = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  bgHex.setAttribute("d", bgPath);
   bgHex.setAttribute("class", "board-bg-hex");
   svg.appendChild(bgHex);
 
