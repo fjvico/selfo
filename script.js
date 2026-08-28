@@ -315,8 +315,7 @@ function renderBoard() {
   svg.setAttribute("width", Math.round(vbW));
   svg.setAttribute("height", Math.round(vbH));
 
-  // gradients for pieces, plus a soft gray outline that hugs the board's
-  // actual outer silhouette (defined once per render, cheap enough)
+  // gradients for pieces (defined once per render, cheap enough)
   const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
   defs.innerHTML = `
     <radialGradient id="pieceBlackGrad" cx="35%" cy="30%" r="75%">
@@ -326,23 +325,41 @@ function renderBoard() {
     <radialGradient id="pieceWhiteGrad" cx="35%" cy="30%" r="75%">
       <stop offset="0%" stop-color="#ffffff"/>
       <stop offset="100%" stop-color="#aeb8c0"/>
-    </radialGradient>
-    <filter id="boardOutline">
-      <feMorphology in="SourceAlpha" operator="dilate" radius="2.5" result="dilated"/>
-      <feGaussianBlur in="dilated" stdDeviation="4.5" result="dilatedSoft"/>
-      <feComposite in="dilatedSoft" in2="SourceAlpha" operator="out" result="ring"/>
-      <feFlood flood-color="#808080" result="ringColor"/>
-      <feComposite in="ringColor" in2="ring" operator="in" result="outline"/>
-      <feMerge>
-        <feMergeNode in="outline"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>`;
+    </radialGradient>`;
   svg.appendChild(defs);
+
+  // Backing hexagon: a single perfect hexagon, same orientation as the
+  // board's overall silhouette and the same gray as the cell fill, sized
+  // as the smallest one that fully contains every cell corner (plus a
+  // touch of padding). Sitting behind the cells, it fills in the small
+  // notches along the board's jagged outer edge so the whole board reads
+  // as one clean hexagon instead of a stepped silhouette. No blur: it's a
+  // crisp shape, it just happens to be invisible except at those notches.
+  const edgeNormalAngles = [-60, 0, 60, 120, 180, 240].map((d) => (Math.PI / 180) * d);
+  let apothem = 0;
+  for (const [k, cell] of Game.cells) {
+    const p = positions.get(k);
+    for (const [cx, cy] of HexGeometry.hexCorners(p.x, p.y, size)) {
+      for (const m of edgeNormalAngles) {
+        const proj = cx * Math.cos(m) + cy * Math.sin(m);
+        if (proj > apothem) apothem = proj;
+      }
+    }
+  }
+  const bgPadding = size * 0.15; // "a little bigger" than the minimal enclosing hexagon
+  const bgRadius = (apothem / Math.cos(Math.PI / 6)) + bgPadding;
+  const bgCorners = [];
+  for (let i = 0; i < 6; i++) {
+    const angleRad = (Math.PI / 180) * (60 * i - 30); // pointy-top corners, matching the board's own overall orientation
+    bgCorners.push(`${bgRadius * Math.cos(angleRad)},${bgRadius * Math.sin(angleRad)}`);
+  }
+  const bgHex = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  bgHex.setAttribute("points", bgCorners.join(" "));
+  bgHex.setAttribute("class", "board-bg-hex");
+  svg.appendChild(bgHex);
 
   const cellsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
   cellsGroup.setAttribute("id", "cellsGroup");
-  cellsGroup.setAttribute("filter", "url(#boardOutline)"); // softens the jagged outer edge of the whole board
   const piecesGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
   piecesGroup.setAttribute("id", "piecesGroup");
 

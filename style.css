@@ -511,6 +511,12 @@ body {
 /* ---------------------------------------------------------------
    Board cells / pieces (SVG)
    --------------------------------------------------------------- */
+/* Sits behind .hex-cell, same gray, no stroke/blur — see renderBoard()
+   for how its size is computed (minimal enclosing hexagon + a touch of
+   padding). It only shows through the small notches along the board's
+   outer edge, making the whole silhouette read as one clean hexagon. */
+.board-bg-hex { fill: var(--cell-fill); }
+
 .hex-cell {
   fill: var(--cell-fill);
   stroke: var(--cell-edge);
