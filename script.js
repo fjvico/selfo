@@ -1785,9 +1785,36 @@ function currentShareUrl() {
     : buildSetupUrl();
 }
 
+/** navigator.clipboard.writeText() only exists in secure contexts
+ *  (https, or localhost) — on a plain http:// origin navigator.clipboard
+ *  is undefined, so this falls back to the old execCommand("copy") trick
+ *  via a throwaway textarea. Always returns a Promise, so callers can
+ *  handle both paths the same way. */
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed"; // keep it out of the page's layout/scroll
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (ok) resolve(); else reject(new Error("execCommand('copy') returned false"));
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 dom.copyLinkBtn.addEventListener("click", () => {
   const url = currentShareUrl();
-  navigator.clipboard?.writeText(url).then(
+  copyTextToClipboard(url).then(
     () => showMessage("Link copied to clipboard."),
     () => showMessage(`Link: ${url}`)
   );
@@ -1829,7 +1856,7 @@ function closeShareMenu() {
 
 dom.shareMenuCopy.addEventListener("click", () => {
   const url = currentShareUrl();
-  navigator.clipboard?.writeText(url).then(
+  copyTextToClipboard(url).then(
     () => showMessage("Link copied to clipboard."),
     () => showMessage(`Link: ${url}`)
   );
