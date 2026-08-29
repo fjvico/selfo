@@ -422,12 +422,12 @@ body {
 }
 .share-menu-item:hover { background: rgba(53, 224, 255, 0.1); color: var(--accent); }
 
-.mode-menu { width: 130px; min-width: 0; padding: 8px; }
+.mode-menu { width: 88px; min-width: 0; padding: 8px; }
 .mode-menu .mode-grid { grid-template-columns: 1fr; gap: 6px; }
 .mode-menu .mode-btn {
   width: 100%;
   height: 46px;
-  padding: 0 12px;
+  padding: 0 10px;
   flex-direction: row;
   justify-content: center;
   border-color: #4a5158;
