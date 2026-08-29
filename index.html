@@ -36,8 +36,6 @@
         <span class="brand-text">SELF<span class="brand-accent">O</span></span>
       </div>
       <div class="game-id-wrap">
-        <span id="gameIdValue" class="game-id-value">&mdash;</span>
-        <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
         <div class="share-wrap">
           <button id="modeMenuBtn" class="chip-btn icon-btn" title="Select mode" aria-label="Select mode">
             <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
@@ -144,19 +142,8 @@
 
       <!-- below here: whatever applies to the current mode -->
 
-      <!-- online connection block (create / join) -->
-      <div class="setup-block" id="onlineBlock" hidden>
-        <label class="setup-label">Connection</label>
-        <div class="online-choice">
-          <button id="createGameBtn" class="btn btn-metal-sm">Create game</button>
-          <button id="joinGameBtn" class="btn btn-metal-sm">Join game</button>
-        </div>
-        <div id="joinCodeWrap" class="join-code-wrap" hidden>
-          <input id="joinCodeInput" class="text-input" placeholder="Enter game code" autocomplete="off" />
-          <button id="joinCodeSubmit" class="btn btn-metal-sm">Connect</button>
-        </div>
-        <div id="onlineStatus" class="online-status"></div>
-      </div>
+      <!-- online2p now hosts a room and opens Share automatically (see
+           hostOnlineGame() in script.js) — no create/join UI needed here -->
 
       <!-- CPU search parameters (vs computer / computer vs computer only) -->
       <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>

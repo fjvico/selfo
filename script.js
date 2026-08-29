@@ -172,8 +172,6 @@ ModeIcons.renderAll();
 // DOM references
 // ---------------------------------------------------------------------
 const dom = {
-  gameIdValue: document.getElementById("gameIdValue"),
-  copyLinkBtn: document.getElementById("copyLinkBtn"),
   shareLinkBtn: document.getElementById("shareLinkBtn"),
   shareMenu: document.getElementById("shareMenu"),
   shareMenuEmail: document.getElementById("shareMenuEmail"),
@@ -203,14 +201,6 @@ const dom = {
   modeMenuBtn: document.getElementById("modeMenuBtn"),
   modeMenu: document.getElementById("modeMenu"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
-
-  onlineBlock: document.getElementById("onlineBlock"),
-  createGameBtn: document.getElementById("createGameBtn"),
-  joinGameBtn: document.getElementById("joinGameBtn"),
-  joinCodeWrap: document.getElementById("joinCodeWrap"),
-  joinCodeInput: document.getElementById("joinCodeInput"),
-  joinCodeSubmit: document.getElementById("joinCodeSubmit"),
-  onlineStatus: document.getElementById("onlineStatus"),
 
   colorChoiceBlock: document.getElementById("colorChoiceBlock"),
   colorButtons: Array.from(document.querySelectorAll(".color-btn")),
@@ -1179,10 +1169,8 @@ function updateSetupVisibility() {
   const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const guestOnline = Game.mode === "online2p" && !Game.isHost;
 
-  dom.onlineBlock.hidden = Game.mode !== "online2p";
   dom.colorChoiceBlock.hidden = Game.mode !== "vscomputer";
   dom.cpuParamsBlock.hidden = !isCpuMode;
-  dom.copyLinkBtn.title = Game.mode === "online2p" ? "Copy invite link" : "Copy a link that opens with this setup";
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
   // a guest doesn't control the host's board — visible (fixed position),
@@ -1443,15 +1431,15 @@ function selectMode(mode) {
   Game.mode = mode;
   Game.isHost = mode === "online2p" ? true : Game.isHost; // default assumption until join overrides
   Game.gameId = null;
-  dom.gameIdValue.textContent = "\u2014";
-  dom.copyLinkBtn.disabled = true;
   dom.shareLinkBtn.disabled = true;
-  dom.onlineStatus.textContent = "";
-  dom.onlineStatus.className = "online-status";
-  dom.joinCodeWrap.hidden = true;
 
   syncModeButtonsSelection();
-  beginSetupPreview();
+
+  if (mode === "online2p") {
+    hostOnlineGame();
+  } else {
+    beginSetupPreview();
+  }
 }
 
 function syncModeButtonsSelection() {
@@ -1518,8 +1506,6 @@ function beginSetupPreview() {
   assignPreviewPlayers();
   syncColorButtonsSelection();
 
-  dom.gameIdValue.textContent = Game.gameId || "\u2014";
-  dom.copyLinkBtn.disabled = !Game.gameId;
   dom.shareLinkBtn.disabled = !Game.gameId;
   dom.downloadBtn.disabled = true;
 
@@ -1637,7 +1623,6 @@ function teardownOnline() {
   if (Game.conn) { try { Game.conn.close(); } catch (e) {} Game.conn = null; }
   if (Game.peer) { try { Game.peer.destroy(); } catch (e) {} Game.peer = null; }
   Game.localColor = null;
-  updateOnlineButtonsState();
 }
 
 function sendToRemote(payload) {
@@ -1646,12 +1631,7 @@ function sendToRemote(payload) {
 
 function wireConnection(conn) {
   Game.conn = conn;
-  updateOnlineButtonsState();
   conn.on("open", () => {
-    dom.onlineStatus.textContent = Game.isHost
-      ? "Opponent connected."
-      : "Connected. Waiting for the host's board.";
-    dom.onlineStatus.className = "online-status ok";
     const myName = Game.localNames[Game.localColor] || (Game.isHost ? "Host" : "Guest");
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
     if (Game.isHost) broadcastSync();
@@ -1659,17 +1639,12 @@ function wireConnection(conn) {
   });
   conn.on("data", (payload) => handleRemoteMessage(payload));
   conn.on("close", () => {
-    dom.onlineStatus.textContent = "Opponent disconnected.";
-    dom.onlineStatus.className = "online-status err";
     showMessage("Your opponent disconnected.");
     Game.conn = null;
-    updateOnlineButtonsState();
   });
   conn.on("error", (err) => {
-    dom.onlineStatus.textContent = "Connection error.";
-    dom.onlineStatus.className = "online-status err";
+    showMessage("Connection error.");
     Game.conn = null;
-    updateOnlineButtonsState();
   });
 }
 
@@ -1764,8 +1739,6 @@ function handleRemoteMessage(msg) {
       // tab/window) has taken our place with the host. There's nothing
       // to recover here — just say so clearly and clean up.
       showMessage("You've been disconnected \u2014 this game is now connected from another tab or window.");
-      dom.onlineStatus.textContent = "Disconnected (reconnected elsewhere).";
-      dom.onlineStatus.className = "online-status err";
       teardownOnline();
       break;
     }
@@ -1816,34 +1789,21 @@ function handleRemoteMessage(msg) {
   }
 }
 
-/** Grays out (disables) "Join game" and "Connect" whenever they wouldn't
- *  do anything right now — while a connection attempt is already under
- *  way or already succeeded. Re-enabled after teardownOnline() (fresh
- *  start) or if the connection drops/fails, so retrying is possible. */
-function updateOnlineButtonsState() {
-  const busy = Boolean(Game.conn);
-  dom.joinGameBtn.disabled = busy;
-  dom.joinCodeSubmit.disabled = busy;
-}
-
-dom.createGameBtn.addEventListener("click", () => {
-  if (!confirmSettingChange()) return;
-  teardownOnline();
+/** Selecting "online2p" calls this instead of a "Create game" button:
+ *  opens a room right away and, once it's actually reachable, triggers
+ *  the same share flow as the Share icon so the host can immediately
+ *  hand the invite link to their opponent. */
+function hostOnlineGame() {
   Game.isHost = true;
   Game.localColor = "black";
   const id = "selfo-" + randomGameId();
   Game.gameId = id.replace("selfo-", "");
-  beginSetupPreview(); // Game.gameId is preserved (online2p keeps its own id) — this just refreshes players/message
-  dom.onlineStatus.textContent = "Opening room...";
-  dom.onlineStatus.className = "online-status";
+  beginSetupPreview();
 
   Game.peer = new Peer(id);
   Game.peer.on("open", () => {
-    dom.gameIdValue.textContent = Game.gameId;
-    dom.copyLinkBtn.disabled = false;
     dom.shareLinkBtn.disabled = false;
-    dom.onlineStatus.textContent = `Room open. Share code ${Game.gameId} with your opponent.`;
-    dom.onlineStatus.className = "online-status ok";
+    triggerShare();
   });
   Game.peer.on("connection", (conn) => {
     // A new connection always takes over from whatever was here before —
@@ -1860,25 +1820,15 @@ dom.createGameBtn.addEventListener("click", () => {
     wireConnection(conn);
   });
   Game.peer.on("error", (err) => {
-    dom.onlineStatus.textContent = "Could not open room (network/relay issue).";
-    dom.onlineStatus.className = "online-status err";
+    showMessage("Could not open the game (network/relay issue).");
   });
 
-  dom.joinCodeWrap.hidden = true;
   updatePlayersUI();
-});
+}
 
-dom.joinGameBtn.addEventListener("click", () => {
-  dom.joinCodeWrap.hidden = false;
-  const urlCode = new URLSearchParams(location.search).get("join");
-  if (urlCode) dom.joinCodeInput.value = urlCode;
-});
-
-/** Actually connects as a guest to the given room code. Used both by the
- *  manual "Connect" button (type/paste a code you were given some other
- *  way) and, directly, by an invite-link visit — which skips straight to
- *  this instead of making the visitor also click "Connect" themselves;
- *  the manual code-entry flow above just stays available as an option. */
+/** Actually connects as a guest to the given room code — used only by an
+ *  invite-link visit (see boot()), which connects directly without any
+ *  further action from the visitor. */
 function connectToRoom(code) {
   if (!code) return;
   if (!confirmSettingChange()) return;
@@ -1887,10 +1837,6 @@ function connectToRoom(code) {
   Game.localColor = "white";
   Game.gameId = code;
   beginSetupPreview(); // a local placeholder, replaced the moment the host's "sync" message arrives
-  dom.gameIdValue.textContent = code;
-
-  dom.onlineStatus.textContent = "Connecting...";
-  dom.onlineStatus.className = "online-status";
 
   Game.peer = new Peer();
   Game.peer.on("open", () => {
@@ -1898,15 +1844,9 @@ function connectToRoom(code) {
     wireConnection(conn);
   });
   Game.peer.on("error", () => {
-    dom.onlineStatus.textContent = "Could not connect. Check the code.";
-    dom.onlineStatus.className = "online-status err";
-    updateOnlineButtonsState();
+    showMessage("Could not connect to the game.");
   });
 }
-
-dom.joinCodeSubmit.addEventListener("click", () => {
-  connectToRoom(dom.joinCodeInput.value.trim());
-});
 
 /** The link either button hands out: a room-join link while hosting an
  *  online game, or a full setup link (mode/radius/pieces/color/CPU
@@ -1944,15 +1884,10 @@ function copyTextToClipboard(text) {
   });
 }
 
-dom.copyLinkBtn.addEventListener("click", () => {
-  const url = currentShareUrl();
-  copyTextToClipboard(url).then(
-    () => showMessage("Link copied to clipboard."),
-    () => showMessage(`Link: ${url}`)
-  );
-});
-
-dom.shareLinkBtn.addEventListener("click", async () => {
+/** Shared by the Share icon's click handler and hostOnlineGame() (which
+ *  triggers this automatically the moment a hosted room is ready), so
+ *  both paths open the exact same native-share-or-menu flow. */
+async function triggerShare() {
   const url = currentShareUrl();
   const text = Game.mode === "online2p" ? "Join my Selfo game:" : "Play Selfo with this setup:";
 
@@ -1973,7 +1908,9 @@ dom.shareLinkBtn.addEventListener("click", async () => {
     }
   }
   openShareMenu(url, text);
-});
+}
+
+dom.shareLinkBtn.addEventListener("click", triggerShare);
 
 function openShareMenu(url, text) {
   dom.shareMenuEmail.href = `mailto:?subject=${encodeURIComponent("Selfo")}&body=${encodeURIComponent(`${text} ${url}`)}`;
@@ -2180,13 +2117,8 @@ function boot() {
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }
   if (!hideOnboarding) showOnboarding();
 
-  // an invite link connects directly — no need to also click "Connect";
-  // the code-entry UI (revealed by "Join game") stays available as an
-  // option for codes you were given some other way
-  if (joinCode) {
-    dom.joinGameBtn.click(); // reveals the code UI too, showing the code being used
-    connectToRoom(joinCode);
-  }
+  // an invite link connects directly, no action needed from the visitor
+  if (joinCode) connectToRoom(joinCode);
 }
 
 /** Forces every slider's actual DOM value (not just its number label) back

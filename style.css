@@ -103,18 +103,6 @@ body {
   gap: 8px;
   font-size: 13px;
 }
-.game-id-value {
-  font-family: "Courier New", monospace;
-  background: #0e1114;
-  border: 1px solid var(--metal-line);
-  border-radius: 6px;
-  padding: 4px 10px;
-  color: var(--accent);
-  min-width: 64px;
-  text-align: center;
-  letter-spacing: 1px;
-}
-
 .status-wrap { min-width: 160px; text-align: right; }
 .turn-indicator {
   font-family: var(--font-display), sans-serif;
@@ -484,25 +472,6 @@ body {
 .mode-btn:hover:not(:disabled) { border-color: var(--accent-dim); box-shadow: 0 0 10px var(--accent-glow); }
 .mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
 .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-.online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
-.join-code-wrap { display: flex; gap: 8px; margin-top: 6px; }
-.join-code-wrap[hidden] { display: none; }
-.online-status { font-size: 12px; color: var(--metal-mid); margin-top: 8px; min-height: 18px; }
-.online-status.ok { color: var(--accent); }
-.online-status.err { color: var(--danger); }
-
-.text-input {
-  flex: 1;
-  background: #0e1114;
-  border: 1px solid var(--metal-line);
-  border-radius: 6px;
-  color: var(--metal-light);
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: "Courier New", monospace;
-}
-.text-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
 
 .range-input {
   width: 100%;
