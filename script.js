@@ -102,13 +102,19 @@ const Game = {
 // else needs touching.
 // ---------------------------------------------------------------------
 const ModeIcons = (() => {
-  const PERSON_WIDTH = 16; // bounding-box width of one person glyph, in svg units
+  const PERSON_WIDTH = 16; // bounding-box width of one person glyph at size=1.0, in svg units
   const TOWER_WIDTH = 11;  // bounding-box width of one tower glyph, in svg units
 
-  /** Head + shoulders. Bounding box spans [x, x + PERSON_WIDTH]. */
-  function person(x) {
-    return `<circle cx="${x + PERSON_WIDTH / 2}" cy="8" r="4"/>` +
-      `<path d="M${x} 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>`;
+  /** Head + shoulders, positioned at x and scaled by size (1.0 = current/
+   *  base size, smaller values shrink it). yLift optionally raises the
+   *  whole figure by that many svg units (negative = up) — used to make
+   *  a smaller figure also read as "further away" instead of just
+   *  shrunk in place. Bounding box spans [x, x + PERSON_WIDTH * size]. */
+  function person(x, size = 1.0, yLift = 0) {
+    return `<g transform="translate(${x} ${yLift}) scale(${size})">` +
+      `<circle cx="${PERSON_WIDTH / 2}" cy="8" r="4"/>` +
+      `<path d="M0 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>` +
+      `</g>`;
   }
 
   /** Tower with two drive-slot lines and a power button. Bounding box
@@ -120,7 +126,10 @@ const ModeIcons = (() => {
       `<circle cx="${x + 4.5}" cy="17" r="1.1"/>`;
   }
 
-  const GLYPH = { person: { draw: person, width: PERSON_WIDTH }, tower: { draw: tower, width: TOWER_WIDTH } };
+  const GLYPH = {
+    person: { draw: (x) => person(x, 1.0), width: PERSON_WIDTH },
+    tower: { draw: tower, width: TOWER_WIDTH },
+  };
 
   // The distance (in svg units) between the two glyphs, per mode —
   // the single place to edit to nudge any one of the four icons apart.
@@ -131,10 +140,13 @@ const ModeIcons = (() => {
     computerself: 12,
   };
 
+  // online2p's right-hand person is drawn smaller and lifted up a touch
+  // to read as "standing further away" rather than just shrunk in place.
+  const ONLINE_FAR_PERSON = { size: 0.8, yLift: -2 };
+
   // Which two glyphs each mode's icon is made of, left to right.
   const COMPOSITION = {
     local2p: ["person", "person"],
-    online2p: ["person", "person"],
     vscomputer: ["person", "tower"],
     computerself: ["tower", "tower"],
   };
@@ -142,6 +154,7 @@ const ModeIcons = (() => {
   /** Builds { viewBox, markup } for one mode's icon: places the left
    *  glyph at x=0, the right glyph at x = leftWidth + gap. */
   function buildIcon(mode) {
+    if (mode === "online2p") return buildOnline2pIcon();
     const [leftName, rightName] = COMPOSITION[mode];
     const left = GLYPH[leftName], right = GLYPH[rightName];
     const gap = GAP[mode];
@@ -150,6 +163,20 @@ const ModeIcons = (() => {
     return {
       viewBox: `0 0 ${viewBoxWidth} 24`,
       markup: left.draw(0) + right.draw(rightX),
+    };
+  }
+
+  /** online2p is a special case: the right person is smaller (size 0.8)
+   *  and lifted up (ONLINE_FAR_PERSON), so the two read as "apart" rather
+   *  than just a wider version of the local2p icon. */
+  function buildOnline2pIcon() {
+    const leftWidth = PERSON_WIDTH * 1.0;
+    const rightWidth = PERSON_WIDTH * ONLINE_FAR_PERSON.size;
+    const rightX = leftWidth + GAP.online2p;
+    const viewBoxWidth = rightX + rightWidth;
+    return {
+      viewBox: `0 0 ${viewBoxWidth} 24`,
+      markup: person(0, 1.0) + person(rightX, ONLINE_FAR_PERSON.size, ONLINE_FAR_PERSON.yLift),
     };
   }
 
