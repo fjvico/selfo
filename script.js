@@ -200,7 +200,8 @@ const dom = {
 
   boardSvg: document.getElementById("boardSvg"),
 
-  modeSelectBlock: document.getElementById("modeSelectBlock"),
+  modeMenuBtn: document.getElementById("modeMenuBtn"),
+  modeMenu: document.getElementById("modeMenu"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
 
   onlineBlock: document.getElementById("onlineBlock"),
@@ -1384,10 +1385,28 @@ dom.cpuDepthRange.addEventListener("input", () => {
   dom.cpuDepthValue.textContent = dom.cpuDepthRange.value;
 });
 
+dom.modeMenuBtn.addEventListener("click", () => {
+  dom.modeMenu.hidden = !dom.modeMenu.hidden;
+});
+
+function closeModeMenu() {
+  dom.modeMenu.hidden = true;
+}
+
+document.addEventListener("click", (ev) => {
+  if (dom.modeMenu.hidden) return;
+  if (dom.modeMenu.contains(ev.target) || dom.modeMenuBtn.contains(ev.target)) return;
+  closeModeMenu();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.modeMenu.hidden) closeModeMenu();
+});
+
 dom.modeButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     if (btn.disabled) return;
     selectMode(btn.dataset.mode);
+    closeModeMenu();
   });
 });
 

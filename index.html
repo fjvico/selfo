@@ -39,6 +39,32 @@
         <span id="gameIdValue" class="game-id-value">&mdash;</span>
         <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
         <div class="share-wrap">
+          <button id="modeMenuBtn" class="chip-btn icon-btn" title="Select mode" aria-label="Select mode">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+            </svg>
+          </button>
+          <div class="share-menu mode-menu" id="modeMenu" hidden>
+            <div class="mode-grid">
+              <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="share-wrap">
           <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup" aria-label="Share this setup">
             <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
               <circle cx="18" cy="5" r="2.6"/>
@@ -114,23 +140,7 @@
         <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
       </div>
 
-      <!-- mode selection: always visible -->
-      <div class="setup-block" id="modeSelectBlock">
-        <div class="mode-grid">
-          <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-          <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-          <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-          <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-        </div>
-      </div>
+      <!-- mode selection now lives in the topbar dropdown (#modeMenu) -->
 
       <!-- below here: whatever applies to the current mode -->
 

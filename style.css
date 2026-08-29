@@ -422,6 +422,10 @@ body {
 }
 .share-menu-item:hover { background: rgba(53, 224, 255, 0.1); color: var(--accent); }
 
+.mode-menu { min-width: 0; padding: 8px; }
+.mode-menu .mode-grid { gap: 6px; }
+.mode-menu .mode-btn { padding: 8px 6px; }
+
 /* ---------------------------------------------------------------
    Setup panel
    --------------------------------------------------------------- */
