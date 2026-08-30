@@ -1420,6 +1420,7 @@ function closeModeMenu() {
 document.addEventListener("click", (ev) => {
   if (dom.modeMenu.hidden) return;
   if (dom.modeMenu.contains(ev.target) || dom.modeMenuBtn.contains(ev.target)) return;
+  if (dom.onboardingOverlay.contains(ev.target)) return; // e.g. tapping "Got it" — not a click on the page behind it
   closeModeMenu();
 });
 document.addEventListener("keydown", (ev) => {
@@ -1616,12 +1617,18 @@ function scheduleGameStartGrace() {
   cancelGameStartGrace();
   if (Game.phase !== "setup") return;
 
-  // Hosting online but nobody has joined yet: don't start the countdown
-  // that ends in the board becoming interactive — that would let the
-  // host move alone. wireConnection()'s "open" handler calls this again
-  // once a guest actually connects.
-  if (Game.mode === "online2p" && Game.isHost && !(Game.conn && Game.conn.open)) {
-    showMessage("Waiting for your opponent to join \u2014 share the invite link.");
+  // online2p with no live connection yet: don't start the countdown that
+  // ends in the board becoming interactive/flashing. On the host side
+  // that would let them move alone; on the guest side the board showing
+  // is just a local placeholder (own default radius/pieces, no relation
+  // to the host's real game) — flashing it "playable" would be showing
+  // a fake game as if it had actually connected. wireConnection()'s
+  // "open" handler (host) or the first real "sync" message (guest) calls
+  // this again once there's an actual connection.
+  if (Game.mode === "online2p" && !(Game.conn && Game.conn.open)) {
+    showMessage(Game.isHost
+      ? "Waiting for your opponent to join \u2014 share the invite link."
+      : "Connecting to the game\u2026");
     return;
   }
 
