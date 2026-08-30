@@ -45,6 +45,7 @@ const CONFIG = {
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
   BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
+  JOIN_TIMEOUT_MS: 15000,    // how long a guest waits for the host before showing a "couldn't reach them" message
 };
 
 const RULES = {
@@ -1661,6 +1662,17 @@ function teardownOnline() {
   Game.localColor = null;
 }
 
+// Backstop for the same "tab suspended while the user briefly switched
+// to another app to send the invite" scenario handled by each peer's own
+// "disconnected" handler: if the mobile OS froze this tab's JS deeply
+// enough that PeerJS's own reconnect logic didn't get to run, coming
+// back to this tab is a second chance to catch it and retry then.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Game.peer && Game.peer.disconnected && !Game.peer.destroyed) {
+    Game.peer.reconnect();
+  }
+});
+
 function sendToRemote(payload) {
   if (Game.conn && Game.conn.open) Game.conn.send(payload);
 }
@@ -1861,6 +1873,15 @@ function hostOnlineGame() {
   Game.peer.on("error", (err) => {
     showMessage("Could not open the game (network/relay issue).");
   });
+  Game.peer.on("disconnected", () => {
+    // The signaling connection (not the game itself) dropped — very
+    // common on mobile right after sharing, since switching to the
+    // Email/WhatsApp app to actually send the invite backgrounds this
+    // tab, and the OS often suspends it. Reconnecting keeps the same
+    // room id alive so the invite link the opponent received still
+    // works once they click it.
+    if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
+  });
 
   updatePlayersUI();
 }
@@ -1881,9 +1902,17 @@ function connectToRoom(code) {
   Game.peer.on("open", () => {
     const conn = Game.peer.connect("selfo-" + code, { reliable: true });
     wireConnection(conn);
+    setTimeout(() => {
+      if (Game.conn === conn && !conn.open) {
+        showMessage("Could not reach that game \u2014 the host may be offline or the link has expired.");
+      }
+    }, CONFIG.JOIN_TIMEOUT_MS);
   });
   Game.peer.on("error", () => {
     showMessage("Could not connect to the game.");
+  });
+  Game.peer.on("disconnected", () => {
+    if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
   });
 }
 
