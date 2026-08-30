@@ -228,6 +228,17 @@
     </div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- GENERIC INFO POPUP (e.g. "this game link isn't active")      -->
+  <!-- ============================================================ -->
+  <div id="infoOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2 id="infoOverlayTitle"></h2>
+      <p id="infoOverlayText"></p>
+      <button id="infoOverlayCloseBtn" class="btn btn-metal-accent">OK</button>
+    </div>
+  </div>
+
   <!-- peerjs cdn: only needed for online mode, loaded lazily -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="hexgeometry.js"></script>

@@ -53,6 +53,32 @@ const RULES = {
   movesPerTurn: 1,    // future: allow chaining N moves per turn
 };
 
+// -----------------------------------------------------------------------
+// WebRTC ICE servers for PeerJS
+// -----------------------------------------------------------------------
+// PeerJS's default cloud broker only hands out STUN servers. STUN alone
+// only works when both sides can be reached with a simple NAT "hole
+// punch" — true for most home/office routers, which is why two PCs
+// (typically both on plain broadband NATs) connect fine. Mobile carriers
+// very often sit phones behind carrier-grade / symmetric NAT, where hole
+// punching is impossible and the only way through is a TURN relay.
+// Without one, mobile <-> desktop connections silently fail: PeerJS
+// reports no error, the "open" event on the connection simply never
+// fires. Adding TURN as a fallback is the actual fix for "works PC to
+// PC but not phone to PC".
+//
+// The entries below use the Open Relay Project's free, keyless TURN
+// server as a stopgap (fine for a small hobby project, capped monthly
+// quota, no uptime guarantee). If this game gets real traffic, get a
+// free-tier key from metered.ca, Twilio, or Xirsys and swap it in.
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.relay.metered.ca:80" },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+];
+
 // ---------------------------------------------------------------------
 // Global mutable game state
 // ---------------------------------------------------------------------
@@ -89,6 +115,7 @@ const Game = {
   isHost: false,
   peer: null,
   conn: null,
+  waitingForSync: false, // guest only: true from connectToRoom() until the host's first "sync" arrives (or the join fails/times out)
 };
 
 // ---------------------------------------------------------------------
@@ -251,6 +278,11 @@ const dom = {
   onboardingDontShow: document.getElementById("onboardingDontShow"),
   onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
+
+  infoOverlay: document.getElementById("infoOverlay"),
+  infoOverlayTitle: document.getElementById("infoOverlayTitle"),
+  infoOverlayText: document.getElementById("infoOverlayText"),
+  infoOverlayCloseBtn: document.getElementById("infoOverlayCloseBtn"),
 };
 
 // =======================================================================
@@ -1705,10 +1737,16 @@ function wireConnection(conn) {
   });
   conn.on("data", (payload) => handleRemoteMessage(payload));
   conn.on("close", () => {
+    // If we're a guest still waiting for the host's first "sync", this
+    // close isn't "opponent left mid-game" — it means the room/game we
+    // tried to join was never actually live. Report that clearly instead
+    // of the generic disconnect message and generating a local game.
+    if (Game.waitingForSync) { abortFailedJoin(); return; }
     showMessage("Your opponent disconnected.");
     Game.conn = null;
   });
   conn.on("error", (err) => {
+    if (Game.waitingForSync) { abortFailedJoin(); return; }
     showMessage("Connection error.");
     Game.conn = null;
   });
@@ -1739,6 +1777,7 @@ function broadcastSync() {
 function handleRemoteMessage(msg) {
   switch (msg.type) {
     case "sync": {
+      Game.waitingForSync = false; // the game we joined is confirmed live — cancel the join-timeout watchdog
       Game.radius = msg.radius;
       Game.piecesPerColor = msg.piecesPerColor;
       const cells = new Map();
@@ -1866,7 +1905,7 @@ function hostOnlineGame() {
   Game.gameId = id.replace("selfo-", "");
   beginSetupPreview();
 
-  Game.peer = new Peer(id);
+  Game.peer = new Peer(id, { config: { iceServers: ICE_SERVERS } });
   Game.peer.on("open", () => {
     dom.shareLinkBtn.disabled = false;
     triggerShare();
@@ -1901,6 +1940,58 @@ function hostOnlineGame() {
   updatePlayersUI();
 }
 
+/** Guest-side placeholder while we wait for the host's first "sync".
+ *  Unlike beginSetupPreview(), this never builds a real, locally-playable
+ *  board — it just shows an inert "connecting" board — because a guest
+ *  who never hears back from the host must never end up silently playing
+ *  a solo local game that looks like the real thing (see
+ *  abortFailedJoin() for what happens if the wait times out). */
+function beginOnlineGuestWaiting() {
+  cancelScheduledCpuMove();
+  cancelEndedAutoRestart();
+  cancelGameStartGrace();
+
+  Game.phase = "setup";
+  Game.setupReady = false;
+  Game.cells = new Map();
+  Game.neighborKeys = new Map();
+  Game.selectedKey = null;
+  Game.lastMove = null;
+  Game.winner = null;
+  Game.endReason = null;
+  Game.drawOffered = null;
+  Game.moveLog = [];
+  Game.players = {
+    black: { name: "\u2014", isLocal: false },
+    white: { name: "\u2014", isLocal: false },
+  };
+
+  dom.shareLinkBtn.disabled = true;
+  dom.downloadBtn.disabled = true;
+
+  updateSetupVisibility();
+  renderBoard();
+  updateStatusUI();
+  showMessage("Connecting to the game\u2026");
+}
+
+/** Called when a guest's join attempt fails to reach an actually-live
+ *  game: the peer/connection errored or closed, or CONFIG.JOIN_TIMEOUT_MS
+ *  passed with no "sync" ever received. Tears down the dead connection,
+ *  shows a clear popup (same look as the onboarding overlay) instead of
+ *  silently leaving a fake local board on screen, and returns to the
+ *  mode picker so the visitor isn't stuck. */
+function abortFailedJoin() {
+  if (!Game.waitingForSync) return; // already resolved (sync arrived) or already handled
+  Game.waitingForSync = false;
+  teardownOnline();
+  showInfoPopup(
+    "Game not available",
+    "This game link isn\u2019t active \u2014 the host may be offline, or the game already finished. Ask them to start a new game and share a fresh link."
+  );
+  showEmptyBoardAndModeMenu();
+}
+
 /** Actually connects as a guest to the given room code — used only by an
  *  invite-link visit (see boot()), which connects directly without any
  *  further action from the visitor. */
@@ -1911,20 +2002,19 @@ function connectToRoom(code) {
   Game.isHost = false;
   Game.localColor = "white";
   Game.gameId = code;
-  beginSetupPreview(); // a local placeholder, replaced the moment the host's "sync" message arrives
+  Game.waitingForSync = true; // cleared by the "sync" handler, or by abortFailedJoin() on failure/timeout
+  beginOnlineGuestWaiting();
 
-  Game.peer = new Peer();
+  Game.peer = new Peer(undefined, { config: { iceServers: ICE_SERVERS } });
   Game.peer.on("open", () => {
     const conn = Game.peer.connect("selfo-" + code, { reliable: true });
     wireConnection(conn);
     setTimeout(() => {
-      if (Game.conn === conn && !conn.open) {
-        showMessage("Could not reach that game \u2014 the host may be offline or the link has expired.");
-      }
+      if (Game.conn === conn && Game.waitingForSync) abortFailedJoin();
     }, CONFIG.JOIN_TIMEOUT_MS);
   });
   Game.peer.on("error", () => {
-    showMessage("Could not connect to the game.");
+    abortFailedJoin();
   });
   Game.peer.on("disconnected", () => {
     if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
@@ -2063,6 +2153,27 @@ function closeOnboarding() {
 }
 
 dom.onboardingCloseBtn.addEventListener("click", closeOnboarding);
+
+// =======================================================================
+// Generic info popup (same look as the onboarding overlay) — used for
+// things like "this game link isn't active" so guests get a clear,
+// on-brand message instead of a silent local fallback board.
+// =======================================================================
+
+function showInfoPopup(title, text) {
+  dom.infoOverlayTitle.textContent = title;
+  dom.infoOverlayText.textContent = text;
+  dom.infoOverlay.hidden = false;
+}
+
+function closeInfoPopup() {
+  dom.infoOverlay.hidden = true;
+}
+
+dom.infoOverlayCloseBtn.addEventListener("click", closeInfoPopup);
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.infoOverlay.hidden) closeInfoPopup();
+});
 
 // =======================================================================
 // Download finished game summary
