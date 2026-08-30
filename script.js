@@ -1488,11 +1488,20 @@ dom.cpuDepthRange.addEventListener("input", () => {
 });
 
 dom.modeMenuBtn.addEventListener("click", () => {
-  dom.modeMenu.hidden = !dom.modeMenu.hidden;
+  if (dom.modeMenu.hidden) openModeMenu(); else closeModeMenu();
 });
+
+/** Keeps modeMenuBtn's "active" (blue border + glow) state in sync with
+ *  whether its dropdown is actually open, so the person always has a
+ *  visual answer to "which icon opened this menu?" */
+function openModeMenu() {
+  dom.modeMenu.hidden = false;
+  dom.modeMenuBtn.classList.add("active");
+}
 
 function closeModeMenu() {
   dom.modeMenu.hidden = true;
+  dom.modeMenuBtn.classList.remove("active");
 }
 
 document.addEventListener("click", (ev) => {
@@ -2154,10 +2163,12 @@ function openShareMenu(url, text) {
   dom.shareMenuWhatsApp.href = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;
   dom.shareMenuTelegram.href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
   dom.shareMenu.hidden = false;
+  dom.shareLinkBtn.classList.add("active");
 }
 
 function closeShareMenu() {
   dom.shareMenu.hidden = true;
+  dom.shareLinkBtn.classList.remove("active");
 }
 
 dom.shareMenuCopy.addEventListener("click", () => {
@@ -2407,7 +2418,7 @@ function showEmptyBoardAndModeMenu() {
   renderBoard();
   updateStatusUI();
   showMessage("Choose a mode to begin.");
-  dom.modeMenu.hidden = false;
+  openModeMenu();
 }
 
 function boot() {

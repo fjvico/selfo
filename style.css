@@ -297,11 +297,10 @@ body {
   line-height: 1.4;
 }
 
-.support-link:hover {
-  color: var(--accent);
-  border-color: var(--accent-dim);
-  box-shadow: 0 0 10px var(--accent-glow);
-}
+/* .support-link's hover glow is now just .chip-btn:hover — kept in the
+   shared rule above so all three topbar icons (mode, share, support)
+   highlight identically. */
+
 
 /* ---------------------------------------------------------------
    Buttons
@@ -355,7 +354,12 @@ body {
   color: var(--metal-mid);
   cursor: pointer;
 }
-.chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+.chip-btn:hover:not(:disabled),
+.chip-btn.active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
 .chip-btn.icon-btn {
   display: inline-flex;
   align-items: center;
