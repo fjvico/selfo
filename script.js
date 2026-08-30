@@ -396,6 +396,14 @@ function renderBoard() {
   const svg = dom.boardSvg;
   svg.innerHTML = "";
 
+  if (Game.cells.size === 0) {
+    // Nothing to draw yet — the very first load, before a mode is chosen.
+    svg.setAttribute("viewBox", "-60 -60 120 120");
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
+    return;
+  }
+
   const size = CONFIG.CELL_SIZE;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const positions = new Map();
@@ -1219,7 +1227,7 @@ function updateButtonsForPhase() {
 function updateStatusUI() {
   const ind = dom.turnIndicator;
   ind.classList.remove("turn-black", "turn-white", "turn-over");
-  if (Game.phase === "setup" || Game.phase === "playing") {
+  if ((Game.phase === "setup" || Game.phase === "playing") && Game.mode) {
     ind.hidden = false;
     const name = Game.players[Game.turn].name;
     ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
@@ -2189,19 +2197,53 @@ function buildSetupUrl() {
   return url.toString();
 }
 
+/** The very first thing visitors see (unless the URL specifies a mode or
+ *  a join code — see boot()): an empty board and the mode dropdown
+ *  already open, so picking a mode is the obvious first action instead
+ *  of silently starting a default game nobody asked for. */
+function showEmptyBoardAndModeMenu() {
+  Game.mode = null;
+  Game.phase = "setup";
+  Game.cells = new Map();
+  Game.neighborKeys = new Map();
+  Game.selectedKey = null;
+  Game.lastMove = null;
+  Game.winner = null;
+  Game.endReason = null;
+  Game.moveLog = [];
+  Game.players = {
+    black: { name: "\u2014", isLocal: false },
+    white: { name: "\u2014", isLocal: false },
+  };
+
+  syncModeButtonsSelection(); // Game.mode is null — matches no button, so none show as "selected"
+  updateSetupVisibility();
+  renderBoard();
+  updateStatusUI();
+  showMessage("Choose a mode to begin.");
+  dom.modeMenu.hidden = false;
+}
+
 function boot() {
   resetAllRangeInputs();
   Game.mode = CONFIG.DEFAULT_MODE;
   const joinCode = applyUrlConfig(); // may override mode/radius/pieces/color/cpu params/name from the URL
-  syncModeButtonsSelection();
-  beginSetupPreview();
+  const modeFromUrl = new URLSearchParams(location.search).has("mode");
 
   let hideOnboarding = false;
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }
   if (!hideOnboarding) showOnboarding();
 
-  // an invite link connects directly, no action needed from the visitor
-  if (joinCode) connectToRoom(joinCode);
+  if (joinCode) {
+    // an invite link connects directly, no action needed from the visitor
+    connectToRoom(joinCode);
+  } else if (modeFromUrl) {
+    // a shared setup link (?mode=...) starts that exact configuration directly
+    syncModeButtonsSelection();
+    beginSetupPreview();
+  } else {
+    showEmptyBoardAndModeMenu();
+  }
 }
 
 /** Forces every slider's actual DOM value (not just its number label) back
