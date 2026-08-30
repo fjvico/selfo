@@ -45,7 +45,7 @@ const CONFIG = {
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
   BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
-  JOIN_TIMEOUT_MS: 15000,    // how long a guest waits for the host before showing a "couldn't reach them" message
+  JOIN_TIMEOUT_MS: 20000,    // how long a guest waits for the host before showing a "couldn't reach them" message — generous because ICE negotiation through a TURN relay on a cellular connection is slower than plain STUN
 };
 
 const RULES = {
@@ -64,20 +64,57 @@ const RULES = {
 // punching is impossible and the only way through is a TURN relay.
 // Without one, mobile <-> desktop connections silently fail: PeerJS
 // reports no error, the "open" event on the connection simply never
-// fires. Adding TURN as a fallback is the actual fix for "works PC to
-// PC but not phone to PC".
+// fires.
 //
-// The entries below use the Open Relay Project's free, keyless TURN
-// server as a stopgap (fine for a small hobby project, capped monthly
-// quota, no uptime guarantee). If this game gets real traffic, get a
-// free-tier key from metered.ca, Twilio, or Xirsys and swap it in.
-const ICE_SERVERS = [
+// The static/anonymous free TURN servers below (Open Relay Project) are
+// kept only as a last-resort fallback — Open Relay now requires a free
+// account to use its TURN relay reliably, so these keyless credentials
+// are rate-limited/rejected unpredictably and can NOT be trusted alone.
+const STATIC_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun.relay.metered.ca:80" },
+  { urls: "stun:stun.cloudflare.com:3478" },
   { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
   { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
   { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
 ];
+
+// -----------------------------------------------------------------------
+// Dynamic TURN credentials (Metered.ca) — the actual fix for reliable
+// mobile <-> desktop connections.
+// -----------------------------------------------------------------------
+// METERED_APP_DOMAIN / METERED_API_KEY are defined in turn-config.js
+// (loaded before this file — see index.html), not here, so that pulling
+// future updates of this file never touches your TURN credentials.
+
+let cachedIceServersPromise = null;
+
+/** Resolves to the ICE server list to hand a new Peer(). Cached for the
+ *  page's lifetime so repeated hosts/joins in the same tab reuse one
+ *  fetch. Always resolves (never rejects/throws) — any failure just
+ *  falls back to STATIC_ICE_SERVERS so a broken/missing Metered key
+ *  degrades gracefully instead of breaking the game entirely. */
+function getIceServers() {
+  if (cachedIceServersPromise) return cachedIceServersPromise;
+  cachedIceServersPromise = (async () => {
+    // typeof-guarded: if turn-config.js wasn't loaded (missing <script> tag,
+    // load order issue, etc.) these fall back to "not configured" instead
+    // of throwing a ReferenceError that would break online play entirely.
+    const domain = typeof METERED_APP_DOMAIN !== "undefined" ? METERED_APP_DOMAIN : "";
+    const apiKey = typeof METERED_API_KEY !== "undefined" ? METERED_API_KEY : "";
+    if (!domain || !apiKey) return STATIC_ICE_SERVERS;
+    try {
+      const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`);
+      if (!res.ok) throw new Error("Metered credential fetch failed: " + res.status);
+      const dynamic = await res.json();
+      if (Array.isArray(dynamic) && dynamic.length) return dynamic.concat(STATIC_ICE_SERVERS);
+    } catch (e) {
+      // Network hiccup or bad/missing key — fall through to the static list
+      // rather than leaving the guest with no ICE servers at all.
+    }
+    return STATIC_ICE_SERVERS;
+  })();
+  return cachedIceServersPromise;
+}
 
 // ---------------------------------------------------------------------
 // Global mutable game state
@@ -1898,14 +1935,17 @@ function handleRemoteMessage(msg) {
  *  opens a room right away and, once it's actually reachable, triggers
  *  the same share flow as the Share icon so the host can immediately
  *  hand the invite link to their opponent. */
-function hostOnlineGame() {
+async function hostOnlineGame() {
   Game.isHost = true;
   Game.localColor = "black";
   const id = "selfo-" + randomGameId();
   Game.gameId = id.replace("selfo-", "");
   beginSetupPreview();
 
-  Game.peer = new Peer(id, { config: { iceServers: ICE_SERVERS } });
+  const iceServers = await getIceServers();
+  if (Game.mode !== "online2p" || Game.gameId !== id.replace("selfo-", "")) return; // user switched mode/left while we were fetching
+
+  Game.peer = new Peer(id, { config: { iceServers } });
   Game.peer.on("open", () => {
     dom.shareLinkBtn.disabled = false;
     triggerShare();
@@ -2005,20 +2045,26 @@ function connectToRoom(code) {
   Game.waitingForSync = true; // cleared by the "sync" handler, or by abortFailedJoin() on failure/timeout
   beginOnlineGuestWaiting();
 
-  Game.peer = new Peer(undefined, { config: { iceServers: ICE_SERVERS } });
-  Game.peer.on("open", () => {
-    const conn = Game.peer.connect("selfo-" + code, { reliable: true });
-    wireConnection(conn);
-    setTimeout(() => {
-      if (Game.conn === conn && Game.waitingForSync) abortFailedJoin();
-    }, CONFIG.JOIN_TIMEOUT_MS);
-  });
-  Game.peer.on("error", () => {
-    abortFailedJoin();
-  });
-  Game.peer.on("disconnected", () => {
-    if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
-  });
+  (async () => {
+    const iceServers = await getIceServers();
+    if (Game.gameId !== code || !Game.waitingForSync) return; // user left/switched away while we were fetching
+
+    Game.peer = new Peer(undefined, { config: { iceServers } });
+    Game.peer.on("open", () => {
+      if (Game.gameId !== code || !Game.waitingForSync) return;
+      const conn = Game.peer.connect("selfo-" + code, { reliable: true });
+      wireConnection(conn);
+      setTimeout(() => {
+        if (Game.conn === conn && Game.waitingForSync) abortFailedJoin();
+      }, CONFIG.JOIN_TIMEOUT_MS);
+    });
+    Game.peer.on("error", () => {
+      abortFailedJoin();
+    });
+    Game.peer.on("disconnected", () => {
+      if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
+    });
+  })();
 }
 
 /** The link either button hands out: a room-join link while hosting an
