@@ -1972,7 +1972,22 @@ dom.shareMenuCopy.addEventListener("click", () => {
 });
 
 // any click on an actual share option (email/WhatsApp/Telegram) also closes the menu
-dom.shareMenuEmail.addEventListener("click", closeShareMenu);
+//
+// Email needs special handling: target="_blank" is NOT honored by
+// Chrome/Edge for mailto: links once the user has a web-based mail
+// handler (e.g. Gmail) registered — it navigates the current tab in
+// place instead, which would kill the page (and the just-created online
+// room / peer connection) entirely. Opening a blank tab synchronously
+// inside the click handler and redirecting *that* tab keeps this page
+// alive. WhatsApp/Telegram are plain https:// links, so target="_blank"
+// already works correctly for them — no special handling needed there.
+dom.shareMenuEmail.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  const win = window.open("", "_blank");
+  if (win) win.location.href = dom.shareMenuEmail.href;
+  else window.location.href = dom.shareMenuEmail.href; // popup blocked — fall back rather than do nothing
+  closeShareMenu();
+});
 dom.shareMenuWhatsApp.addEventListener("click", closeShareMenu);
 dom.shareMenuTelegram.addEventListener("click", closeShareMenu);
 
