@@ -406,34 +406,37 @@ function pieceRangeForRadius(radius) {
 }
 
 /**
- * Build a fresh board of the given radius and randomly scatter
- * `piecesPerColor` black and white pieces so that no two pieces of the
- * same color ever sit on adjacent cells. The empty grid itself comes from
- * BoardInit (see boardinit.js), which is where alternative grid-generation
- * strategies live; this function only handles piece placement. Each
- * color's pieces are drawn from one of the 3 independent-set classes of
- * the hex grid (see classifyCellsByIndependentSet), so the constraint
- * holds by construction — not by trial and error — and the layout is
- * re-randomized every game.
+ * Build a fresh board of the given radius and place `piecesPerColor`
+ * black and white pieces using BoardInit's equitable scatter
+ * (BoardInit.scatterPieces, see boardinit.js) — several independent
+ * random layouts plus a swap-based local search, keeping whichever
+ * leaves black and white closest in Fitness, rather than a single
+ * uncorrected random placement.
+ *
+ * fitnessMode is explicitly "bfs" (obstacle-aware shortest paths on the
+ * real movement graph) rather than the default "geometric": this call
+ * only runs once per new game, so the extra cost is negligible, and bfs
+ * is the more faithful "equitable" on a concentric board where inner
+ * rings bottleneck movement — geometric distance alone can call a start
+ * balanced when it isn't really, in terms of moves needed.
+ *
+ * Note: this replaces the previous independent-set-based placement,
+ * which additionally *guaranteed* no two same-color pieces ever started
+ * adjacent. That guarantee is gone — the new scatter optimizes for a
+ * fair/equal-difficulty start instead, and can occasionally place
+ * same-color pieces next to each other. Adjacency was never a rule
+ * enforced during play (the entire point of the game is to end up
+ * adjacent), only a starting-position nicety, so this trades that nicety
+ * for an actually-measured fair start.
  */
 function buildBoard(radius, piecesPerColor) {
   const { cells, neighborKeys } = BoardInit.init(radius);
-  const rawCells = Array.from(cells.values());
-
-  // pick the 2 largest independent-set classes and randomly assign one to
-  // each color (order shuffled so the same board size doesn't always put
-  // black on the same class)
-  const classes = classifyCellsByIndependentSet(rawCells)
-    .slice()
-    .sort((a, b) => b.length - a.length);
-  const [blackPool, whitePool] = shuffled([classes[0], classes[1]]);
-
-  const blackCells = shuffled(blackPool).slice(0, piecesPerColor);
-  const whiteCells = shuffled(whitePool).slice(0, piecesPerColor);
-
-  for (const c of blackCells) cells.get(HexGeometry.key(c.q, c.r)).color = "black";
-  for (const c of whiteCells) cells.get(HexGeometry.key(c.q, c.r)).color = "white";
-
+  const total = cells.size;
+  // scatterPieces takes a *fraction* of all cells (pieceRatio) rather
+  // than a fixed per-color count, so back-solve the ratio that yields
+  // exactly piecesPerColor of each color at a 50/50 split.
+  const pieceRatio = Math.min(1, (piecesPerColor * 2) / total);
+  BoardInit.scatterPieces(cells, neighborKeys, { pieceRatio, colorSplit: 0.5, fitnessMode: "bfs" });
   return { cells, neighborKeys };
 }
 
@@ -1221,12 +1224,102 @@ function cancelScheduledCpuMove() {
 
 /** Call after any turn change: schedules a CPU move if the color now on
  *  the move is computer-controlled. No-op for human-controlled turns or
- *  outside vscomputer/computerself. */
+ *  outside vscomputer/computerself.
+ *
+ *  Two situations get special, non-adversarial treatment instead of the
+ *  normal self-interested search — both only ever apply once, right at
+ *  the start of a game:
+ *   - the very first move (always black): play the most equitable move
+ *     rather than the move that most benefits the mover, so the CPU
+ *     doesn't compound the tempo advantage of moving first.
+ *   - white's pie-rule decision (right after black's first move): check
+ *     who's actually ahead and take the swap (becoming black) if that's
+ *     the stronger seat — this decision exists specifically so the
+ *     second player can correct an opening that favored the first, so
+ *     unlike the point above it *is* self-interested by design.
+ */
 function maybeTriggerCpuMove() {
   if (Game.phase !== "playing") return;
   if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
   if (Game.players[Game.turn] && Game.players[Game.turn].isLocal) return;
+
+  if (Game.turn === "white" && Game.pieRuleAvailable) {
+    scheduleCpuPieRuleDecision();
+    return;
+  }
+  if (Game.moveLog.length === 0) {
+    scheduleCpuEquitableFirstMove();
+    return;
+  }
   scheduleCpuMove();
+}
+
+/** The very first move of the game (always black — see the note on
+ *  maybeTriggerCpuMove) gets played equitably instead of via the normal
+ *  search: whichever legal move leaves black and white closest in
+ *  Fitness (bfs mode, matching the initial scatter in buildBoard) is
+ *  chosen, ignoring whether it's actually the *strongest* move for the
+ *  mover. */
+function scheduleCpuEquitableFirstMove() {
+  const color = Game.turn;
+  showMessage(`${Game.players[color].name} is thinking...`);
+  cpuThinkDelayId = setTimeout(() => {
+    cpuThinkDelayId = null;
+    if (Game.phase !== "playing" || Game.turn !== color || Game.moveLog.length !== 0) return;
+    if (Game.players[color] && Game.players[color].isLocal) return;
+    applyCpuResult(color, mostEquitableMove(color));
+  }, 350);
+}
+
+/** Among all legal moves for `color`, returns the one that leaves black
+ *  and white closest together in Fitness (bfs mode) after it's played —
+ *  tries every legal move by mutating Game.cells in place and reverting,
+ *  same make/undo approach aistrategies.js uses for its search. Cheap
+ *  enough to run synchronously on the main thread: there's only ever a
+ *  handful of legal moves this early in the game. */
+function mostEquitableMove(color) {
+  const legalMoves = AiStrategies.getLegalMoves(Game.cells, Game.neighborKeys, color);
+  if (legalMoves.length === 0) return null;
+
+  let bestMove = legalMoves[0];
+  let bestImbalance = Infinity;
+  for (const move of legalMoves) {
+    const fromCell = Game.cells.get(move.from);
+    const toCell = Game.cells.get(move.to);
+    const savedColor = fromCell.color;
+    fromCell.color = null;
+    toCell.color = savedColor;
+    const imbalance = Fitness.imbalance(Game.cells, Game.neighborKeys, "black", "white", { mode: "bfs" });
+    fromCell.color = savedColor;
+    toCell.color = null;
+    if (imbalance < bestImbalance) {
+      bestImbalance = imbalance;
+      bestMove = move;
+    }
+  }
+  return bestMove;
+}
+
+/** White's one-time pie-rule decision, right at the start of its first
+ *  turn. Checks who's actually ahead with the AI's normal (adversarial)
+ *  position evaluation and swaps to black instead of moving if that
+ *  seat is the stronger one; otherwise falls through to a normal move. */
+function scheduleCpuPieRuleDecision() {
+  const color = Game.turn; // always "white" — see the guard in maybeTriggerCpuMove
+  showMessage(`${Game.players[color].name} is thinking...`);
+  cpuThinkDelayId = setTimeout(() => {
+    cpuThinkDelayId = null;
+    if (Game.phase !== "playing" || Game.turn !== color || !Game.pieRuleAvailable) return;
+    if (Game.players[color] && Game.players[color].isLocal) return;
+
+    const blackMinusWhite = AiStrategies.evaluatePosition(Game.cells, Game.neighborKeys, "black", "white");
+    if (blackMinusWhite > 0) {
+      swapColors();
+      maybeTriggerCpuMove(); // hand off to whoever now holds the seat that's up next
+    } else {
+      scheduleCpuMove();
+    }
+  }, 350);
 }
 
 function scheduleCpuMove() {
@@ -1262,7 +1355,27 @@ function scheduleCpuMove() {
       console.warn("Failed to dispatch to CPU worker, falling back to main thread:", err);
       cpuWorkerUnavailable = true;
       runCpuSearchLocally(req);
+      return;
     }
+
+    // Watchdog: the search's own internal deadline already bounds it to
+    // maxTimeSeconds, so a reply should always arrive well before this
+    // fires. It's a safety net for cases the "onerror" handler can't
+    // catch — e.g. a dependency the worker needs failing to load in a
+    // way that doesn't raise a catchable error, or any other silent
+    // stall — so a stuck worker can never again leave the UI saying
+    // "thinking..." forever: past this point it's killed and the same
+    // search is retried once on the main thread instead.
+    const watchdogMs = maxTimeSeconds * 1000 + 5000;
+    setTimeout(() => {
+      if (!cpuPendingRequest || cpuPendingRequest.requestId !== req.requestId) return; // already resolved
+      console.warn("CPU worker produced no reply in time \u2014 terminating it and retrying on the main thread.");
+      if (cpuWorker) {
+        try { cpuWorker.terminate(); } catch (e) { /* already gone */ }
+        cpuWorker = null;
+      }
+      runCpuSearchLocally(req);
+    }, watchdogMs);
   }, 350);
 }
 
