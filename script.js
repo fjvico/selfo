@@ -1607,6 +1607,15 @@ function scheduleGameStartGrace() {
   cancelGameStartGrace();
   if (Game.phase !== "setup") return;
 
+  // Hosting online but nobody has joined yet: don't start the countdown
+  // that ends in the board becoming interactive — that would let the
+  // host move alone. wireConnection()'s "open" handler calls this again
+  // once a guest actually connects.
+  if (Game.mode === "online2p" && Game.isHost && !(Game.conn && Game.conn.open)) {
+    showMessage("Waiting for your opponent to join \u2014 share the invite link.");
+    return;
+  }
+
   const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const graceSeconds = Math.round(CONFIG.GAME_START_GRACE_MS / 1000);
   const mover = Game.players[Game.turn];
@@ -1661,7 +1670,10 @@ function wireConnection(conn) {
   conn.on("open", () => {
     const myName = Game.localNames[Game.localColor] || (Game.isHost ? "Host" : "Guest");
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
-    if (Game.isHost) broadcastSync();
+    if (Game.isHost) {
+      broadcastSync();
+      scheduleGameStartGrace(); // withheld until now — see the guard at the top of that function
+    }
     updateStatusUI();
   });
   conn.on("data", (payload) => handleRemoteMessage(payload));
