@@ -472,6 +472,7 @@ body {
 .mode-btn:hover:not(:disabled) { border-color: var(--accent-dim); box-shadow: 0 0 10px var(--accent-glow); }
 .mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
 .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.mode-btn[hidden] { display: none; } /* .mode-btn's own display:flex above would otherwise win over the [hidden] UA default */
 
 .range-input {
   width: 100%;

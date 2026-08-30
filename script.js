@@ -46,6 +46,15 @@ const CONFIG = {
   BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
   JOIN_TIMEOUT_MS: 20000,    // how long a guest waits for the host before showing a "couldn't reach them" message — generous because ICE negotiation through a TURN relay on a cellular connection is slower than plain STUN
+
+  // Set to false to pull the "Play online" tile out of the mode picker
+  // entirely (hidden + unclickable). Online play itself is completely
+  // unaffected — hostOnlineGame()/connectToRoom() and everything they
+  // depend on stay exactly as-is; this only removes the UI entry point.
+  // With this off, the only way to start/join an online game is via the
+  // URL web API: a ?join=CODE invite link (guest), or ?mode=online2p
+  // (host) — see applyUrlConfig()/boot() near the bottom of this file.
+  ONLINE_MODE_BUTTON_ENABLED: false,
 };
 
 const RULES = {
@@ -1504,6 +1513,15 @@ dom.modeButtons.forEach((btn) => {
   });
 });
 
+// Pull "Play online" out of the picker when disabled — see CONFIG.ONLINE_MODE_BUTTON_ENABLED.
+if (!CONFIG.ONLINE_MODE_BUTTON_ENABLED) {
+  const onlineModeBtn = dom.modeButtons.find((b) => b.dataset.mode === "online2p");
+  if (onlineModeBtn) {
+    onlineModeBtn.hidden = true;
+    onlineModeBtn.disabled = true;
+  }
+}
+
 /** Switches to (or restarts) a mode: abandons any game in progress (with
  *  confirmation), tears down any online connection, and immediately
  *  shows a fresh live preview for the chosen mode. Mode buttons are
@@ -2268,7 +2286,11 @@ dom.downloadBtn.addEventListener("click", () => {
 // of them clicking through the setup panel. Supported parameters (all
 // optional, all safe to combine, unknown/invalid values are ignored):
 //
-//   mode      local2p | online2p | vscomputer | computerself
+//   mode      local2p | online2p | vscomputer | computerself — online2p
+//             hosts a new room directly (see boot()); with
+//             CONFIG.ONLINE_MODE_BUTTON_ENABLED = false this URL param is
+//             the only way to start hosting, since the mode picker no
+//             longer offers "Play online" as a tile
 //   radius    2-6 (board radius)
 //   pieces    integer, clamped to whatever's valid for the radius
 //   color     black | white — which color the human plays in vscomputer
@@ -2402,9 +2424,17 @@ function boot() {
     // an invite link connects directly, no action needed from the visitor
     connectToRoom(joinCode);
   } else if (modeFromUrl) {
-    // a shared setup link (?mode=...) starts that exact configuration directly
+    // a shared setup link (?mode=...) starts that exact configuration
+    // directly. For online2p specifically this must actually host (open
+    // a Peer, get a room code) rather than just preview a board — this
+    // is the only way to start hosting now that the "Play online" tile
+    // can be hidden (see CONFIG.ONLINE_MODE_BUTTON_ENABLED).
     syncModeButtonsSelection();
-    beginSetupPreview();
+    if (Game.mode === "online2p") {
+      hostOnlineGame();
+    } else {
+      beginSetupPreview();
+    }
   } else {
     showEmptyBoardAndModeMenu();
   }
