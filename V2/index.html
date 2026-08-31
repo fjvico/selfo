@@ -36,8 +36,32 @@
         <span class="brand-text">SELF<span class="brand-accent">O</span></span>
       </div>
       <div class="game-id-wrap">
-        <span id="gameIdValue" class="game-id-value">&mdash;</span>
-        <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
+        <div class="share-wrap">
+          <button id="modeMenuBtn" class="chip-btn icon-btn" title="Select mode" aria-label="Select mode">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+            </svg>
+          </button>
+          <div class="share-menu mode-menu" id="modeMenu" hidden>
+            <div class="mode-grid">
+              <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="share-wrap">
           <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup" aria-label="Share this setup">
             <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
@@ -114,32 +138,12 @@
         <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
       </div>
 
-      <!-- mode selection: always visible -->
-      <div class="setup-block" id="modeSelectBlock">
-        <label class="setup-label">Mode</label>
-        <div class="mode-grid">
-          <button class="mode-btn" data-mode="local2p">2 players<br /><small>same device</small></button>
-          <button class="mode-btn" data-mode="online2p">2 players<br /><small>online (code)</small></button>
-          <button class="mode-btn" data-mode="vscomputer">Vs computer<br /><small>you vs CPU</small></button>
-          <button class="mode-btn" data-mode="computerself">Computer vs computer<br /><small>watch CPU play</small></button>
-        </div>
-      </div>
+      <!-- mode selection now lives in the topbar dropdown (#modeMenu) -->
 
       <!-- below here: whatever applies to the current mode -->
 
-      <!-- online connection block (create / join) -->
-      <div class="setup-block" id="onlineBlock" hidden>
-        <label class="setup-label">Connection</label>
-        <div class="online-choice">
-          <button id="createGameBtn" class="btn btn-metal-sm">Create game</button>
-          <button id="joinGameBtn" class="btn btn-metal-sm">Join game</button>
-        </div>
-        <div id="joinCodeWrap" class="join-code-wrap" hidden>
-          <input id="joinCodeInput" class="text-input" placeholder="Enter game code" autocomplete="off" />
-          <button id="joinCodeSubmit" class="btn btn-metal-sm">Connect</button>
-        </div>
-        <div id="onlineStatus" class="online-status"></div>
-      </div>
+      <!-- online2p now hosts a room and opens Share automatically (see
+           hostOnlineGame() in script.js) — no create/join UI needed here -->
 
       <!-- CPU search parameters (vs computer / computer vs computer only) -->
       <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>
@@ -152,7 +156,7 @@
         <label class="setup-label" for="cpuDepthRange">
           Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
         </label>
-        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" autocomplete="off" />
+        <input type="range" id="cpuDepthRange" min="1" max="12" step="1" value="2" class="range-input" autocomplete="off" />
       </fieldset>
 
       <!-- color choice (vs computer only) — last, so it's the final choice before play -->
@@ -224,9 +228,22 @@
     </div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- GENERIC INFO POPUP (e.g. "this game link isn't active")      -->
+  <!-- ============================================================ -->
+  <div id="infoOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2 id="infoOverlayTitle"></h2>
+      <p id="infoOverlayText"></p>
+      <button id="infoOverlayCloseBtn" class="btn btn-metal-accent">OK</button>
+    </div>
+  </div>
+
   <!-- peerjs cdn: only needed for online mode, loaded lazily -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="turn-config.js"></script>
   <script src="hexgeometry.js"></script>
+  <script src="fitness.js"></script>
   <script src="boardinit.js"></script>
   <script src="aistrategies.js"></script>
   <script src="script.js"></script>

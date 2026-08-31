@@ -45,12 +45,85 @@ const CONFIG = {
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
   BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
+  JOIN_TIMEOUT_MS: 20000,    // how long a guest waits for the host before showing a "couldn't reach them" message — generous because ICE negotiation through a TURN relay on a cellular connection is slower than plain STUN
+
+  // Set to false to pull the "Play online" tile out of the mode picker
+  // entirely (hidden + unclickable). Online play itself is completely
+  // unaffected — hostOnlineGame()/connectToRoom() and everything they
+  // depend on stay exactly as-is; this only removes the UI entry point.
+  // With this off, the only way to start/join an online game is via the
+  // URL web API: a ?join=CODE invite link (guest), or ?mode=online2p
+  // (host) — see applyUrlConfig()/boot() near the bottom of this file.
+  ONLINE_MODE_BUTTON_ENABLED: false,
 };
 
 const RULES = {
   maxStepsPerMove: 1, // future: allow moving N cells in a straight line
   movesPerTurn: 1,    // future: allow chaining N moves per turn
 };
+
+// -----------------------------------------------------------------------
+// WebRTC ICE servers for PeerJS
+// -----------------------------------------------------------------------
+// PeerJS's default cloud broker only hands out STUN servers. STUN alone
+// only works when both sides can be reached with a simple NAT "hole
+// punch" — true for most home/office routers, which is why two PCs
+// (typically both on plain broadband NATs) connect fine. Mobile carriers
+// very often sit phones behind carrier-grade / symmetric NAT, where hole
+// punching is impossible and the only way through is a TURN relay.
+// Without one, mobile <-> desktop connections silently fail: PeerJS
+// reports no error, the "open" event on the connection simply never
+// fires.
+//
+// The static/anonymous free TURN servers below (Open Relay Project) are
+// kept only as a last-resort fallback — Open Relay now requires a free
+// account to use its TURN relay reliably, so these keyless credentials
+// are rate-limited/rejected unpredictably and can NOT be trusted alone.
+const STATIC_ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" },
+];
+
+// -----------------------------------------------------------------------
+// Dynamic TURN credentials (Metered.ca) — the actual fix for reliable
+// mobile <-> desktop connections.
+// -----------------------------------------------------------------------
+// METERED_APP_DOMAIN / METERED_API_KEY are defined in turn-config.js
+// (loaded before this file — see index.html), not here, so that pulling
+// future updates of this file never touches your TURN credentials.
+
+let cachedIceServersPromise = null;
+
+/** Resolves to the ICE server list to hand a new Peer(). Cached for the
+ *  page's lifetime so repeated hosts/joins in the same tab reuse one
+ *  fetch. Always resolves (never rejects/throws) — any failure just
+ *  falls back to STATIC_ICE_SERVERS so a broken/missing Metered key
+ *  degrades gracefully instead of breaking the game entirely. */
+function getIceServers() {
+  if (cachedIceServersPromise) return cachedIceServersPromise;
+  cachedIceServersPromise = (async () => {
+    // typeof-guarded: if turn-config.js wasn't loaded (missing <script> tag,
+    // load order issue, etc.) these fall back to "not configured" instead
+    // of throwing a ReferenceError that would break online play entirely.
+    const domain = typeof METERED_APP_DOMAIN !== "undefined" ? METERED_APP_DOMAIN : "";
+    const apiKey = typeof METERED_API_KEY !== "undefined" ? METERED_API_KEY : "";
+    if (!domain || !apiKey) return STATIC_ICE_SERVERS;
+    try {
+      const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`);
+      if (!res.ok) throw new Error("Metered credential fetch failed: " + res.status);
+      const dynamic = await res.json();
+      if (Array.isArray(dynamic) && dynamic.length) return dynamic.concat(STATIC_ICE_SERVERS);
+    } catch (e) {
+      // Network hiccup or bad/missing key — fall through to the static list
+      // rather than leaving the guest with no ICE servers at all.
+    }
+    return STATIC_ICE_SERVERS;
+  })();
+  return cachedIceServersPromise;
+}
 
 // ---------------------------------------------------------------------
 // Global mutable game state
@@ -88,14 +161,118 @@ const Game = {
   isHost: false,
   peer: null,
   conn: null,
+  waitingForSync: false, // guest only: true from connectToRoom() until the host's first "sync" arrives (or the join fails/times out)
 };
+
+// ---------------------------------------------------------------------
+// Mode-select icons
+// -------------------------------------------------------------------
+// Each of the 4 mode buttons shows two small glyphs (person and/or
+// tower) side by side. Rather than hand-writing near-identical SVG
+// markup 4 times, both glyphs are drawn by a single function each
+// (person(x), tower(x)), positioned purely via their x argument, and
+// composed here per mode. GAP is the one explicit knob for how far
+// apart the two glyphs sit in each icon — change a number here, nothing
+// else needs touching.
+// ---------------------------------------------------------------------
+const ModeIcons = (() => {
+  const PERSON_WIDTH = 16; // bounding-box width of one person glyph at size=1.0, in svg units
+  const TOWER_WIDTH = 11;  // bounding-box width of one tower glyph, in svg units
+
+  /** Head + shoulders, positioned at x and scaled by size (1.0 = current/
+   *  base size, smaller values shrink it). yLift optionally raises the
+   *  whole figure by that many svg units (negative = up) — used to make
+   *  a smaller figure also read as "further away" instead of just
+   *  shrunk in place. Bounding box spans [x, x + PERSON_WIDTH * size]. */
+  function person(x, size = 1.0, yLift = 0) {
+    return `<g transform="translate(${x} ${yLift}) scale(${size})">` +
+      `<circle cx="${PERSON_WIDTH / 2}" cy="8" r="4"/>` +
+      `<path d="M0 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>` +
+      `</g>`;
+  }
+
+  /** Tower with two drive-slot lines and a power button. Bounding box
+   *  spans [x, x + TOWER_WIDTH]. */
+  function tower(x) {
+    return `<rect x="${x}" y="2.5" width="${TOWER_WIDTH}" height="19" rx="1.2"/>` +
+      `<line x1="${x + 2.3}" y1="7" x2="${x + 6.7}" y2="7"/>` +
+      `<line x1="${x + 2.3}" y1="10.2" x2="${x + 6.7}" y2="10.2"/>` +
+      `<circle cx="${x + 4.5}" cy="17" r="1.1"/>`;
+  }
+
+  const GLYPH = {
+    person: { draw: (x) => person(x, 1.0), width: PERSON_WIDTH },
+    tower: { draw: tower, width: TOWER_WIDTH },
+  };
+
+  // The distance (in svg units) between the two glyphs, per mode —
+  // the single place to edit to nudge any one of the four icons apart.
+  const GAP = {
+    local2p: 4,
+    online2p: 13,
+    vscomputer: 8,
+    computerself: 12,
+  };
+
+  // online2p's right-hand person is drawn smaller and lifted up a touch
+  // to read as "standing further away" rather than just shrunk in place.
+  const ONLINE_FAR_PERSON = { size: 0.8, yLift: -2 };
+
+  // Which two glyphs each mode's icon is made of, left to right.
+  const COMPOSITION = {
+    local2p: ["person", "person"],
+    vscomputer: ["person", "tower"],
+    computerself: ["tower", "tower"],
+  };
+
+  /** Builds { viewBox, markup } for one mode's icon: places the left
+   *  glyph at x=0, the right glyph at x = leftWidth + gap. */
+  function buildIcon(mode) {
+    if (mode === "online2p") return buildOnline2pIcon();
+    const [leftName, rightName] = COMPOSITION[mode];
+    const left = GLYPH[leftName], right = GLYPH[rightName];
+    const gap = GAP[mode];
+    const rightX = left.width + gap;
+    const viewBoxWidth = rightX + right.width;
+    return {
+      viewBox: `0 0 ${viewBoxWidth} 24`,
+      markup: left.draw(0) + right.draw(rightX),
+    };
+  }
+
+  /** online2p is a special case: the right person is smaller (size 0.8)
+   *  and lifted up (ONLINE_FAR_PERSON), so the two read as "apart" rather
+   *  than just a wider version of the local2p icon. */
+  function buildOnline2pIcon() {
+    const leftWidth = PERSON_WIDTH * 1.0;
+    const rightWidth = PERSON_WIDTH * ONLINE_FAR_PERSON.size;
+    const rightX = leftWidth + GAP.online2p;
+    const viewBoxWidth = rightX + rightWidth;
+    return {
+      viewBox: `0 0 ${viewBoxWidth} 24`,
+      markup: person(0, 1.0) + person(rightX, ONLINE_FAR_PERSON.size, ONLINE_FAR_PERSON.yLift),
+    };
+  }
+
+  /** Renders every [data-mode] button's .mode-icon <svg> placeholder. */
+  function renderAll() {
+    document.querySelectorAll(".mode-btn[data-mode]").forEach((btn) => {
+      const svg = btn.querySelector("svg.mode-icon");
+      const icon = svg && buildIcon(btn.dataset.mode);
+      if (!icon) return;
+      svg.setAttribute("viewBox", icon.viewBox);
+      svg.innerHTML = icon.markup;
+    });
+  }
+
+  return { renderAll };
+})();
+ModeIcons.renderAll();
 
 // ---------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------
 const dom = {
-  gameIdValue: document.getElementById("gameIdValue"),
-  copyLinkBtn: document.getElementById("copyLinkBtn"),
   shareLinkBtn: document.getElementById("shareLinkBtn"),
   shareMenu: document.getElementById("shareMenu"),
   shareMenuEmail: document.getElementById("shareMenuEmail"),
@@ -122,16 +299,9 @@ const dom = {
 
   boardSvg: document.getElementById("boardSvg"),
 
-  modeSelectBlock: document.getElementById("modeSelectBlock"),
+  modeMenuBtn: document.getElementById("modeMenuBtn"),
+  modeMenu: document.getElementById("modeMenu"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
-
-  onlineBlock: document.getElementById("onlineBlock"),
-  createGameBtn: document.getElementById("createGameBtn"),
-  joinGameBtn: document.getElementById("joinGameBtn"),
-  joinCodeWrap: document.getElementById("joinCodeWrap"),
-  joinCodeInput: document.getElementById("joinCodeInput"),
-  joinCodeSubmit: document.getElementById("joinCodeSubmit"),
-  onlineStatus: document.getElementById("onlineStatus"),
 
   colorChoiceBlock: document.getElementById("colorChoiceBlock"),
   colorButtons: Array.from(document.querySelectorAll(".color-btn")),
@@ -154,6 +324,11 @@ const dom = {
   onboardingDontShow: document.getElementById("onboardingDontShow"),
   onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
+
+  infoOverlay: document.getElementById("infoOverlay"),
+  infoOverlayTitle: document.getElementById("infoOverlayTitle"),
+  infoOverlayText: document.getElementById("infoOverlayText"),
+  infoOverlayCloseBtn: document.getElementById("infoOverlayCloseBtn"),
 };
 
 // =======================================================================
@@ -231,34 +406,37 @@ function pieceRangeForRadius(radius) {
 }
 
 /**
- * Build a fresh board of the given radius and randomly scatter
- * `piecesPerColor` black and white pieces so that no two pieces of the
- * same color ever sit on adjacent cells. The empty grid itself comes from
- * BoardInit (see boardinit.js), which is where alternative grid-generation
- * strategies live; this function only handles piece placement. Each
- * color's pieces are drawn from one of the 3 independent-set classes of
- * the hex grid (see classifyCellsByIndependentSet), so the constraint
- * holds by construction — not by trial and error — and the layout is
- * re-randomized every game.
+ * Build a fresh board of the given radius and place `piecesPerColor`
+ * black and white pieces using BoardInit's equitable scatter
+ * (BoardInit.scatterPieces, see boardinit.js) — several independent
+ * random layouts plus a swap-based local search, keeping whichever
+ * leaves black and white closest in Fitness, rather than a single
+ * uncorrected random placement.
+ *
+ * fitnessMode is explicitly "bfs" (obstacle-aware shortest paths on the
+ * real movement graph) rather than the default "geometric": this call
+ * only runs once per new game, so the extra cost is negligible, and bfs
+ * is the more faithful "equitable" on a concentric board where inner
+ * rings bottleneck movement — geometric distance alone can call a start
+ * balanced when it isn't really, in terms of moves needed.
+ *
+ * Note: this replaces the previous independent-set-based placement,
+ * which additionally *guaranteed* no two same-color pieces ever started
+ * adjacent. That guarantee is gone — the new scatter optimizes for a
+ * fair/equal-difficulty start instead, and can occasionally place
+ * same-color pieces next to each other. Adjacency was never a rule
+ * enforced during play (the entire point of the game is to end up
+ * adjacent), only a starting-position nicety, so this trades that nicety
+ * for an actually-measured fair start.
  */
 function buildBoard(radius, piecesPerColor) {
   const { cells, neighborKeys } = BoardInit.init(radius);
-  const rawCells = Array.from(cells.values());
-
-  // pick the 2 largest independent-set classes and randomly assign one to
-  // each color (order shuffled so the same board size doesn't always put
-  // black on the same class)
-  const classes = classifyCellsByIndependentSet(rawCells)
-    .slice()
-    .sort((a, b) => b.length - a.length);
-  const [blackPool, whitePool] = shuffled([classes[0], classes[1]]);
-
-  const blackCells = shuffled(blackPool).slice(0, piecesPerColor);
-  const whiteCells = shuffled(whitePool).slice(0, piecesPerColor);
-
-  for (const c of blackCells) cells.get(HexGeometry.key(c.q, c.r)).color = "black";
-  for (const c of whiteCells) cells.get(HexGeometry.key(c.q, c.r)).color = "white";
-
+  const total = cells.size;
+  // scatterPieces takes a *fraction* of all cells (pieceRatio) rather
+  // than a fixed per-color count, so back-solve the ratio that yields
+  // exactly piecesPerColor of each color at a 50/50 split.
+  const pieceRatio = Math.min(1, (piecesPerColor * 2) / total);
+  BoardInit.scatterPieces(cells, neighborKeys, { pieceRatio, colorSplit: 0.5, fitnessMode: "bfs" });
   return { cells, neighborKeys };
 }
 
@@ -298,6 +476,14 @@ function isFullyConnected(color) {
 function renderBoard() {
   const svg = dom.boardSvg;
   svg.innerHTML = "";
+
+  if (Game.cells.size === 0) {
+    // Nothing to draw yet — the very first load, before a mode is chosen.
+    svg.setAttribute("viewBox", "-60 -60 120 120");
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
+    return;
+  }
 
   const size = CONFIG.CELL_SIZE;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -987,14 +1173,13 @@ function onCpuWorkerError(err) {
  *  think-time budget, same as a build with no Worker support at all. */
 function runCpuSearchLocally(req) {
   showMessage(`${Game.players[req.color].name} is thinking... (running locally \u2014 serve over http(s) for a smoother experience)`);
-  // brief delay so the message above actually paints before the
-  // synchronous, blocking search starts
-  setTimeout(() => {
+  // brief delay so the message above actually paints before the search starts
+  setTimeout(async () => {
     if (!cpuPendingRequest || req.requestId !== cpuPendingRequest.requestId) return;
     if (Game.phase !== "playing" || Game.turn !== req.color) return;
     cpuPendingRequest = null;
     try {
-      const result = AiStrategies.pickMove(req.state, req.options);
+      const result = await AiStrategies.pickMove(req.state, req.options);
       applyCpuResult(req.color, result.move);
     } catch (err) {
       console.error("CPU local search failed:", err);
@@ -1038,12 +1223,110 @@ function cancelScheduledCpuMove() {
 
 /** Call after any turn change: schedules a CPU move if the color now on
  *  the move is computer-controlled. No-op for human-controlled turns or
- *  outside vscomputer/computerself. */
+ *  outside vscomputer/computerself.
+ *
+ *  Two situations get special, non-adversarial treatment instead of the
+ *  normal self-interested search — both only ever apply once, right at
+ *  the start of a game:
+ *   - the very first move (always black): play the most equitable move
+ *     rather than the move that most benefits the mover, so the CPU
+ *     doesn't compound the tempo advantage of moving first.
+ *   - white's pie-rule decision (right after black's first move): check
+ *     who's actually ahead and take the swap (becoming black) if that's
+ *     the stronger seat — this decision exists specifically so the
+ *     second player can correct an opening that favored the first, so
+ *     unlike the point above it *is* self-interested by design.
+ */
 function maybeTriggerCpuMove() {
   if (Game.phase !== "playing") return;
   if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
   if (Game.players[Game.turn] && Game.players[Game.turn].isLocal) return;
+  // Paused while the mode menu is open: in computerself especially, moves
+  // firing continuously (and re-rendering the board) made it hard to even
+  // land a click on the icon that opens this same menu. closeModeMenu()
+  // resumes play once it's closed. A move already mid-flight when the
+  // menu opens still finishes normally — this only holds off *scheduling
+  // the next one*, so at most one extra move can land before it takes
+  // effect.
+  if (!dom.modeMenu.hidden) return;
+
+  if (Game.turn === "white" && Game.pieRuleAvailable) {
+    scheduleCpuPieRuleDecision();
+    return;
+  }
+  if (Game.moveLog.length === 0) {
+    scheduleCpuEquitableFirstMove();
+    return;
+  }
   scheduleCpuMove();
+}
+
+/** The very first move of the game (always black — see the note on
+ *  maybeTriggerCpuMove) gets played equitably instead of via the normal
+ *  search: whichever legal move leaves black and white closest in
+ *  Fitness (bfs mode, matching the initial scatter in buildBoard) is
+ *  chosen, ignoring whether it's actually the *strongest* move for the
+ *  mover. */
+function scheduleCpuEquitableFirstMove() {
+  const color = Game.turn;
+  showMessage(`${Game.players[color].name} is thinking...`);
+  cpuThinkDelayId = setTimeout(() => {
+    cpuThinkDelayId = null;
+    if (Game.phase !== "playing" || Game.turn !== color || Game.moveLog.length !== 0) return;
+    if (Game.players[color] && Game.players[color].isLocal) return;
+    applyCpuResult(color, mostEquitableMove(color));
+  }, 350);
+}
+
+/** Among all legal moves for `color`, returns the one that leaves black
+ *  and white closest together in Fitness (bfs mode) after it's played —
+ *  tries every legal move by mutating Game.cells in place and reverting,
+ *  same make/undo approach aistrategies.js uses for its search. Cheap
+ *  enough to run synchronously on the main thread: there's only ever a
+ *  handful of legal moves this early in the game. */
+function mostEquitableMove(color) {
+  const legalMoves = AiStrategies.getLegalMoves(Game.cells, Game.neighborKeys, color);
+  if (legalMoves.length === 0) return null;
+
+  let bestMove = legalMoves[0];
+  let bestImbalance = Infinity;
+  for (const move of legalMoves) {
+    const fromCell = Game.cells.get(move.from);
+    const toCell = Game.cells.get(move.to);
+    const savedColor = fromCell.color;
+    fromCell.color = null;
+    toCell.color = savedColor;
+    const imbalance = Fitness.imbalance(Game.cells, Game.neighborKeys, "black", "white", { mode: "bfs" });
+    fromCell.color = savedColor;
+    toCell.color = null;
+    if (imbalance < bestImbalance) {
+      bestImbalance = imbalance;
+      bestMove = move;
+    }
+  }
+  return bestMove;
+}
+
+/** White's one-time pie-rule decision, right at the start of its first
+ *  turn. Checks who's actually ahead with the AI's normal (adversarial)
+ *  position evaluation and swaps to black instead of moving if that
+ *  seat is the stronger one; otherwise falls through to a normal move. */
+function scheduleCpuPieRuleDecision() {
+  const color = Game.turn; // always "white" — see the guard in maybeTriggerCpuMove
+  showMessage(`${Game.players[color].name} is thinking...`);
+  cpuThinkDelayId = setTimeout(() => {
+    cpuThinkDelayId = null;
+    if (Game.phase !== "playing" || Game.turn !== color || !Game.pieRuleAvailable) return;
+    if (Game.players[color] && Game.players[color].isLocal) return;
+
+    const blackMinusWhite = AiStrategies.evaluatePosition(Game.cells, Game.neighborKeys, "black", "white");
+    if (blackMinusWhite > 0) {
+      swapColors();
+      maybeTriggerCpuMove(); // hand off to whoever now holds the seat that's up next
+    } else {
+      scheduleCpuMove();
+    }
+  }, 350);
 }
 
 function scheduleCpuMove() {
@@ -1079,7 +1362,27 @@ function scheduleCpuMove() {
       console.warn("Failed to dispatch to CPU worker, falling back to main thread:", err);
       cpuWorkerUnavailable = true;
       runCpuSearchLocally(req);
+      return;
     }
+
+    // Watchdog: the search's own internal deadline already bounds it to
+    // maxTimeSeconds, so a reply should always arrive well before this
+    // fires. It's a safety net for cases the "onerror" handler can't
+    // catch — e.g. a dependency the worker needs failing to load in a
+    // way that doesn't raise a catchable error, or any other silent
+    // stall — so a stuck worker can never again leave the UI saying
+    // "thinking..." forever: past this point it's killed and the same
+    // search is retried once on the main thread instead.
+    const watchdogMs = maxTimeSeconds * 1000 + 5000;
+    setTimeout(() => {
+      if (!cpuPendingRequest || cpuPendingRequest.requestId !== req.requestId) return; // already resolved
+      console.warn("CPU worker produced no reply in time \u2014 terminating it and retrying on the main thread.");
+      if (cpuWorker) {
+        try { cpuWorker.terminate(); } catch (e) { /* already gone */ }
+        cpuWorker = null;
+      }
+      runCpuSearchLocally(req);
+    }, watchdogMs);
   }, 350);
 }
 
@@ -1100,10 +1403,8 @@ function updateSetupVisibility() {
   const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const guestOnline = Game.mode === "online2p" && !Game.isHost;
 
-  dom.onlineBlock.hidden = Game.mode !== "online2p";
   dom.colorChoiceBlock.hidden = Game.mode !== "vscomputer";
   dom.cpuParamsBlock.hidden = !isCpuMode;
-  dom.copyLinkBtn.title = Game.mode === "online2p" ? "Copy invite link" : "Copy a link that opens with this setup";
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
   // a guest doesn't control the host's board — visible (fixed position),
@@ -1124,7 +1425,7 @@ function updateButtonsForPhase() {
 function updateStatusUI() {
   const ind = dom.turnIndicator;
   ind.classList.remove("turn-black", "turn-white", "turn-over");
-  if (Game.phase === "setup" || Game.phase === "playing") {
+  if ((Game.phase === "setup" || Game.phase === "playing") && Game.mode) {
     ind.hidden = false;
     const name = Game.players[Game.turn].name;
     ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
@@ -1306,12 +1607,57 @@ dom.cpuDepthRange.addEventListener("input", () => {
   dom.cpuDepthValue.textContent = dom.cpuDepthRange.value;
 });
 
+dom.modeMenuBtn.addEventListener("click", () => {
+  if (dom.modeMenu.hidden) openModeMenu(); else closeModeMenu();
+});
+
+/** Keeps modeMenuBtn's "active" (blue border + glow) state in sync with
+ *  whether its dropdown is actually open, so the person always has a
+ *  visual answer to "which icon opened this menu?" */
+function openModeMenu() {
+  dom.modeMenu.hidden = false;
+  dom.modeMenuBtn.classList.add("active");
+}
+
+function closeModeMenu() {
+  dom.modeMenu.hidden = true;
+  dom.modeMenuBtn.classList.remove("active");
+  // Resume CPU auto-play if it was paused while the menu was open (see
+  // the guard at the top of maybeTriggerCpuMove). Only when nothing's
+  // already scheduled/in flight, so closing the menu mid-move rather
+  // than between moves can't dispatch a second, redundant search for the
+  // same turn.
+  if (!cpuPendingRequest && cpuThinkDelayId === null) {
+    maybeTriggerCpuMove();
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  if (dom.modeMenu.hidden) return;
+  if (dom.modeMenu.contains(ev.target) || dom.modeMenuBtn.contains(ev.target)) return;
+  if (dom.onboardingOverlay.contains(ev.target)) return; // e.g. tapping "Got it" — not a click on the page behind it
+  closeModeMenu();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.modeMenu.hidden) closeModeMenu();
+});
+
 dom.modeButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     if (btn.disabled) return;
     selectMode(btn.dataset.mode);
+    closeModeMenu();
   });
 });
+
+// Pull "Play online" out of the picker when disabled — see CONFIG.ONLINE_MODE_BUTTON_ENABLED.
+if (!CONFIG.ONLINE_MODE_BUTTON_ENABLED) {
+  const onlineModeBtn = dom.modeButtons.find((b) => b.dataset.mode === "online2p");
+  if (onlineModeBtn) {
+    onlineModeBtn.hidden = true;
+    onlineModeBtn.disabled = true;
+  }
+}
 
 /** Switches to (or restarts) a mode: abandons any game in progress (with
  *  confirmation), tears down any online connection, and immediately
@@ -1346,15 +1692,15 @@ function selectMode(mode) {
   Game.mode = mode;
   Game.isHost = mode === "online2p" ? true : Game.isHost; // default assumption until join overrides
   Game.gameId = null;
-  dom.gameIdValue.textContent = "\u2014";
-  dom.copyLinkBtn.disabled = true;
   dom.shareLinkBtn.disabled = true;
-  dom.onlineStatus.textContent = "";
-  dom.onlineStatus.className = "online-status";
-  dom.joinCodeWrap.hidden = true;
 
   syncModeButtonsSelection();
-  beginSetupPreview();
+
+  if (mode === "online2p") {
+    hostOnlineGame();
+  } else {
+    beginSetupPreview();
+  }
 }
 
 function syncModeButtonsSelection() {
@@ -1421,8 +1767,6 @@ function beginSetupPreview() {
   assignPreviewPlayers();
   syncColorButtonsSelection();
 
-  dom.gameIdValue.textContent = Game.gameId || "\u2014";
-  dom.copyLinkBtn.disabled = !Game.gameId;
   dom.shareLinkBtn.disabled = !Game.gameId;
   dom.downloadBtn.disabled = true;
 
@@ -1497,6 +1841,21 @@ function scheduleGameStartGrace() {
   cancelGameStartGrace();
   if (Game.phase !== "setup") return;
 
+  // online2p with no live connection yet: don't start the countdown that
+  // ends in the board becoming interactive/flashing. On the host side
+  // that would let them move alone; on the guest side the board showing
+  // is just a local placeholder (own default radius/pieces, no relation
+  // to the host's real game) — flashing it "playable" would be showing
+  // a fake game as if it had actually connected. wireConnection()'s
+  // "open" handler (host) or the first real "sync" message (guest) calls
+  // this again once there's an actual connection.
+  if (Game.mode === "online2p" && !(Game.conn && Game.conn.open)) {
+    showMessage(Game.isHost
+      ? "Waiting for your opponent to join \u2014 share the invite link."
+      : "Connecting to the game\u2026");
+    return;
+  }
+
   const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const graceSeconds = Math.round(CONFIG.GAME_START_GRACE_MS / 1000);
   const mover = Game.players[Game.turn];
@@ -1540,8 +1899,18 @@ function teardownOnline() {
   if (Game.conn) { try { Game.conn.close(); } catch (e) {} Game.conn = null; }
   if (Game.peer) { try { Game.peer.destroy(); } catch (e) {} Game.peer = null; }
   Game.localColor = null;
-  updateOnlineButtonsState();
 }
+
+// Backstop for the same "tab suspended while the user briefly switched
+// to another app to send the invite" scenario handled by each peer's own
+// "disconnected" handler: if the mobile OS froze this tab's JS deeply
+// enough that PeerJS's own reconnect logic didn't get to run, coming
+// back to this tab is a second chance to catch it and retry then.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Game.peer && Game.peer.disconnected && !Game.peer.destroyed) {
+    Game.peer.reconnect();
+  }
+});
 
 function sendToRemote(payload) {
   if (Game.conn && Game.conn.open) Game.conn.send(payload);
@@ -1549,30 +1918,29 @@ function sendToRemote(payload) {
 
 function wireConnection(conn) {
   Game.conn = conn;
-  updateOnlineButtonsState();
   conn.on("open", () => {
-    dom.onlineStatus.textContent = Game.isHost
-      ? "Opponent connected."
-      : "Connected. Waiting for the host's board.";
-    dom.onlineStatus.className = "online-status ok";
     const myName = Game.localNames[Game.localColor] || (Game.isHost ? "Host" : "Guest");
     sendToRemote({ type: "nickname", color: Game.localColor, name: myName });
-    if (Game.isHost) broadcastSync();
+    if (Game.isHost) {
+      broadcastSync();
+      scheduleGameStartGrace(); // withheld until now — see the guard at the top of that function
+    }
     updateStatusUI();
   });
   conn.on("data", (payload) => handleRemoteMessage(payload));
   conn.on("close", () => {
-    dom.onlineStatus.textContent = "Opponent disconnected.";
-    dom.onlineStatus.className = "online-status err";
+    // If we're a guest still waiting for the host's first "sync", this
+    // close isn't "opponent left mid-game" — it means the room/game we
+    // tried to join was never actually live. Report that clearly instead
+    // of the generic disconnect message and generating a local game.
+    if (Game.waitingForSync) { abortFailedJoin(); return; }
     showMessage("Your opponent disconnected.");
     Game.conn = null;
-    updateOnlineButtonsState();
   });
   conn.on("error", (err) => {
-    dom.onlineStatus.textContent = "Connection error.";
-    dom.onlineStatus.className = "online-status err";
+    if (Game.waitingForSync) { abortFailedJoin(); return; }
+    showMessage("Connection error.");
     Game.conn = null;
-    updateOnlineButtonsState();
   });
 }
 
@@ -1601,6 +1969,7 @@ function broadcastSync() {
 function handleRemoteMessage(msg) {
   switch (msg.type) {
     case "sync": {
+      Game.waitingForSync = false; // the game we joined is confirmed live — cancel the join-timeout watchdog
       Game.radius = msg.radius;
       Game.piecesPerColor = msg.piecesPerColor;
       const cells = new Map();
@@ -1667,8 +2036,6 @@ function handleRemoteMessage(msg) {
       // tab/window) has taken our place with the host. There's nothing
       // to recover here — just say so clearly and clean up.
       showMessage("You've been disconnected \u2014 this game is now connected from another tab or window.");
-      dom.onlineStatus.textContent = "Disconnected (reconnected elsewhere).";
-      dom.onlineStatus.className = "online-status err";
       teardownOnline();
       break;
     }
@@ -1719,34 +2086,24 @@ function handleRemoteMessage(msg) {
   }
 }
 
-/** Grays out (disables) "Join game" and "Connect" whenever they wouldn't
- *  do anything right now — while a connection attempt is already under
- *  way or already succeeded. Re-enabled after teardownOnline() (fresh
- *  start) or if the connection drops/fails, so retrying is possible. */
-function updateOnlineButtonsState() {
-  const busy = Boolean(Game.conn);
-  dom.joinGameBtn.disabled = busy;
-  dom.joinCodeSubmit.disabled = busy;
-}
-
-dom.createGameBtn.addEventListener("click", () => {
-  if (!confirmSettingChange()) return;
-  teardownOnline();
+/** Selecting "online2p" calls this instead of a "Create game" button:
+ *  opens a room right away and, once it's actually reachable, triggers
+ *  the same share flow as the Share icon so the host can immediately
+ *  hand the invite link to their opponent. */
+async function hostOnlineGame() {
   Game.isHost = true;
   Game.localColor = "black";
   const id = "selfo-" + randomGameId();
   Game.gameId = id.replace("selfo-", "");
-  beginSetupPreview(); // Game.gameId is preserved (online2p keeps its own id) — this just refreshes players/message
-  dom.onlineStatus.textContent = "Opening room...";
-  dom.onlineStatus.className = "online-status";
+  beginSetupPreview();
 
-  Game.peer = new Peer(id);
+  const iceServers = await getIceServers();
+  if (Game.mode !== "online2p" || Game.gameId !== id.replace("selfo-", "")) return; // user switched mode/left while we were fetching
+
+  Game.peer = new Peer(id, { config: { iceServers } });
   Game.peer.on("open", () => {
-    dom.gameIdValue.textContent = Game.gameId;
-    dom.copyLinkBtn.disabled = false;
     dom.shareLinkBtn.disabled = false;
-    dom.onlineStatus.textContent = `Room open. Share code ${Game.gameId} with your opponent.`;
-    dom.onlineStatus.className = "online-status ok";
+    triggerShare();
   });
   Game.peer.on("connection", (conn) => {
     // A new connection always takes over from whatever was here before —
@@ -1763,25 +2120,76 @@ dom.createGameBtn.addEventListener("click", () => {
     wireConnection(conn);
   });
   Game.peer.on("error", (err) => {
-    dom.onlineStatus.textContent = "Could not open room (network/relay issue).";
-    dom.onlineStatus.className = "online-status err";
+    showMessage("Could not open the game (network/relay issue).");
+  });
+  Game.peer.on("disconnected", () => {
+    // The signaling connection (not the game itself) dropped — very
+    // common on mobile right after sharing, since switching to the
+    // Email/WhatsApp app to actually send the invite backgrounds this
+    // tab, and the OS often suspends it. Reconnecting keeps the same
+    // room id alive so the invite link the opponent received still
+    // works once they click it.
+    if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
   });
 
-  dom.joinCodeWrap.hidden = true;
   updatePlayersUI();
-});
+}
 
-dom.joinGameBtn.addEventListener("click", () => {
-  dom.joinCodeWrap.hidden = false;
-  const urlCode = new URLSearchParams(location.search).get("join");
-  if (urlCode) dom.joinCodeInput.value = urlCode;
-});
+/** Guest-side placeholder while we wait for the host's first "sync".
+ *  Unlike beginSetupPreview(), this never builds a real, locally-playable
+ *  board — it just shows an inert "connecting" board — because a guest
+ *  who never hears back from the host must never end up silently playing
+ *  a solo local game that looks like the real thing (see
+ *  abortFailedJoin() for what happens if the wait times out). */
+function beginOnlineGuestWaiting() {
+  cancelScheduledCpuMove();
+  cancelEndedAutoRestart();
+  cancelGameStartGrace();
 
-/** Actually connects as a guest to the given room code. Used both by the
- *  manual "Connect" button (type/paste a code you were given some other
- *  way) and, directly, by an invite-link visit — which skips straight to
- *  this instead of making the visitor also click "Connect" themselves;
- *  the manual code-entry flow above just stays available as an option. */
+  Game.phase = "setup";
+  Game.setupReady = false;
+  Game.cells = new Map();
+  Game.neighborKeys = new Map();
+  Game.selectedKey = null;
+  Game.lastMove = null;
+  Game.winner = null;
+  Game.endReason = null;
+  Game.drawOffered = null;
+  Game.moveLog = [];
+  Game.players = {
+    black: { name: "\u2014", isLocal: false },
+    white: { name: "\u2014", isLocal: false },
+  };
+
+  dom.shareLinkBtn.disabled = true;
+  dom.downloadBtn.disabled = true;
+
+  updateSetupVisibility();
+  renderBoard();
+  updateStatusUI();
+  showMessage("Connecting to the game\u2026");
+}
+
+/** Called when a guest's join attempt fails to reach an actually-live
+ *  game: the peer/connection errored or closed, or CONFIG.JOIN_TIMEOUT_MS
+ *  passed with no "sync" ever received. Tears down the dead connection,
+ *  shows a clear popup (same look as the onboarding overlay) instead of
+ *  silently leaving a fake local board on screen, and returns to the
+ *  mode picker so the visitor isn't stuck. */
+function abortFailedJoin() {
+  if (!Game.waitingForSync) return; // already resolved (sync arrived) or already handled
+  Game.waitingForSync = false;
+  teardownOnline();
+  showInfoPopup(
+    "Game not available",
+    "This game link isn\u2019t active \u2014 the host may be offline, or the game already finished. Ask them to start a new game and share a fresh link."
+  );
+  showEmptyBoardAndModeMenu();
+}
+
+/** Actually connects as a guest to the given room code — used only by an
+ *  invite-link visit (see boot()), which connects directly without any
+ *  further action from the visitor. */
 function connectToRoom(code) {
   if (!code) return;
   if (!confirmSettingChange()) return;
@@ -1789,27 +2197,30 @@ function connectToRoom(code) {
   Game.isHost = false;
   Game.localColor = "white";
   Game.gameId = code;
-  beginSetupPreview(); // a local placeholder, replaced the moment the host's "sync" message arrives
-  dom.gameIdValue.textContent = code;
+  Game.waitingForSync = true; // cleared by the "sync" handler, or by abortFailedJoin() on failure/timeout
+  beginOnlineGuestWaiting();
 
-  dom.onlineStatus.textContent = "Connecting...";
-  dom.onlineStatus.className = "online-status";
+  (async () => {
+    const iceServers = await getIceServers();
+    if (Game.gameId !== code || !Game.waitingForSync) return; // user left/switched away while we were fetching
 
-  Game.peer = new Peer();
-  Game.peer.on("open", () => {
-    const conn = Game.peer.connect("selfo-" + code, { reliable: true });
-    wireConnection(conn);
-  });
-  Game.peer.on("error", () => {
-    dom.onlineStatus.textContent = "Could not connect. Check the code.";
-    dom.onlineStatus.className = "online-status err";
-    updateOnlineButtonsState();
-  });
+    Game.peer = new Peer(undefined, { config: { iceServers } });
+    Game.peer.on("open", () => {
+      if (Game.gameId !== code || !Game.waitingForSync) return;
+      const conn = Game.peer.connect("selfo-" + code, { reliable: true });
+      wireConnection(conn);
+      setTimeout(() => {
+        if (Game.conn === conn && Game.waitingForSync) abortFailedJoin();
+      }, CONFIG.JOIN_TIMEOUT_MS);
+    });
+    Game.peer.on("error", () => {
+      abortFailedJoin();
+    });
+    Game.peer.on("disconnected", () => {
+      if (Game.peer && !Game.peer.destroyed) Game.peer.reconnect();
+    });
+  })();
 }
-
-dom.joinCodeSubmit.addEventListener("click", () => {
-  connectToRoom(dom.joinCodeInput.value.trim());
-});
 
 /** The link either button hands out: a room-join link while hosting an
  *  online game, or a full setup link (mode/radius/pieces/color/CPU
@@ -1847,15 +2258,10 @@ function copyTextToClipboard(text) {
   });
 }
 
-dom.copyLinkBtn.addEventListener("click", () => {
-  const url = currentShareUrl();
-  copyTextToClipboard(url).then(
-    () => showMessage("Link copied to clipboard."),
-    () => showMessage(`Link: ${url}`)
-  );
-});
-
-dom.shareLinkBtn.addEventListener("click", async () => {
+/** Shared by the Share icon's click handler and hostOnlineGame() (which
+ *  triggers this automatically the moment a hosted room is ready), so
+ *  both paths open the exact same native-share-or-menu flow. */
+async function triggerShare() {
   const url = currentShareUrl();
   const text = Game.mode === "online2p" ? "Join my Selfo game:" : "Play Selfo with this setup:";
 
@@ -1876,17 +2282,21 @@ dom.shareLinkBtn.addEventListener("click", async () => {
     }
   }
   openShareMenu(url, text);
-});
+}
+
+dom.shareLinkBtn.addEventListener("click", triggerShare);
 
 function openShareMenu(url, text) {
   dom.shareMenuEmail.href = `mailto:?subject=${encodeURIComponent("Selfo")}&body=${encodeURIComponent(`${text} ${url}`)}`;
   dom.shareMenuWhatsApp.href = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;
   dom.shareMenuTelegram.href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
   dom.shareMenu.hidden = false;
+  dom.shareLinkBtn.classList.add("active");
 }
 
 function closeShareMenu() {
   dom.shareMenu.hidden = true;
+  dom.shareLinkBtn.classList.remove("active");
 }
 
 dom.shareMenuCopy.addEventListener("click", () => {
@@ -1899,7 +2309,22 @@ dom.shareMenuCopy.addEventListener("click", () => {
 });
 
 // any click on an actual share option (email/WhatsApp/Telegram) also closes the menu
-dom.shareMenuEmail.addEventListener("click", closeShareMenu);
+//
+// Email needs special handling: target="_blank" is NOT honored by
+// Chrome/Edge for mailto: links once the user has a web-based mail
+// handler (e.g. Gmail) registered — it navigates the current tab in
+// place instead, which would kill the page (and the just-created online
+// room / peer connection) entirely. Opening a blank tab synchronously
+// inside the click handler and redirecting *that* tab keeps this page
+// alive. WhatsApp/Telegram are plain https:// links, so target="_blank"
+// already works correctly for them — no special handling needed there.
+dom.shareMenuEmail.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  const win = window.open("", "_blank");
+  if (win) win.location.href = dom.shareMenuEmail.href;
+  else window.location.href = dom.shareMenuEmail.href; // popup blocked — fall back rather than do nothing
+  closeShareMenu();
+});
 dom.shareMenuWhatsApp.addEventListener("click", closeShareMenu);
 dom.shareMenuTelegram.addEventListener("click", closeShareMenu);
 
@@ -1931,6 +2356,27 @@ function closeOnboarding() {
 }
 
 dom.onboardingCloseBtn.addEventListener("click", closeOnboarding);
+
+// =======================================================================
+// Generic info popup (same look as the onboarding overlay) — used for
+// things like "this game link isn't active" so guests get a clear,
+// on-brand message instead of a silent local fallback board.
+// =======================================================================
+
+function showInfoPopup(title, text) {
+  dom.infoOverlayTitle.textContent = title;
+  dom.infoOverlayText.textContent = text;
+  dom.infoOverlay.hidden = false;
+}
+
+function closeInfoPopup() {
+  dom.infoOverlay.hidden = true;
+}
+
+dom.infoOverlayCloseBtn.addEventListener("click", closeInfoPopup);
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.infoOverlay.hidden) closeInfoPopup();
+});
 
 // =======================================================================
 // Download finished game summary
@@ -1979,7 +2425,11 @@ dom.downloadBtn.addEventListener("click", () => {
 // of them clicking through the setup panel. Supported parameters (all
 // optional, all safe to combine, unknown/invalid values are ignored):
 //
-//   mode      local2p | online2p | vscomputer | computerself
+//   mode      local2p | online2p | vscomputer | computerself — online2p
+//             hosts a new room directly (see boot()); with
+//             CONFIG.ONLINE_MODE_BUTTON_ENABLED = false this URL param is
+//             the only way to start hosting, since the mode picker no
+//             longer offers "Play online" as a tile
 //   radius    2-6 (board radius)
 //   pieces    integer, clamped to whatever's valid for the radius
 //   color     black | white — which color the human plays in vscomputer
@@ -2072,23 +2522,60 @@ function buildSetupUrl() {
   return url.toString();
 }
 
+/** The very first thing visitors see (unless the URL specifies a mode or
+ *  a join code — see boot()): an empty board and the mode dropdown
+ *  already open, so picking a mode is the obvious first action instead
+ *  of silently starting a default game nobody asked for. */
+function showEmptyBoardAndModeMenu() {
+  Game.mode = null;
+  Game.phase = "setup";
+  Game.cells = new Map();
+  Game.neighborKeys = new Map();
+  Game.selectedKey = null;
+  Game.lastMove = null;
+  Game.winner = null;
+  Game.endReason = null;
+  Game.moveLog = [];
+  Game.players = {
+    black: { name: "\u2014", isLocal: false },
+    white: { name: "\u2014", isLocal: false },
+  };
+
+  syncModeButtonsSelection(); // Game.mode is null — matches no button, so none show as "selected"
+  updateSetupVisibility();
+  renderBoard();
+  updateStatusUI();
+  showMessage("Choose a mode to begin.");
+  openModeMenu();
+}
+
 function boot() {
   resetAllRangeInputs();
   Game.mode = CONFIG.DEFAULT_MODE;
   const joinCode = applyUrlConfig(); // may override mode/radius/pieces/color/cpu params/name from the URL
-  syncModeButtonsSelection();
-  beginSetupPreview();
+  const modeFromUrl = new URLSearchParams(location.search).has("mode");
 
   let hideOnboarding = false;
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }
   if (!hideOnboarding) showOnboarding();
 
-  // an invite link connects directly — no need to also click "Connect";
-  // the code-entry UI (revealed by "Join game") stays available as an
-  // option for codes you were given some other way
   if (joinCode) {
-    dom.joinGameBtn.click(); // reveals the code UI too, showing the code being used
+    // an invite link connects directly, no action needed from the visitor
     connectToRoom(joinCode);
+  } else if (modeFromUrl) {
+    // a shared setup link (?mode=...) starts that exact configuration
+    // directly. For online2p specifically this must actually host (open
+    // a Peer, get a room code) rather than just preview a board — this
+    // is the only way to start hosting now that the "Play online" tile
+    // can be hidden (see CONFIG.ONLINE_MODE_BUTTON_ENABLED).
+    syncModeButtonsSelection();
+    if (Game.mode === "online2p") {
+      hostOnlineGame();
+    } else {
+      beginSetupPreview();
+    }
+  } else {
+    showEmptyBoardAndModeMenu();
   }
 }
 
