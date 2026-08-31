@@ -23,7 +23,7 @@
  *     lmrMinDepth:    number,
  *   }
  *
- * Return shape:
+ * Return shape (pickMove is async — returns a Promise of this):
  *   { move: { from, to } | null, score: number }
  *
  * -------------------------------------------------------------------------
@@ -118,6 +118,22 @@ const AiStrategies = (() => {
    *  for the *current* depth runs out; the depth is then discarded so the
    *  caller keeps the previous (fully-searched) depth's result. */
   class SearchTimeoutError extends Error {}
+
+  // How often (ms of continuous work) the root-move loop hands control
+  // back to the host event loop — see searchAtDepth. Needed because the
+  // search can otherwise run fully synchronously for the entire
+  // maxTimeSeconds budget (up to 30s): even inside a Worker, that trips
+  // Firefox's (and other browsers') "this page/script is unresponsive"
+  // warning, since it monitors worker threads for hangs too, not just the
+  // main thread. Kept short relative to typical hang thresholds (~5-10s)
+  // so it never gets close, while being long enough that the
+  // setTimeout-based yield itself is negligible overhead over a 30s search.
+  const YIELD_INTERVAL_MS = 400;
+
+  /** Hands control back to the host event loop for one macrotask tick. */
+  function yieldToEventLoop() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
 
   /** All legal moves for `color`: one own piece moving to one empty
    *  adjacent cell (future variants: multi-step moves, see RULES in
@@ -360,8 +376,17 @@ const AiStrategies = (() => {
   }
 
   /** One full-width search at a fixed depth from the root, returning the
-   *  best move found (root is always the maximizing side). */
-  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, tuning) {
+   *  best move found (root is always the maximizing side). Async: yields
+   *  to the event loop periodically between root moves (see
+   *  YIELD_INTERVAL_MS) so a slow depth can't block the thread it's
+   *  running on continuously for the whole search — individual `minimax`
+   *  calls stay fully synchronous (adding an await at every recursive
+   *  node would be far too costly), so this is a best-effort granularity:
+   *  it can't interrupt a single very slow root move mid-flight, only
+   *  between them, but with move ordering + alpha-beta that's frequent
+   *  enough in practice to keep any one stretch well under typical
+   *  browser hang thresholds. */
+  async function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, tuning) {
     const opponentColor = otherColor(rootColor);
     const rootMoves = orderMoves(getLegalMoves(cells, neighborKeys, rootColor), cells, neighborKeys, rootColor);
 
@@ -370,6 +395,7 @@ const AiStrategies = (() => {
     let alpha = -Infinity;
     const beta = Infinity;
 
+    let lastYield = nowMs();
     for (const move of rootMoves) {
       const record = makeMove(cells, move.from, move.to);
       let score;
@@ -383,6 +409,13 @@ const AiStrategies = (() => {
         bestMove = move;
       }
       if (bestScore > alpha) alpha = bestScore;
+
+      const now = nowMs();
+      if (now - lastYield > YIELD_INTERVAL_MS) {
+        if (now > deadline) throw new SearchTimeoutError();
+        await yieldToEventLoop();
+        lastYield = nowMs();
+      }
     }
     return { move: bestMove, score: bestScore };
   }
@@ -398,8 +431,12 @@ const AiStrategies = (() => {
    * maxDepth now goes up to 12 (was 5) — reachable in practice within a
    * normal think-time budget thanks to the pruning/ordering/no-clone
    * changes described in the file header, not just because the cap moved.
+   *
+   * Async: awaits searchAtDepth's periodic event-loop yields (see
+   * YIELD_INTERVAL_MS), so this returns a Promise<{move, score}> now
+   * rather than the value directly — callers need `await`/`.then()`.
    */
-  function minimaxAlphaBetaID(state, options = {}) {
+  async function minimaxAlphaBetaID(state, options = {}) {
     if (typeof Fitness === "undefined") {
       throw new Error("AiStrategies needs fitness.js loaded before aistrategies.js");
     }
@@ -418,7 +455,7 @@ const AiStrategies = (() => {
     for (let depth = 1; depth <= maxDepth; depth++) {
       let result;
       try {
-        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, tuning);
+        result = await searchAtDepth(cells, neighborKeys, color, depth, deadline, tuning);
       } catch (err) {
         if (err instanceof SearchTimeoutError) break; // keep the previous depth's result
         throw err;
@@ -442,8 +479,10 @@ const AiStrategies = (() => {
   // Name of the strategy used when none is explicitly requested.
   const activeStrategy = "minimaxAlphaBetaID";
 
-  /** Pick a move using the named strategy (defaults to the active one). */
-  function pickMove(state, options, strategyName = activeStrategy) {
+  /** Pick a move using the named strategy (defaults to the active one).
+   *  Async — returns a Promise<{move, score}>, since the strategy itself
+   *  (minimaxAlphaBetaID) now yields to the event loop periodically. */
+  async function pickMove(state, options, strategyName = activeStrategy) {
     const strategy = strategies[strategyName];
     if (!strategy) throw new Error(`Unknown AI strategy: "${strategyName}"`);
     return strategy(state, options);
@@ -481,10 +520,10 @@ const AiStrategies = (() => {
 //        | { requestId, ok: false, error }
 // =========================================================================
 if (typeof importScripts === "function") {
-  self.onmessage = function (e) {
+  self.onmessage = async function (e) {
     const { requestId, state, options } = e.data || {};
     try {
-      const result = AiStrategies.pickMove(state, options);
+      const result = await AiStrategies.pickMove(state, options);
       self.postMessage({ requestId, ok: true, move: result.move, score: result.score });
     } catch (err) {
       self.postMessage({ requestId, ok: false, error: (err && err.message) || String(err) });

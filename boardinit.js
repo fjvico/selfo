@@ -45,6 +45,25 @@ const BoardInit = (() => {
     return neighborKeys;
   }
 
+  /** Counts same-color adjacent pairs across the whole board (both
+   *  colors together, each edge counted once) — a cheap proxy for "how
+   *  clustered" a placement is. Fitness.imbalance alone doesn't penalize
+   *  this: a single, fully-connected blob per color has excess = 0 for
+   *  both colors, which reads as "perfectly balanced" even though it's
+   *  the opposite of a scattered start. This is what lets scatterPieces
+   *  push back on that instead of only chasing a balanced excess. */
+  function sameColorAdjacencyPairs(cells, neighborKeys) {
+    let pairs = 0;
+    for (const [k, cell] of cells) {
+      if (cell.color === null) continue;
+      for (const nk of neighborKeys.get(k)) {
+        if (nk <= k) continue; // each edge has two endpoints; only count it from one side
+        if (cells.get(nk).color === cell.color) pairs++;
+      }
+    }
+    return pairs;
+  }
+
   // ---------------------------------------------------------------------
   // Strategy: "axialRangeLoop"
   // ---------------------------------------------------------------------
@@ -131,25 +150,39 @@ const BoardInit = (() => {
 
   /**
    * Mutates `cells` in place, assigning 'black'/'white'/null to every
-   * cell so the two colors' starting Fitness is as close as possible.
-   * Returns { cells, neighborKeys, imbalance } — `imbalance` is the final
-   * |excess(black) - excess(white)| achieved, handy for logging/tests.
+   * cell so the two colors' starting Fitness is as close as possible,
+   * while also discouraging same-color pieces from starting clustered
+   * together (see cohesionWeight below). Returns
+   * { cells, neighborKeys, imbalance, adjacencyPairs } — `imbalance` is
+   * the final |excess(black) - excess(white)|, `adjacencyPairs` the
+   * final same-color-adjacent-pairs count, both handy for logging/tests.
    *
    * options:
-   *   pieceRatio   fraction of cells that get a piece at all (the rest
-   *                stay empty — room to move into). Default 0.6.
-   *   colorSplit   fraction of placed pieces that are 'black' (rest
-   *                'white'). Default 0.5 (even split).
-   *   attempts     independent random scatters to try before local
-   *                search; keeps the most balanced one. Default 40.
-   *   improveIters swap-based local-search steps run afterwards, trying
-   *                to shrink the gap further. Default 200.
-   *   fitnessMode  "geometric" (fast, default — plenty for the handful of
-   *                calls this makes) or "bfs" (slower, respects the real
-   *                movement graph; a more faithful "equitable" on a
-   *                concentric board where inner rings bottleneck).
-   *   rng          () => [0,1) random source; override for deterministic
-   *                tests. Defaults to Math.random.
+   *   pieceRatio     fraction of cells that get a piece at all (the rest
+   *                  stay empty — room to move into). Default 0.6.
+   *   colorSplit     fraction of placed pieces that are 'black' (rest
+   *                  'white'). Default 0.5 (even split).
+   *   attempts       independent random scatters to try before local
+   *                  search; keeps the best-scoring one. Default 40.
+   *   improveIters   swap-based local-search steps run afterwards, trying
+   *                  to improve the score further. Default 200.
+   *   fitnessMode    "geometric" (fast, default — plenty for the handful
+   *                  of calls this makes) or "bfs" (slower, respects the
+   *                  real movement graph; a more faithful "equitable" on
+   *                  a concentric board where inner rings bottleneck).
+   *   cohesionWeight how strongly to penalize same-color adjacent pairs
+   *                  (see sameColorAdjacencyPairs) on top of the color
+   *                  imbalance — without this, a single fully-connected
+   *                  blob per color scores as "perfectly balanced" (both
+   *                  colors have excess 0), which is the opposite of a
+   *                  scattered start. The two terms are summed into one
+   *                  score (imbalance + cohesionWeight * adjacencyPairs),
+   *                  so this is roughly "how many points of imbalance
+   *                  we're willing to accept to remove one same-color
+   *                  adjacent pair". Default 2. Set to 0 to disable and
+   *                  optimize for color balance alone.
+   *   rng            () => [0,1) random source; override for deterministic
+   *                  tests. Defaults to Math.random.
    */
   function scatterPieces(cells, neighborKeys, options = {}) {
     if (typeof Fitness === "undefined") {
@@ -162,6 +195,7 @@ const BoardInit = (() => {
       attempts = 40,
       improveIters = 200,
       fitnessMode = "geometric",
+      cohesionWeight = 2,
       rng = Math.random,
     } = options;
 
@@ -201,14 +235,23 @@ const BoardInit = (() => {
       return Fitness.imbalance(cells, neighborKeys, "black", "white", { mode: fitnessMode });
     }
 
-    // Pass 1: several independent random scatters, keep the best.
+    // Combined score: color-balance imbalance plus a penalty for
+    // same-color adjacent pairs. Lower is better either way, so the two
+    // add naturally into one number the search can optimize.
+    function scoreNow() {
+      const imbalance = imbalanceNow();
+      const adjacencyPairs = cohesionWeight > 0 ? sameColorAdjacencyPairs(cells, neighborKeys) : 0;
+      return { score: imbalance + cohesionWeight * adjacencyPairs, imbalance, adjacencyPairs };
+    }
+
+    // Pass 1: several independent random scatters, keep the best-scoring.
     let bestSnapshot = null;
-    let bestImbalance = Infinity;
+    let best = { score: Infinity, imbalance: Infinity, adjacencyPairs: Infinity };
     for (let a = 0; a < attempts; a++) {
       applyAssignment(shuffledKeys());
-      const imb = imbalanceNow();
-      if (imb < bestImbalance) {
-        bestImbalance = imb;
+      const current = scoreNow();
+      if (current.score < best.score) {
+        best = current;
         bestSnapshot = snapshotColors();
       }
     }
@@ -224,23 +267,23 @@ const BoardInit = (() => {
       const cellB = cells.get(keys[j]);
       if (cellA.color === cellB.color) continue; // no-op swap
 
-      const before = imbalanceNow();
+      const before = best.score;
       const tmp = cellA.color;
       cellA.color = cellB.color;
       cellB.color = tmp;
-      const after = imbalanceNow();
+      const after = scoreNow();
 
-      if (after > before) {
-        // revert — this swap made the two colors less equal
+      if (after.score > before) {
+        // revert — this swap made the combined score worse
         const tmp2 = cellA.color;
         cellA.color = cellB.color;
         cellB.color = tmp2;
       } else {
-        bestImbalance = after;
+        best = after;
       }
     }
 
-    return { cells, neighborKeys, imbalance: bestImbalance };
+    return { cells, neighborKeys, imbalance: best.imbalance, adjacencyPairs: best.adjacencyPairs };
   }
 
   /** Convenience one-shot: build the empty grid, then scatter pieces
@@ -250,8 +293,8 @@ const BoardInit = (() => {
   function initWithPieces(radius, options = {}) {
     const { boardStrategy = activeStrategy, ...scatterOptions } = options;
     const { cells, neighborKeys } = init(radius, boardStrategy);
-    const { imbalance } = scatterPieces(cells, neighborKeys, scatterOptions);
-    return { cells, neighborKeys, imbalance };
+    const { imbalance, adjacencyPairs } = scatterPieces(cells, neighborKeys, scatterOptions);
+    return { cells, neighborKeys, imbalance, adjacencyPairs };
   }
 
   return { strategies, activeStrategy, init, buildNeighborMap, scatterPieces, initWithPieces };

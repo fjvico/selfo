@@ -1173,14 +1173,13 @@ function onCpuWorkerError(err) {
  *  think-time budget, same as a build with no Worker support at all. */
 function runCpuSearchLocally(req) {
   showMessage(`${Game.players[req.color].name} is thinking... (running locally \u2014 serve over http(s) for a smoother experience)`);
-  // brief delay so the message above actually paints before the
-  // synchronous, blocking search starts
-  setTimeout(() => {
+  // brief delay so the message above actually paints before the search starts
+  setTimeout(async () => {
     if (!cpuPendingRequest || req.requestId !== cpuPendingRequest.requestId) return;
     if (Game.phase !== "playing" || Game.turn !== req.color) return;
     cpuPendingRequest = null;
     try {
-      const result = AiStrategies.pickMove(req.state, req.options);
+      const result = await AiStrategies.pickMove(req.state, req.options);
       applyCpuResult(req.color, result.move);
     } catch (err) {
       console.error("CPU local search failed:", err);
@@ -1242,6 +1241,14 @@ function maybeTriggerCpuMove() {
   if (Game.phase !== "playing") return;
   if (Game.mode !== "vscomputer" && Game.mode !== "computerself") return;
   if (Game.players[Game.turn] && Game.players[Game.turn].isLocal) return;
+  // Paused while the mode menu is open: in computerself especially, moves
+  // firing continuously (and re-rendering the board) made it hard to even
+  // land a click on the icon that opens this same menu. closeModeMenu()
+  // resumes play once it's closed. A move already mid-flight when the
+  // menu opens still finishes normally — this only holds off *scheduling
+  // the next one*, so at most one extra move can land before it takes
+  // effect.
+  if (!dom.modeMenu.hidden) return;
 
   if (Game.turn === "white" && Game.pieRuleAvailable) {
     scheduleCpuPieRuleDecision();
@@ -1615,6 +1622,14 @@ function openModeMenu() {
 function closeModeMenu() {
   dom.modeMenu.hidden = true;
   dom.modeMenuBtn.classList.remove("active");
+  // Resume CPU auto-play if it was paused while the menu was open (see
+  // the guard at the top of maybeTriggerCpuMove). Only when nothing's
+  // already scheduled/in flight, so closing the menu mid-move rather
+  // than between moves can't dispatch a second, redundant search for the
+  // same turn.
+  if (!cpuPendingRequest && cpuThinkDelayId === null) {
+    maybeTriggerCpuMove();
+  }
 }
 
 document.addEventListener("click", (ev) => {
