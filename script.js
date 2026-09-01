@@ -2192,6 +2192,10 @@ dom.downloadBtn.addEventListener("click", () => {
 //   mode      local2p | online2p | vscomputer | computerself
 //   radius    2-5 (board radius)
 //   pieces    integer, clamped to whatever's valid for the radius
+//   enclosure true | false — the "Allow enclosure" toggle (see
+//             FeatureConfig.allow_enclosure in config.js); ignored if
+//             that config flag hides the toggle from the UI, since the
+//             value is fixed for the whole session in that case
 //   color     black | white — which color the human plays in vscomputer
 //   cpuTime   1-30 — CPU max think time, in seconds
 //   cpuDepth  1-5  — CPU max search depth
@@ -2200,7 +2204,7 @@ dom.downloadBtn.addEventListener("click", () => {
 //   join      an online2p room code — connects directly (see below),
 //             and implies mode=online2p regardless of any other mode=…
 //
-// Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4
+// Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4&enclosure=false
 //
 // This is also how "Copy link" builds its URL for non-online modes (see
 // buildSetupUrl()) — the round trip is: configure the panel, copy the
@@ -2228,6 +2232,16 @@ function applyUrlConfig() {
     const clamped = Math.min(max, Math.max(min, pieces));
     dom.piecesRange.value = String(clamped);
     dom.piecesValue.textContent = `${clamped} (${min}-${max})`;
+  }
+
+  // Only honored when the "Allow enclosure" control is actually shown —
+  // if FeatureConfig.allow_enclosure locks it out of the UI, the value is
+  // fixed for the whole session and a URL shouldn't be able to override
+  // that any more than clicking the (absent) checkbox could.
+  const enclosureParam = params.get("enclosure");
+  if (FeatureConfig.allow_enclosure[0] && (enclosureParam === "true" || enclosureParam === "false")) {
+    Game.allowEnclosure = enclosureParam === "true";
+    dom.allowEnclosureCheckbox.checked = Game.allowEnclosure;
   }
 
   const color = params.get("color");
@@ -2271,6 +2285,7 @@ function buildSetupUrl() {
   url.searchParams.set("mode", Game.mode);
   url.searchParams.set("radius", String(Game.radius));
   url.searchParams.set("pieces", String(Game.piecesPerColor));
+  url.searchParams.set("enclosure", String(Game.allowEnclosure));
   if (Game.mode === "vscomputer") {
     url.searchParams.set("color", Game.humanColor);
     url.searchParams.set("cpuTime", dom.cpuTimeRange.value);
