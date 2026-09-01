@@ -30,5 +30,5 @@
  *                          starts ON, trapping moves are hidden/blocked).
  */
 const FeatureConfig = {
-  allow_enclosure: [false, false],
+  allow_enclosure: [false, true],
 };
