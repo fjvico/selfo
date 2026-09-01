@@ -81,7 +81,7 @@ const BoardInit = (() => {
   // the strategy currently used to initialize new games.
   strategies.axialRangeLoop = function axialRangeLoop(radius) {
     const cells = new Map();
-    const R = radius - 1;
+    const R = radius;
     for (let q = -R; q <= R; q++) {
       const r1 = Math.max(-R, -q - R);
       const r2 = Math.min(R, -q + R);
@@ -195,7 +195,7 @@ const BoardInit = (() => {
       attempts = 40,
       improveIters = 200,
       fitnessMode = "geometric",
-      cohesionWeight = 2,
+      cohesionWeight = 0,
       rng = Math.random,
     } = options;
 

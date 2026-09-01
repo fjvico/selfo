@@ -14,11 +14,10 @@
  * layout. Pointy-top board = flat-top cells; that's the trade this file
  * makes, chosen because a narrower board is friendlier on mobile widths.
  *
- * "radius" here means "number of rings including the center cell":
- *   radius = 1  -> only the center cell (1 cell)
- *   radius = 2  -> center + 1 ring around it (7 cells)
- *   radius = 3  -> center + 2 rings (19 cells)
- * i.e. the maximum axial/cube distance from the center is (radius - 1).
+ * "radius" here means "maximum axial/cube distance from the center":
+ *   radius = 0  -> only the center cell (1 cell)
+ *   radius = 1  -> center + 1 ring around it (7 cells)
+ *   radius = 2  -> center + 2 rings (19 cells)
  */
 const HexGeometry = (() => {
 
@@ -42,15 +41,15 @@ const HexGeometry = (() => {
     return `${q},${r}`;
   }
 
-  /** Total number of cells for a given radius (rings including center). */
+  /** Total number of cells for a given radius (max distance from center). */
   function totalCells(radius) {
-    return 3 * radius * (radius - 1) + 1;
+    return 3 * radius * (radius + 1) + 1;
   }
 
   /** Generate every axial coordinate within the given radius. */
   function generateCells(radius) {
     const cells = [];
-    const maxDist = radius - 1;
+    const maxDist = radius;
     for (let q = -maxDist; q <= maxDist; q++) {
       const rMin = Math.max(-maxDist, -q - maxDist);
       const rMax = Math.min(maxDist, -q + maxDist);
