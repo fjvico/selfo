@@ -450,8 +450,8 @@ function buildBoard(radius, piecesPerColor, enclosureAllowed) {
 
     result = { cells, neighborKeys };
     if (enclosureAllowed) break; // nothing to validate against
-    if (hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
-        hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed)) break;
+    if (MoveRules.hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
+        MoveRules.hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed)) break;
   }
   return result;
 }
@@ -621,164 +621,10 @@ function renderPieces(positions) {
   }
 }
 
-/** Flood-fills from `startKey` over cells that satisfy `include(key)`,
- *  moving only through board adjacency (Game.neighborKeys). Returns the
- *  Set of every key reached (including startKey itself). */
-function floodFillKeys(neighborKeys, startKey, include) {
-  const visited = new Set([startKey]);
-  const stack = [startKey];
-  while (stack.length) {
-    const k = stack.pop();
-    for (const nk of neighborKeys.get(k)) {
-      if (visited.has(nk) || !include(nk)) continue;
-      visited.add(nk);
-      stack.push(nk);
-    }
-  }
-  return visited;
-}
-
-/**
- * True if placing a piece of `moverColor` on `to` (vacating `from`) would
- * cut some opponent piece off from part of the board it could currently
- * reach — whether that piece ends up directly boxed in, or shut inside a
- * pocket of empty cells and/or other same-color pieces with no way out.
- * Checking only `to`'s immediate neighbors isn't enough: a piece one step
- * further away, sitting in a small closed-off room, is just as trapped.
- *
- * Method: `to` is currently empty, so before the move it sits in some
- * connected region of non-`moverColor` cells (empty + opponent pieces).
- * If that region contains no opponent piece at all, this move can't trap
- * anyone — bail out early. Otherwise, check whether the rest of that
- * region (everything but `to`) stays in one piece once `to` is occupied —
- * `from` becomes empty and can act as a detour, since it's always
- * adjacent to `to`. This is done by partitioning that "rest of the
- * region" into its post-move connected components (not by picking one
- * arbitrary cell and checking who can still reach it: if that pick
- * happened to be the very piece getting trapped, it trivially "reaches
- * itself" and the split goes unnoticed — an early version of this
- * function had exactly that bug). If the region splits into more than
- * one component and at least one of them still holds an opponent piece,
- * that piece has been cut off from the rest — the move is disallowed.
- * Gated by the "Allow enclosure" setup toggle — see legalMoveTargets.
- *
- * Takes `cells`/`neighborKeys` explicitly (rather than reading the global
- * Game) so it can also be used to validate a candidate board layout
- * before it's ever assigned to Game — see buildBoard's use of
- * hasAnyLegalMove below.
- */
-function wouldIsolateOpponentPiece(cells, neighborKeys, from, to, moverColor) {
-  const opponentColor = opponentOf(moverColor);
-  const preColor = (key) => cells.get(key).color;
-
-  const regionBefore = floodFillKeys(neighborKeys, to, (k) => preColor(k) !== moverColor);
-  const hasOpponentNearby = [...regionBefore].some((k) => preColor(k) === opponentColor);
-  if (!hasOpponentNearby) return false;
-
-  const mustStayConnected = [...regionBefore].filter((k) => k !== to);
-  if (mustStayConnected.length === 0) return false; // nothing else in the region to disconnect
-
-  const postColor = (key) => {
-    if (key === to) return moverColor;
-    if (key === from) return null;
-    return cells.get(key).color;
-  };
-
-  // Partition mustStayConnected into its post-move connected components
-  // (roaming freely through any non-moverColor cell while flood-filling,
-  // not just members of mustStayConnected, so a detour through `from`
-  // still counts as one path).
-  const unclassified = new Set(mustStayConnected);
-  let componentCount = 0;
-  let opponentComponentCount = 0;
-  while (unclassified.size > 0) {
-    const seed = unclassified.values().next().value;
-    const reached = floodFillKeys(neighborKeys, seed, (k) => postColor(k) !== moverColor);
-    let hasOpponent = false;
-    for (const k of [...unclassified]) {
-      if (reached.has(k)) {
-        unclassified.delete(k);
-        if (preColor(k) === opponentColor) hasOpponent = true;
-      }
-    }
-    componentCount++;
-    if (hasOpponent) opponentComponentCount++;
-  }
-
-  return componentCount > 1 && opponentComponentCount > 0;
-}
-
-/** True if moving `moverColor`'s piece from `from` to `to` would leave
- *  every one of `moverColor`'s own pieces in a single connected group —
- *  i.e. this exact move wins the game outright. Checked hypothetically
- *  (via the same to/from color-override trick as wouldIsolateOpponentPiece)
- *  rather than by mutating `cells`, since it's only used to decide
- *  whether a move should be *allowed*, before it's actually made. Used
- *  to carve out the one case where enclosing an opponent piece is fine
- *  anyway: if it's the move that completes your own connection, winning
- *  the game can never be the wrong choice, so the enclosure rule steps
- *  aside for it. */
-function wouldFullyConnectOwnColor(cells, neighborKeys, from, to, moverColor) {
-  const effectiveColor = (key) => {
-    if (key === to) return moverColor;
-    if (key === from) return null;
-    return cells.get(key).color;
-  };
-
-  const ownKeys = [];
-  for (const [k] of cells) if (effectiveColor(k) === moverColor) ownKeys.push(k);
-  if (ownKeys.length <= 1) return true; // 0 or 1 piece is trivially "one group"
-
-  const visited = new Set([ownKeys[0]]);
-  const stack = [ownKeys[0]];
-  while (stack.length) {
-    const k = stack.pop();
-    for (const nk of neighborKeys.get(k)) {
-      if (visited.has(nk)) continue;
-      if (effectiveColor(nk) === moverColor) { visited.add(nk); stack.push(nk); }
-    }
-  }
-  return visited.size === ownKeys.length;
-}
-
-/**
- * Empty neighbor cells of `fromKey` that are legal move destinations:
- * always excludes occupied cells. When `enclosureAllowed` is false (the
- * "Allow enclosure" setup toggle, off by default — see
- * FeatureConfig.allow_enclosure in config.js), it also excludes any destination that
- * would trap an opponent piece — directly boxed in or sealed inside an
- * enclosed pocket — *unless* that exact move is the one that fully
- * connects the mover's own pieces (see wouldFullyConnectOwnColor): a
- * winning move is never blocked by this rule, enclosure toggle or not.
- * Shared by highlighting, click-to-move, drag-to-move, and buildBoard's
- * own setup validation, so all of them agree on what counts as a legal
- * move.
- */
-function legalMoveTargets(cells, neighborKeys, fromKey, enclosureAllowed) {
-  const moverColor = cells.get(fromKey).color;
-  return neighborKeys.get(fromKey).filter((nk) => {
-    if (cells.get(nk).color) return false;
-    if (!enclosureAllowed && wouldIsolateOpponentPiece(cells, neighborKeys, fromKey, nk, moverColor)) {
-      return wouldFullyConnectOwnColor(cells, neighborKeys, fromKey, nk, moverColor);
-    }
-    return true;
-  });
-}
-
-/** True if `color` has at least one legal move on this board — used by
- *  buildBoard to make sure a freshly-generated layout is actually
- *  playable (see the retry loop there) before it's accepted. */
-function hasAnyLegalMove(cells, neighborKeys, color, enclosureAllowed) {
-  for (const [k, cell] of cells) {
-    if (cell.color === color && legalMoveTargets(cells, neighborKeys, k, enclosureAllowed).length > 0) return true;
-  }
-  return false;
-}
-
 function applyHighlights() {
   const polys = dom.boardSvg.querySelectorAll(".hex-cell");
   const selected = Game.selectedKey;
-  const targets = selected ? legalMoveTargets(Game.cells, Game.neighborKeys, selected, Game.allowEnclosure) : [];
+  const targets = selected ? MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, selected, Game.allowEnclosure) : [];
 
   polys.forEach((poly) => {
     const k = poly.dataset.key;
@@ -822,7 +668,7 @@ function onCellClick(key) {
     return;
   }
 
-  const targets = legalMoveTargets(Game.cells, Game.neighborKeys, Game.selectedKey, Game.allowEnclosure);
+  const targets = MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, Game.selectedKey, Game.allowEnclosure);
   if (targets.includes(key)) {
     performMove(Game.selectedKey, key);
     return;
@@ -957,7 +803,7 @@ function beginDrag(ev, key, circle) {
     const p = svgUserPoint(svg, up.clientX, up.clientY);
     const axial = HexGeometry.pixelToAxial(p.x, p.y, CONFIG.CELL_SIZE);
     const targetKey = HexGeometry.key(axial.q, axial.r);
-    const targets = Game.neighborKeys.get(key) ? legalMoveTargets(Game.cells, Game.neighborKeys, key, Game.allowEnclosure) : [];
+    const targets = Game.neighborKeys.get(key) ? MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, key, Game.allowEnclosure) : [];
 
     if (targets.includes(targetKey)) {
       performMove(key, targetKey);
@@ -1410,7 +1256,7 @@ function scheduleCpuMove() {
 
     const maxDepth = Number(dom.cpuDepthRange.value);
     const maxTimeSeconds = Number(dom.cpuTimeRange.value);
-    const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color };
+    const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color, enclosureAllowed: Game.allowEnclosure };
 
     cpuRequestId += 1;
     const req = { requestId: cpuRequestId, color, state, options: { maxDepth, maxTimeSeconds } };

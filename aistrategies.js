@@ -5,14 +5,21 @@
  * ------------
  * Computer-player decision strategies. Each strategy is a pure function
  * that receives a board state and search options, and returns the move it
- * thinks is best — no DOM, no globals, no dependency on script.js, so it
- * can be tested, benchmarked, or swapped independently.
+ * thinks is best — no DOM, no dependency on script.js, so it can be
+ * tested, benchmarked, or swapped independently. It does depend on
+ * MoveRules (moverules.js) for move legality — see the importScripts
+ * call just below — so the CPU always agrees with the human UI on what
+ * counts as a legal move, in particular the "Allow enclosure" rule (see
+ * FeatureConfig.allow_enclosure in config.js): a computer vs computer (or
+ * vs computer) game respects it exactly the same way a human player's
+ * moves do, since both paths call MoveRules.legalMoveTargets.
  *
  * State shape expected by every strategy:
  *   {
- *     cells:        Map<string, { q, r, color: 'black'|'white'|null }>,
- *     neighborKeys: Map<string, string[]>,
- *     color:        'black' | 'white'   // the color the AI is playing
+ *     cells:           Map<string, { q, r, color: 'black'|'white'|null }>,
+ *     neighborKeys:    Map<string, string[]>,
+ *     color:           'black' | 'white'   // the color the AI is playing
+ *     enclosureAllowed: boolean            // mirrors the "Allow enclosure" toggle
  *   }
  *
  * Options shape (all optional, strategies may ignore fields they don't use):
@@ -28,6 +35,16 @@
  * function under AiStrategies.strategies["name"], then either set it as
  * AiStrategies.activeStrategy or pass the name explicitly to pickMove().
  */
+
+// A Web Worker doesn't share the page's already-loaded <script> tags, so
+// when this file runs inside one (see the worker entry point at the
+// bottom), it has to pull MoveRules in itself. On the main thread,
+// `importScripts` doesn't exist and moverules.js is already loaded via
+// index.html, so this is a no-op there.
+if (typeof importScripts === "function") {
+  importScripts("moverules.js");
+}
+
 const AiStrategies = (() => {
 
   const strategies = {};
@@ -53,13 +70,15 @@ const AiStrategies = (() => {
   /** All legal moves for `color`: one own piece moving to one empty
    *  adjacent cell (future variants: multi-step moves, see RULES in
    *  script.js — this function is the single place that would need to
-   *  grow to support them). */
-  function getLegalMoves(cells, neighborKeys, color) {
+   *  grow to support them), filtered through MoveRules.legalMoveTargets
+   *  so the CPU never considers a move a human wouldn't be offered
+   *  either (see the "Allow enclosure" toggle). */
+  function getLegalMoves(cells, neighborKeys, color, enclosureAllowed) {
     const moves = [];
     for (const [k, cell] of cells) {
       if (cell.color !== color) continue;
-      for (const nk of neighborKeys.get(k)) {
-        if (cells.get(nk).color === null) moves.push({ from: k, to: nk });
+      for (const nk of MoveRules.legalMoveTargets(cells, neighborKeys, k, enclosureAllowed)) {
+        moves.push({ from: k, to: nk });
       }
     }
     return moves;
@@ -177,7 +196,7 @@ const AiStrategies = (() => {
   // perspective the evaluation is scored from. `moverColor` is whichever
   // color is actually choosing a move at this node.
   // ---------------------------------------------------------------------
-  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline) {
+  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed) {
     if (nowMs() > deadline) throw new SearchTimeoutError();
 
     const opponentOfRoot = otherColor(rootColor);
@@ -187,7 +206,7 @@ const AiStrategies = (() => {
 
     if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
-    const legalMoves = getLegalMoves(cells, neighborKeys, moverColor);
+    const legalMoves = getLegalMoves(cells, neighborKeys, moverColor, enclosureAllowed);
     if (legalMoves.length === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
     const ordered = orderMoves(legalMoves, cells, neighborKeys, moverColor);
@@ -196,7 +215,7 @@ const AiStrategies = (() => {
 
     for (const move of ordered) {
       const child = applyMove(cells, move.from, move.to);
-      const childValue = minimax(child, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline);
+      const childValue = minimax(child, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed);
 
       if (maximizing) {
         if (childValue > value) value = childValue;
@@ -212,9 +231,9 @@ const AiStrategies = (() => {
 
   /** One full-width search at a fixed depth from the root, returning the
    *  best move found (root is always the maximizing side). */
-  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline) {
+  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed) {
     const opponentColor = otherColor(rootColor);
-    const rootMoves = orderMoves(getLegalMoves(cells, neighborKeys, rootColor), cells, neighborKeys, rootColor);
+    const rootMoves = orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor);
 
     let bestMove = null;
     let bestScore = -Infinity;
@@ -223,7 +242,7 @@ const AiStrategies = (() => {
 
     for (const move of rootMoves) {
       const child = applyMove(cells, move.from, move.to);
-      const score = minimax(child, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline);
+      const score = minimax(child, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed);
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -242,7 +261,7 @@ const AiStrategies = (() => {
    * forced win/loss is already found, since deeper search can't change it.
    */
   function minimaxAlphaBetaID(state, options = {}) {
-    const { cells, neighborKeys, color } = state;
+    const { cells, neighborKeys, color, enclosureAllowed } = state;
     const maxDepth = Math.max(1, Math.min(5, options.maxDepth ?? 2));
     const maxTimeMs = Math.max(200, (options.maxTimeSeconds ?? 5) * 1000);
     const deadline = nowMs() + maxTimeMs;
@@ -252,7 +271,7 @@ const AiStrategies = (() => {
     for (let depth = 1; depth <= maxDepth; depth++) {
       let result;
       try {
-        result = searchAtDepth(cells, neighborKeys, color, depth, deadline);
+        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed);
       } catch (err) {
         if (err instanceof SearchTimeoutError) break; // keep the previous depth's result
         throw err;
@@ -265,7 +284,7 @@ const AiStrategies = (() => {
     // safety net: if even depth 1 never completed (pathologically small
     // time budget), fall back to any legal move rather than passing.
     if (!best.move) {
-      const fallback = getLegalMoves(cells, neighborKeys, state.color)[0] || null;
+      const fallback = getLegalMoves(cells, neighborKeys, state.color, enclosureAllowed)[0] || null;
       best = { move: fallback, score: 0 };
     }
     return best;
@@ -300,17 +319,20 @@ const AiStrategies = (() => {
 // -------------------------------------------------------------------------
 // This file is loaded two different ways:
 //   1. `<script src="aistrategies.js">` on the main page — just defines
-//      AiStrategies, nothing below this point runs.
+//      AiStrategies (moverules.js already loaded separately), nothing
+//      below this point runs.
 //   2. `new Worker("aistrategies.js")` from script.js — runs inside a
 //      dedicated Web Worker, so the (possibly slow, time-boxed) search
 //      never blocks the page's main thread. `importScripts` only exists
 //      in worker contexts, so it doubles as the "am I in a worker?" check
+//      (reused near the top of this file to also pull in moverules.js,
+//      since a worker doesn't share the page's already-loaded scripts)
 //      and lets one file serve both roles instead of needing a second
 //      wrapper file.
 //
 // Message protocol (plain postMessage — Map/Array/Object are all
 // structured-cloneable, no transferables needed):
-//   in  -> { requestId, state: { cells, neighborKeys, color }, options }
+//   in  -> { requestId, state: { cells, neighborKeys, color, enclosureAllowed }, options }
 //   out -> { requestId, ok: true,  move, score }
 //        | { requestId, ok: false, error }
 // =========================================================================
