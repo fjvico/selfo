@@ -32,5 +32,5 @@
  *   allow_enclosure: [false, false] = don't show box, don't allow enclosure
  */
 const FeatureConfig = {
-  allow_enclosure: [false, false],
+  allow_enclosure: [true,false],
 };
