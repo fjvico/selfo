@@ -28,7 +28,9 @@
  *                          restriction starts OFF).
  *                 false -> enclosure is NOT allowed (the restriction
  *                          starts ON, trapping moves are hidden/blocked).
+ * 
+ *   allow_enclosure: [false, false] = don't show box, don't allow enclosure
  */
 const FeatureConfig = {
-  allow_enclosure: [false, true],
+  allow_enclosure: [false, false],
 };
