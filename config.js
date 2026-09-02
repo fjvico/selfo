@@ -34,5 +34,5 @@
  *                          allowed, trapping moves are offered normally.
  */
 const FeatureConfig = {
-  no_enclosure: [true, true],
+  no_enclosure: [true, false],
 };
