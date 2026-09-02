@@ -38,6 +38,18 @@ const CONFIG = {
   CELL_SIZE: 30, // px, constant regardless of board radius
   DEFAULT_CPU_TIME_SECONDS: 5,
   DEFAULT_CPU_DEPTH: 2,
+  // Black moves first, so whenever the CPU is the one making that first
+  // move — vscomputer with the human playing white, or computerself
+  // (no human at all) — it's capped at this depth instead of the
+  // configured cpuDepth — a full-strength search would pick the
+  // objectively best opening every time, tipping the "who moves first"
+  // balance further than the pie rule (the swap-colors option offered to
+  // white right after) is meant to allow for. A shallow, greedy opening
+  // still nudges black's pieces sensibly closer together (mild,
+  // believable advantage) without the deep tactical foresight that would
+  // make white want to swap. Only affects that single first move; every
+  // move after it (by either side) uses the real cpuDepth.
+  CPU_FIRST_MOVE_DEPTH: 1,
   TOUCH_LONG_PRESS_MS: 220,   // touch: hold-still time before a drag is "armed" (and page panning gets locked)
   TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
@@ -79,7 +91,7 @@ const Game = {
   lastMove: null,          // { from, to } for highlight
   winner: null,             // 'black' | 'white' | null
   drawOffered: null,        // color that offered a draw, or null
-  endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | null
+  endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | 'mutual-enclosure' | null
   moveLog: [],              // [{ color, from, to }, ...] for the download button
 
   players: {
@@ -899,6 +911,18 @@ function performMove(fromKey, toKey, opts = {}) {
     return;
   }
 
+  // Mutual enclosure: only reachable when "No enclosure" is off (i.e.
+  // enclosing moves are allowed at all — see MoveRules.legalMoveTargets).
+  // A single move can seal both colors' fates at once (e.g. two pieces
+  // each blocking the other's only exit), and neither side can ever undo
+  // that afterwards, so rather than leaving the game stuck, it's a draw.
+  if (!Game.noEnclosure &&
+      MoveRules.hasEnclosedPiece(Game.cells, Game.neighborKeys, "black") &&
+      MoveRules.hasEnclosedPiece(Game.cells, Game.neighborKeys, "white")) {
+    endGameDraw("mutual-enclosure"); // renders the finished board itself
+    return;
+  }
+
   // Advance the turn *before* re-rendering: renderPieces() decides which
   // pieces get drag handlers based on Game.turn, so rendering while it
   // still held the color that just moved left the wrong pieces draggable
@@ -925,11 +949,11 @@ function endGame(winnerColor, reason) {
   scheduleEndedAutoRestart();
 }
 
-function endGameDraw() {
+function endGameDraw(reason = "draw") {
   cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = null;
-  Game.endReason = "draw";
+  Game.endReason = reason;
   Game.lastMove = null;
   updateSetupVisibility();
   renderBoard();
@@ -1091,9 +1115,26 @@ function offerDraw() {
     Game.drawOffered = Game.localColor;
     sendToRemote({ type: "draw-offer" });
     showMessage("Draw offer sent. Waiting for opponent...");
-  } else if (Game.mode === "vscomputer" || Game.mode === "computerself") {
-    return; // draw offers don't apply against/between computer players
+  } else if (Game.mode === "computerself") {
+    return; // no human playing — nothing to offer a draw to
+  } else if (Game.mode === "vscomputer") {
+    // The CPU decides for itself: compare each side's Fitness (the same
+    // MST-based "excess distance still needed to fully connect" measure
+    // used elsewhere — see fitness.js; lower is better). If the CPU's
+    // position is equal to or better than the human's, it still likes
+    // its chances and declines; only a strictly worse position gets it
+    // to accept.
+    const cpuColor = opponentOf(Game.humanColor);
+    const cpuFitness = Fitness.fitness(Game.cells, Game.neighborKeys, cpuColor);
+    const humanFitness = Fitness.fitness(Game.cells, Game.neighborKeys, Game.humanColor);
+    if (cpuFitness <= humanFitness) {
+      showMessage(`${Game.players[cpuColor].name} declines the draw offer.`);
+    } else {
+      endGameDraw();
+    }
   } else {
+    // local2p: no remote peer to negotiate with over the network, so a
+    // local confirmation stands in for "both players agree".
     if (confirm("Both players agree to a draw?")) {
       endGameDraw();
     }
@@ -1254,7 +1295,15 @@ function scheduleCpuMove() {
     if (Game.phase !== "playing" || Game.turn !== color) return;
     if (Game.players[color] && Game.players[color].isLocal) return;
 
-    const maxDepth = Number(dom.cpuDepthRange.value);
+    // See CONFIG.CPU_FIRST_MOVE_DEPTH: only the very first move of the
+    // game, and only when it's the CPU making it as black — either the
+    // human chose white in vscomputer, or it's computerself (no human at
+    // all, but black still moves first) — gets this cap. Every other CPU
+    // move, in every mode, searches at the configured cpuDepth as usual.
+    const isCpuOpeningMoveAsBlack =
+      color === "black" && Game.moveLog.length === 0 &&
+      ((Game.mode === "vscomputer" && Game.humanColor === "white") || Game.mode === "computerself");
+    const maxDepth = isCpuOpeningMoveAsBlack ? CONFIG.CPU_FIRST_MOVE_DEPTH : Number(dom.cpuDepthRange.value);
     const maxTimeSeconds = Number(dom.cpuTimeRange.value);
     const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color, enclosureAllowed: !Game.noEnclosure };
 
@@ -1312,7 +1361,7 @@ function updateSetupVisibility() {
 function updateButtonsForPhase() {
   const playing = Game.phase === "playing";
   dom.swapColorBtn.disabled = !(playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally());
-  dom.offerDrawBtn.disabled = !playing || Game.mode === "vscomputer" || Game.mode === "computerself";
+  dom.offerDrawBtn.disabled = !playing || Game.mode === "computerself" || !isMyTurnLocally();
   dom.resignBtn.disabled = !playing || Game.mode === "computerself";
 }
 

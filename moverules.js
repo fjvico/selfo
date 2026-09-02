@@ -191,6 +191,46 @@ const MoveRules = (() => {
     return false;
   }
 
+  /** True if the CURRENT board (no hypothetical move — this checks the
+   *  position as it actually stands, after a move has already been
+   *  applied) has at least one `wallColor`-opponent piece cut off from
+   *  the rest of the board by `wallColor`'s pieces. Same underlying idea
+   *  as wouldIsolateOpponentPiece's region-fragmentation check, but
+   *  static: partition every cell that isn't `wallColor` (empty cells +
+   *  the opponent's pieces) into its connected components; if that splits
+   *  into more than one piece and at least one of them still holds an
+   *  opponent piece, that piece is presently enclosed.
+   *
+   *  Used for the "mutual enclosure" draw rule (see performMove): when
+   *  "No enclosure" is off, a single move can leave BOTH colors with a
+   *  piece enclosed by the other at once (e.g. two pieces sealing each
+   *  other's only exits shut in the same move) — neither side can ever
+   *  undo that, so the game is a draw rather than staying stuck. */
+  function hasEnclosedPiece(cells, neighborKeys, wallColor) {
+    const trappedColor = opponentOf(wallColor);
+    const nonWallKeys = [];
+    for (const [k, cell] of cells) if (cell.color !== wallColor) nonWallKeys.push(k);
+    if (nonWallKeys.length === 0) return false;
+
+    const unclassified = new Set(nonWallKeys);
+    let componentCount = 0;
+    let trappedComponentCount = 0;
+    while (unclassified.size > 0) {
+      const seed = unclassified.values().next().value;
+      const reached = floodFillKeys(neighborKeys, seed, (k) => cells.get(k).color !== wallColor);
+      let hasTrapped = false;
+      for (const k of [...unclassified]) {
+        if (reached.has(k)) {
+          unclassified.delete(k);
+          if (cells.get(k).color === trappedColor) hasTrapped = true;
+        }
+      }
+      componentCount++;
+      if (hasTrapped) trappedComponentCount++;
+    }
+    return componentCount > 1 && trappedComponentCount > 0;
+  }
+
   return {
     opponentOf,
     floodFillKeys,
@@ -198,5 +238,6 @@ const MoveRules = (() => {
     wouldFullyConnectOwnColor,
     legalMoveTargets,
     hasAnyLegalMove,
+    hasEnclosedPiece,
   };
 })();
