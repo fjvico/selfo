@@ -133,13 +133,14 @@
         </div>
       </div>
 
-      <!-- enclosure rule toggle: whether a move that would trap an
-           opponent piece (see legalMoveTargets in script.js) is offered
-           at all. Off by default. -->
-      <div class="setup-block" id="enclosureBlock">
-        <label class="setup-check" for="allowEnclosureCheckbox">
-          <input type="checkbox" id="allowEnclosureCheckbox" autocomplete="off" />
-          Allow enclosure
+      <!-- "No enclosure" rule toggle: checking it blocks any move that
+           would trap an opponent piece (see MoveRules.legalMoveTargets),
+           except a move that also wins the game outright. Checked by
+           default. -->
+      <div class="setup-block" id="noEnclosureBlock">
+        <label class="setup-check" for="noEnclosureCheckbox" title="Enemy pieces can't be enclosed, except by a move that wins the game outright.">
+          <input type="checkbox" id="noEnclosureCheckbox" autocomplete="off" />
+          No enclosure
         </label>
       </div>
 

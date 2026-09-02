@@ -21,16 +21,18 @@
  * New optional features follow this same shape — add an entry here
  * rather than hardcoding a control's presence or default elsewhere.
  *
- * allow_enclosure: whether a move that would trap an opponent piece
- * (see wouldIsolateOpponentPiece / legalMoveTargets in script.js) is
- * offered as legal at all.
- *   default_value true  -> enclosure IS allowed (the no-enclosure move
- *                          restriction starts OFF).
- *                 false -> enclosure is NOT allowed (the restriction
- *                          starts ON, trapping moves are hidden/blocked).
- * 
- *   allow_enclosure: [false, false] = don't show box, don't allow enclosure
+ * no_enclosure: whether a move that would trap an opponent piece (see
+ * MoveRules.wouldIsolateOpponentPiece / legalMoveTargets in
+ * moverules.js) is blocked, shown in the UI as the "No enclosure"
+ * checkbox — checking it turns trapping moves OFF.
+ *   default_value true  -> "No enclosure" starts CHECKED: enclosure is
+ *                          NOT allowed, trapping moves are hidden/blocked
+ *                          (except a move that also wins the game
+ *                          outright, which is never blocked by this —
+ *                          see wouldFullyConnectOwnColor).
+ *                 false -> "No enclosure" starts UNCHECKED: enclosure IS
+ *                          allowed, trapping moves are offered normally.
  */
 const FeatureConfig = {
-  allow_enclosure: [true,false],
+  no_enclosure: [true, true],
 };

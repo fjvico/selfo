@@ -45,9 +45,9 @@ const CONFIG = {
   // Whether a move that would trap an opponent piece — directly boxing it
   // in, or sealing it inside a pocket of empty cells and/or other
   // same-color pieces with no way out — is offered as a legal
-  // destination at all is governed by FeatureConfig.allow_enclosure (see
+  // destination at all is governed by FeatureConfig.no_enclosure (see
   // config.js), not by a constant here: it controls both whether the
-  // "Allow enclosure" setup control is shown and what it defaults to.
+  // "No enclosure" setup control is shown and what it defaults to.
   ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
   BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
@@ -68,7 +68,7 @@ const Game = {
 
   radius: CONFIG.DEFAULT_RADIUS,
   piecesPerColor: 0,
-  allowEnclosure: FeatureConfig.allow_enclosure[1], // "Allow enclosure" setup toggle — see legalMoveTargets
+  noEnclosure: FeatureConfig.no_enclosure[1], // "No enclosure" setup toggle (checked = enclosure blocked) — see MoveRules.legalMoveTargets
 
   cells: new Map(),      // key "q,r" -> { q, r, color: null|'black'|'white' }
   neighborKeys: new Map(),// key -> array of neighbor keys that exist on board
@@ -237,8 +237,8 @@ const dom = {
   modeSelectBlock: document.getElementById("modeSelectBlock"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
 
-  allowEnclosureCheckbox: document.getElementById("allowEnclosureCheckbox"),
-  enclosureBlock: document.getElementById("enclosureBlock"),
+  noEnclosureCheckbox: document.getElementById("noEnclosureCheckbox"),
+  noEnclosureBlock: document.getElementById("noEnclosureBlock"),
 
   onlineBlock: document.getElementById("onlineBlock"),
   createGameBtn: document.getElementById("createGameBtn"),
@@ -420,9 +420,9 @@ function pieceRangeForRadius(radius) {
  * board's radius (radius 4 -> at most 4 same-color pieces already
  * touching each other) — see placeColorWithGroupLimit.
  *
- * `enclosureAllowed` mirrors the "Allow enclosure" setup toggle (see
- * FeatureConfig.allow_enclosure in config.js for what it governs). When
- * it's off, a random-but-valid layout on a small, densely-packed board
+ * `enclosureAllowed` is the inverse of the "No enclosure" setup toggle
+ * (see FeatureConfig.no_enclosure in config.js — callers pass
+ * `!Game.noEnclosure`). When enclosure is NOT allowed, a random-but-valid layout on a small, densely-packed board
  * can still leave black (who always moves first) with zero legal moves —
  * every empty cell it could step into would trap some white piece. Such
  * a layout is unplayable, so the whole placement is retried (both colors,
@@ -624,7 +624,7 @@ function renderPieces(positions) {
 function applyHighlights() {
   const polys = dom.boardSvg.querySelectorAll(".hex-cell");
   const selected = Game.selectedKey;
-  const targets = selected ? MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, selected, Game.allowEnclosure) : [];
+  const targets = selected ? MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, selected, !Game.noEnclosure) : [];
 
   polys.forEach((poly) => {
     const k = poly.dataset.key;
@@ -668,7 +668,7 @@ function onCellClick(key) {
     return;
   }
 
-  const targets = MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, Game.selectedKey, Game.allowEnclosure);
+  const targets = MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, Game.selectedKey, !Game.noEnclosure);
   if (targets.includes(key)) {
     performMove(Game.selectedKey, key);
     return;
@@ -803,7 +803,7 @@ function beginDrag(ev, key, circle) {
     const p = svgUserPoint(svg, up.clientX, up.clientY);
     const axial = HexGeometry.pixelToAxial(p.x, p.y, CONFIG.CELL_SIZE);
     const targetKey = HexGeometry.key(axial.q, axial.r);
-    const targets = Game.neighborKeys.get(key) ? MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, key, Game.allowEnclosure) : [];
+    const targets = Game.neighborKeys.get(key) ? MoveRules.legalMoveTargets(Game.cells, Game.neighborKeys, key, !Game.noEnclosure) : [];
 
     if (targets.includes(targetKey)) {
       performMove(key, targetKey);
@@ -1256,7 +1256,7 @@ function scheduleCpuMove() {
 
     const maxDepth = Number(dom.cpuDepthRange.value);
     const maxTimeSeconds = Number(dom.cpuTimeRange.value);
-    const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color, enclosureAllowed: Game.allowEnclosure };
+    const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color, enclosureAllowed: !Game.noEnclosure };
 
     cpuRequestId += 1;
     const req = { requestId: cpuRequestId, color, state, options: { maxDepth, maxTimeSeconds } };
@@ -1304,7 +1304,7 @@ function updateSetupVisibility() {
   // just inert
   dom.radiusRange.disabled = guestOnline;
   dom.piecesRange.disabled = guestOnline;
-  dom.allowEnclosureCheckbox.disabled = guestOnline;
+  dom.noEnclosureCheckbox.disabled = guestOnline;
 
   updateButtonsForPhase();
 }
@@ -1492,9 +1492,9 @@ dom.piecesRange.addEventListener("change", () => {
   }
 });
 
-// "Allow enclosure" defines the board's rules the same way radius/pieces
+// "No enclosure" defines the board's rules the same way radius/pieces
 // do, so it follows the same live-preview / confirm-on-change pattern.
-dom.allowEnclosureCheckbox.addEventListener("change", () => {
+dom.noEnclosureCheckbox.addEventListener("change", () => {
   if (Game.phase !== "playing") {
     beginSetupPreview();
     return;
@@ -1502,7 +1502,7 @@ dom.allowEnclosureCheckbox.addEventListener("change", () => {
   if (confirmSettingChange()) {
     beginSetupPreview();
   } else {
-    dom.allowEnclosureCheckbox.checked = Game.allowEnclosure;
+    dom.noEnclosureCheckbox.checked = Game.noEnclosure;
   }
 });
 
@@ -1614,8 +1614,8 @@ function beginSetupPreview() {
   Game.setupReady = false;
   Game.radius = Number(dom.radiusRange.value);
   Game.piecesPerColor = Number(dom.piecesRange.value);
-  Game.allowEnclosure = dom.allowEnclosureCheckbox.checked;
-  const built = buildBoard(Game.radius, Game.piecesPerColor, Game.allowEnclosure);
+  Game.noEnclosure = dom.noEnclosureCheckbox.checked;
+  const built = buildBoard(Game.radius, Game.piecesPerColor, !Game.noEnclosure);
   Game.cells = built.cells;
   Game.neighborKeys = built.neighborKeys;
   Game.turn = "black";
@@ -2189,22 +2189,22 @@ dom.downloadBtn.addEventListener("click", () => {
 // of them clicking through the setup panel. Supported parameters (all
 // optional, all safe to combine, unknown/invalid values are ignored):
 //
-//   mode      local2p | online2p | vscomputer | computerself
-//   radius    2-5 (board radius)
-//   pieces    integer, clamped to whatever's valid for the radius
-//   enclosure true | false — the "Allow enclosure" toggle (see
-//             FeatureConfig.allow_enclosure in config.js); ignored if
-//             that config flag hides the toggle from the UI, since the
-//             value is fixed for the whole session in that case
-//   color     black | white — which color the human plays in vscomputer
-//   cpuTime   1-30 — CPU max think time, in seconds
-//   cpuDepth  1-5  — CPU max search depth
-//   name      up to 18 chars — pre-fills your own name (same slot the
-//             editable name label writes to)
-//   join      an online2p room code — connects directly (see below),
-//             and implies mode=online2p regardless of any other mode=…
+//   mode        local2p | online2p | vscomputer | computerself
+//   radius      2-5 (board radius)
+//   pieces      integer, clamped to whatever's valid for the radius
+//   noEnclosure true | false — the "No enclosure" toggle (see
+//               FeatureConfig.no_enclosure in config.js); ignored if
+//               that config flag hides the toggle from the UI, since the
+//               value is fixed for the whole session in that case
+//   color       black | white — which color the human plays in vscomputer
+//   cpuTime     1-30 — CPU max think time, in seconds
+//   cpuDepth    1-5  — CPU max search depth
+//   name        up to 18 chars — pre-fills your own name (same slot the
+//               editable name label writes to)
+//   join        an online2p room code — connects directly (see below),
+//               and implies mode=online2p regardless of any other mode=…
 //
-// Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4&enclosure=false
+// Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4&noEnclosure=true
 //
 // This is also how "Copy link" builds its URL for non-online modes (see
 // buildSetupUrl()) — the round trip is: configure the panel, copy the
@@ -2234,14 +2234,14 @@ function applyUrlConfig() {
     dom.piecesValue.textContent = `${clamped} (${min}-${max})`;
   }
 
-  // Only honored when the "Allow enclosure" control is actually shown —
-  // if FeatureConfig.allow_enclosure locks it out of the UI, the value is
+  // Only honored when the "No enclosure" control is actually shown — if
+  // FeatureConfig.no_enclosure locks it out of the UI, the value is
   // fixed for the whole session and a URL shouldn't be able to override
   // that any more than clicking the (absent) checkbox could.
-  const enclosureParam = params.get("enclosure");
-  if (FeatureConfig.allow_enclosure[0] && (enclosureParam === "true" || enclosureParam === "false")) {
-    Game.allowEnclosure = enclosureParam === "true";
-    dom.allowEnclosureCheckbox.checked = Game.allowEnclosure;
+  const noEnclosureParam = params.get("noEnclosure");
+  if (FeatureConfig.no_enclosure[0] && (noEnclosureParam === "true" || noEnclosureParam === "false")) {
+    Game.noEnclosure = noEnclosureParam === "true";
+    dom.noEnclosureCheckbox.checked = Game.noEnclosure;
   }
 
   const color = params.get("color");
@@ -2285,7 +2285,7 @@ function buildSetupUrl() {
   url.searchParams.set("mode", Game.mode);
   url.searchParams.set("radius", String(Game.radius));
   url.searchParams.set("pieces", String(Game.piecesPerColor));
-  url.searchParams.set("enclosure", String(Game.allowEnclosure));
+  url.searchParams.set("noEnclosure", String(Game.noEnclosure));
   if (Game.mode === "vscomputer") {
     url.searchParams.set("color", Game.humanColor);
     url.searchParams.set("cpuTime", dom.cpuTimeRange.value);
@@ -2334,10 +2334,10 @@ function resetAllRangeInputs() {
   dom.radiusValue.textContent = String(Game.radius);
   refreshPieceRangeUI(); // also forces piecesRange's value + label together, from Game.radius
 
-  const [showAllowEnclosure, allowEnclosureDefault] = FeatureConfig.allow_enclosure;
-  dom.enclosureBlock.hidden = !showAllowEnclosure;
-  Game.allowEnclosure = allowEnclosureDefault;
-  dom.allowEnclosureCheckbox.checked = Game.allowEnclosure;
+  const [showNoEnclosure, noEnclosureDefault] = FeatureConfig.no_enclosure;
+  dom.noEnclosureBlock.hidden = !showNoEnclosure;
+  Game.noEnclosure = noEnclosureDefault;
+  dom.noEnclosureCheckbox.checked = Game.noEnclosure;
 
   dom.cpuTimeRange.value = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
   dom.cpuTimeValue.textContent = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);

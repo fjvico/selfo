@@ -9,17 +9,17 @@
  * tested, benchmarked, or swapped independently. It does depend on
  * MoveRules (moverules.js) for move legality — see the importScripts
  * call just below — so the CPU always agrees with the human UI on what
- * counts as a legal move, in particular the "Allow enclosure" rule (see
- * FeatureConfig.allow_enclosure in config.js): a computer vs computer (or
+ * counts as a legal move, in particular the "No enclosure" rule (see
+ * FeatureConfig.no_enclosure in config.js): a computer vs computer (or
  * vs computer) game respects it exactly the same way a human player's
  * moves do, since both paths call MoveRules.legalMoveTargets.
  *
  * State shape expected by every strategy:
  *   {
- *     cells:           Map<string, { q, r, color: 'black'|'white'|null }>,
- *     neighborKeys:    Map<string, string[]>,
- *     color:           'black' | 'white'   // the color the AI is playing
- *     enclosureAllowed: boolean            // mirrors the "Allow enclosure" toggle
+ *     cells:            Map<string, { q, r, color: 'black'|'white'|null }>,
+ *     neighborKeys:     Map<string, string[]>,
+ *     color:            'black' | 'white'   // the color the AI is playing
+ *     enclosureAllowed: boolean             // !Game.noEnclosure — see moverules.js
  *   }
  *
  * Options shape (all optional, strategies may ignore fields they don't use):
@@ -72,7 +72,7 @@ const AiStrategies = (() => {
    *  script.js — this function is the single place that would need to
    *  grow to support them), filtered through MoveRules.legalMoveTargets
    *  so the CPU never considers a move a human wouldn't be offered
-   *  either (see the "Allow enclosure" toggle). */
+   *  either (see the "No enclosure" toggle). */
   function getLegalMoves(cells, neighborKeys, color, enclosureAllowed) {
     const moves = [];
     for (const [k, cell] of cells) {

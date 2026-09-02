@@ -3,8 +3,8 @@
 /**
  * MoveRules
  * ---------
- * Shared "is this move legal" logic — specifically the "Allow enclosure"
- * rule (see FeatureConfig.allow_enclosure in config.js): whether a move
+ * Shared "is this move legal" logic — specifically the "No enclosure"
+ * rule (see FeatureConfig.no_enclosure in config.js): whether a move
  * that would trap an opponent piece is offered at all, with the one
  * exception that a move which fully connects the mover's own pieces (an
  * outright win) is never blocked by it.
@@ -78,7 +78,7 @@ const MoveRules = (() => {
    * version of this function had exactly that bug). If the region splits
    * into more than one component and at least one of them still holds an
    * opponent piece, that piece has been cut off from the rest — the move
-   * is disallowed. Gated by the "Allow enclosure" setup toggle — see
+   * is disallowed. Gated by the "No enclosure" setup toggle — see
    * legalMoveTargets.
    */
   function wouldIsolateOpponentPiece(cells, neighborKeys, from, to, moverColor) {
@@ -158,8 +158,9 @@ const MoveRules = (() => {
   /**
    * Empty neighbor cells of `fromKey` that are legal move destinations:
    * always excludes occupied cells. When `enclosureAllowed` is false
-   * (the "Allow enclosure" setup toggle, off by default — see
-   * FeatureConfig.allow_enclosure in config.js), it also excludes any
+   * (i.e. the "No enclosure" setup toggle is checked — on by default,
+   * see FeatureConfig.no_enclosure in config.js; callers pass
+   * `!Game.noEnclosure`), it also excludes any
    * destination that would trap an opponent piece — directly boxed in
    * or sealed inside an enclosed pocket — *unless* that exact move is
    * the one that fully connects the mover's own pieces (see
