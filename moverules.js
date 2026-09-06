@@ -56,6 +56,44 @@ const MoveRules = (() => {
   }
 
   /**
+   * Splits `keys` into its connected components under `include` (only
+   * moving between two keys when `include` is true for the one being
+   * entered), returned as an array of Sets ordered from **largest to
+   * smallest**.
+   *
+   * The size ordering matters to every caller: when some cells end up
+   * cut off from the rest, the largest resulting piece is treated as
+   * "the main, still-open part of the board" and every other (smaller)
+   * piece as a sealed-off pocket. Without singling out one component as
+   * the non-trapped one, a check like "does any component contain an
+   * opponent piece?" is satisfied by the big, perfectly normal main area
+   * too — since it almost always still holds an opponent piece — which
+   * flags the split as an enclosure even when the only thing actually
+   * sealed off was empty space. That was the exact bug in an earlier
+   * version of both wouldIsolateOpponentPiece and hasEnclosedPiece: a
+   * move (or position) that boxed in nothing but empty cells still
+   * counted as trapping a piece, because the untouched main region
+   * "still holding an opponent piece" was wrongly read as evidence of
+   * entrapment instead of being the one region that was never isolated.
+   */
+  function partitionIntoComponents(neighborKeys, keys, include) {
+    const unclassified = new Set(keys);
+    const components = [];
+    while (unclassified.size > 0) {
+      const seed = unclassified.values().next().value;
+      const reached = floodFillKeys(neighborKeys, seed, include);
+      const component = new Set();
+      for (const k of unclassified) {
+        if (reached.has(k)) component.add(k);
+      }
+      for (const k of component) unclassified.delete(k);
+      components.push(component);
+    }
+    components.sort((a, b) => b.size - a.size);
+    return components;
+  }
+
+  /**
    * True if placing a piece of `moverColor` on `to` (vacating `from`)
    * would cut some opponent piece off from part of the board it could
    * currently reach — whether that piece ends up directly boxed in, or
@@ -76,10 +114,14 @@ const MoveRules = (() => {
    * it: if that pick happened to be the very piece getting trapped, it
    * trivially "reaches itself" and the split goes unnoticed — an early
    * version of this function had exactly that bug). If the region splits
-   * into more than one component and at least one of them still holds an
-   * opponent piece, that piece has been cut off from the rest — the move
-   * is disallowed. Gated by the "No enclosure" setup toggle — see
-   * legalMoveTargets.
+   * into more than one component, the largest is treated as the
+   * still-open main area and every other (smaller) component as a
+   * sealed-off pocket — see partitionIntoComponents. If one of those
+   * pockets holds an opponent piece, that piece has been cut off from
+   * the rest — the move is disallowed. A pocket holding nothing but
+   * empty cells does not count: no piece was actually trapped, so there
+   * is nothing here for the "No enclosure" rule to object to. Gated by
+   * the "No enclosure" setup toggle — see legalMoveTargets.
    */
   function wouldIsolateOpponentPiece(cells, neighborKeys, from, to, moverColor) {
     const opponentColor = opponentOf(moverColor);
@@ -101,25 +143,18 @@ const MoveRules = (() => {
     // Partition mustStayConnected into its post-move connected
     // components (roaming freely through any non-moverColor cell while
     // flood-filling, not just members of mustStayConnected, so a detour
-    // through `from` still counts as one path).
-    const unclassified = new Set(mustStayConnected);
-    let componentCount = 0;
-    let opponentComponentCount = 0;
-    while (unclassified.size > 0) {
-      const seed = unclassified.values().next().value;
-      const reached = floodFillKeys(neighborKeys, seed, (k) => postColor(k) !== moverColor);
-      let hasOpponent = false;
-      for (const k of [...unclassified]) {
-        if (reached.has(k)) {
-          unclassified.delete(k);
-          if (preColor(k) === opponentColor) hasOpponent = true;
-        }
-      }
-      componentCount++;
-      if (hasOpponent) opponentComponentCount++;
-    }
+    // through `from` still counts as one path). The largest component is
+    // the main area that stayed open; only opponent pieces in one of the
+    // smaller, actually-sealed-off components count as trapped.
+    const components = partitionIntoComponents(neighborKeys, mustStayConnected, (k) => postColor(k) !== moverColor);
+    if (components.length <= 1) return false;
 
-    return componentCount > 1 && opponentComponentCount > 0;
+    for (let i = 1; i < components.length; i++) {
+      for (const k of components[i]) {
+        if (preColor(k) === opponentColor) return true;
+      }
+    }
+    return false;
   }
 
   /** True if moving `moverColor`'s piece from `from` to `to` would leave
@@ -197,9 +232,17 @@ const MoveRules = (() => {
    *  the rest of the board by `wallColor`'s pieces. Same underlying idea
    *  as wouldIsolateOpponentPiece's region-fragmentation check, but
    *  static: partition every cell that isn't `wallColor` (empty cells +
-   *  the opponent's pieces) into its connected components; if that splits
-   *  into more than one piece and at least one of them still holds an
-   *  opponent piece, that piece is presently enclosed.
+   *  the opponent's pieces) into its connected components — see
+   *  partitionIntoComponents. The largest component is the main, still-
+   *  open part of the board; if any of the *other* (smaller) components
+   *  holds an opponent piece, that piece is presently enclosed. A
+   *  smaller component holding nothing but empty cells does not count —
+   *  boxing in empty space traps no one, so it must not read as an
+   *  enclosure (an earlier version compared "any component has an
+   *  opponent piece" instead of "any non-main component does", which the
+   *  large main area — still holding the opponent's own untouched
+   *  pieces — satisfied on its own, misreading a perfectly ordinary
+   *  position as an enclosure).
    *
    *  Used for the "mutual enclosure" draw rule (see performMove): when
    *  "No enclosure" is off, a single move can leave BOTH colors with a
@@ -212,28 +255,21 @@ const MoveRules = (() => {
     for (const [k, cell] of cells) if (cell.color !== wallColor) nonWallKeys.push(k);
     if (nonWallKeys.length === 0) return false;
 
-    const unclassified = new Set(nonWallKeys);
-    let componentCount = 0;
-    let trappedComponentCount = 0;
-    while (unclassified.size > 0) {
-      const seed = unclassified.values().next().value;
-      const reached = floodFillKeys(neighborKeys, seed, (k) => cells.get(k).color !== wallColor);
-      let hasTrapped = false;
-      for (const k of [...unclassified]) {
-        if (reached.has(k)) {
-          unclassified.delete(k);
-          if (cells.get(k).color === trappedColor) hasTrapped = true;
-        }
+    const components = partitionIntoComponents(neighborKeys, nonWallKeys, (k) => cells.get(k).color !== wallColor);
+    if (components.length <= 1) return false;
+
+    for (let i = 1; i < components.length; i++) {
+      for (const k of components[i]) {
+        if (cells.get(k).color === trappedColor) return true;
       }
-      componentCount++;
-      if (hasTrapped) trappedComponentCount++;
     }
-    return componentCount > 1 && trappedComponentCount > 0;
+    return false;
   }
 
   return {
     opponentOf,
     floodFillKeys,
+    partitionIntoComponents,
     wouldIsolateOpponentPiece,
     wouldFullyConnectOwnColor,
     legalMoveTargets,
