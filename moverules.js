@@ -226,23 +226,44 @@ const MoveRules = (() => {
     return false;
   }
 
+  /**
+   * Keys of every cell presently sealed off from the main open area by
+   * `wallColor`'s pieces *and* holding at least one `wallColor`-opponent
+   * piece somewhere in that same sealed-off pocket — i.e. the full pocket
+   * (pieces and empty cells alike), not just the trapped piece's own
+   * cell, for every pocket that actually traps someone. Pockets holding
+   * nothing but empty cells are not included (see partitionIntoComponents
+   * for why "empty-only" must never count as an enclosure). Returns an
+   * empty Set if nothing is enclosed.
+   *
+   * hasEnclosedPiece is defined in terms of this (see below) so the two
+   * can never disagree about what counts as an enclosure; UI code that
+   * wants to *show* the enclosed area (e.g. tinting those cells at the
+   * end of a mutual-enclosure draw) should call this directly rather
+   * than re-deriving it.
+   */
+  function getEnclosedCells(cells, neighborKeys, wallColor) {
+    const trappedColor = opponentOf(wallColor);
+    const nonWallKeys = [];
+    for (const [k, cell] of cells) if (cell.color !== wallColor) nonWallKeys.push(k);
+    if (nonWallKeys.length === 0) return new Set();
+
+    const components = partitionIntoComponents(neighborKeys, nonWallKeys, (k) => cells.get(k).color !== wallColor);
+    const enclosed = new Set();
+    for (let i = 1; i < components.length; i++) {
+      const hasTrapped = [...components[i]].some((k) => cells.get(k).color === trappedColor);
+      if (hasTrapped) for (const k of components[i]) enclosed.add(k);
+    }
+    return enclosed;
+  }
+
   /** True if the CURRENT board (no hypothetical move — this checks the
    *  position as it actually stands, after a move has already been
    *  applied) has at least one `wallColor`-opponent piece cut off from
    *  the rest of the board by `wallColor`'s pieces. Same underlying idea
    *  as wouldIsolateOpponentPiece's region-fragmentation check, but
-   *  static: partition every cell that isn't `wallColor` (empty cells +
-   *  the opponent's pieces) into its connected components — see
-   *  partitionIntoComponents. The largest component is the main, still-
-   *  open part of the board; if any of the *other* (smaller) components
-   *  holds an opponent piece, that piece is presently enclosed. A
-   *  smaller component holding nothing but empty cells does not count —
-   *  boxing in empty space traps no one, so it must not read as an
-   *  enclosure (an earlier version compared "any component has an
-   *  opponent piece" instead of "any non-main component does", which the
-   *  large main area — still holding the opponent's own untouched
-   *  pieces — satisfied on its own, misreading a perfectly ordinary
-   *  position as an enclosure).
+   *  static — see getEnclosedCells, which this is a thin boolean wrapper
+   *  around so the two can never disagree.
    *
    *  Used for the "mutual enclosure" draw rule (see performMove): when
    *  "No enclosure" is off, a single move can leave BOTH colors with a
@@ -250,20 +271,7 @@ const MoveRules = (() => {
    *  other's only exits shut in the same move) — neither side can ever
    *  undo that, so the game is a draw rather than staying stuck. */
   function hasEnclosedPiece(cells, neighborKeys, wallColor) {
-    const trappedColor = opponentOf(wallColor);
-    const nonWallKeys = [];
-    for (const [k, cell] of cells) if (cell.color !== wallColor) nonWallKeys.push(k);
-    if (nonWallKeys.length === 0) return false;
-
-    const components = partitionIntoComponents(neighborKeys, nonWallKeys, (k) => cells.get(k).color !== wallColor);
-    if (components.length <= 1) return false;
-
-    for (let i = 1; i < components.length; i++) {
-      for (const k of components[i]) {
-        if (cells.get(k).color === trappedColor) return true;
-      }
-    }
-    return false;
+    return getEnclosedCells(cells, neighborKeys, wallColor).size > 0;
   }
 
   return {
@@ -274,6 +282,7 @@ const MoveRules = (() => {
     wouldFullyConnectOwnColor,
     legalMoveTargets,
     hasAnyLegalMove,
+    getEnclosedCells,
     hasEnclosedPiece,
   };
 })();

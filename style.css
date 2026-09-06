@@ -15,6 +15,7 @@
   --cell-fill: #808080;      /* 50% gray */
   --cell-fill-hover: #8f8f8f;
   --cell-edge: #707070;      /* just a touch darker than the fill — barely visible */
+  --enclosed-fill: #e78a91;  /* light red: background tint for cells sealed off in a mutual-enclosure draw — see .hex-cell.enclosed-cell */
 
   /* accent (cool cyan, "energy" glow) */
   --accent: #35e0ff;
@@ -171,8 +172,12 @@ body {
   opacity: 0;
 }
 .board-flash-overlay.flashing {
-  animation: boardEndFlash 1s ease-out;
+  animation: boardEndFlash 2.6s ease-out;
   background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
+}
+.board-flash-overlay.flashing-draw {
+  animation: boardEndFlash 2.6s ease-out;
+  background: radial-gradient(ellipse at center, var(--danger-glow) 0%, transparent 70%);
 }
 .board-flash-overlay.flashing-start {
   animation: boardEndFlash 0.8s ease-out;
@@ -293,6 +298,12 @@ body {
   border-radius: 0;
   font-size: 16px;
   line-height: 1;
+}
+/* Draw badge: red instead of the default accent (blue/cyan), so a draw
+   reads visually distinct from a win at a glance. */
+.player-badge.badge-draw {
+  background: var(--danger);
+  color: #330006;
 }
 
 .btn-stack {
@@ -542,6 +553,13 @@ body {
 .hex-cell.last-move {
   stroke: rgba(255, 208, 96, 0.65);
   stroke-width: 2;
+}
+/* Background-only tint for the end of a mutual-enclosure draw — the
+   piece drawn on top (if any) is a separate SVG element and is never
+   touched by this, only the cell fill underneath it. See
+   Game.enclosedCells / applyHighlights() and endGameDraw(). */
+.hex-cell.enclosed-cell {
+  fill: var(--enclosed-fill);
 }
 
 .piece { cursor: grab; }
