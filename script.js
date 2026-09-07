@@ -60,7 +60,8 @@ const CONFIG = {
   // destination at all is governed by FeatureConfig.no_enclosure (see
   // config.js), not by a constant here: it controls both whether the
   // "No enclosure" setup control is shown and what it defaults to.
-  ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins
+  ENDED_PAUSE_MS: 4500,      // how long the finished board stays on screen before the next game auto-begins — unchanged; only the flash's own visible time (below) got longer
+  END_FLASH_MS: 2600,        // how long the end-of-game color flash itself stays visible — keep well under ENDED_PAUSE_MS, and in sync with .flashing/.flashing-draw's CSS animation-duration
   BOARD_FADE_MS: 450,        // fade-to-black / fade-back-in duration between games — keep in sync with .board-fade-overlay's CSS transition
   GAME_START_GRACE_MS: 3000, // every fresh game waits this long (controls fully live) before it actually becomes playable / the flash fires
 };
@@ -89,6 +90,7 @@ const Game = {
   pieRuleAvailable: false, // true only right before white's first move
   selectedKey: null,
   lastMove: null,          // { from, to } for highlight
+  enclosedCells: null,     // Set of cell keys to tint on a mutual-enclosure draw, or null
   winner: null,             // 'black' | 'white' | null
   drawOffered: null,        // color that offered a draw, or null
   endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | 'mutual-enclosure' | null
@@ -640,7 +642,7 @@ function applyHighlights() {
 
   polys.forEach((poly) => {
     const k = poly.dataset.key;
-    poly.classList.remove("selected", "move-target", "selectable", "last-move");
+    poly.classList.remove("selected", "move-target", "selectable", "last-move", "enclosed-cell");
     const cell = Game.cells.get(k);
 
     if (isInteractivePhase() && isMyTurnLocally()) {
@@ -650,6 +652,12 @@ function applyHighlights() {
     if (k === selected) poly.classList.add("selected");
     if (Game.lastMove && (k === Game.lastMove.from || k === Game.lastMove.to)) {
       poly.classList.add("last-move");
+    }
+    // Background-only tint (the piece drawn on top, if any, is untouched)
+    // marking cells that ended up sealed off from either color on a
+    // mutual-enclosure draw — see endGameDraw.
+    if (Game.enclosedCells && Game.enclosedCells.has(k)) {
+      poly.classList.add("enclosed-cell");
     }
   });
 
@@ -939,11 +947,12 @@ function endGame(winnerColor, reason) {
   Game.winner = winnerColor;
   Game.endReason = reason;
   Game.lastMove = null; // the finished board doesn't need the last-move trail highlighted anymore
+  Game.enclosedCells = null; // only a mutual-enclosure draw ever tints cells — see endGameDraw
   updateSetupVisibility();
   renderBoard();
   updateButtonsForPhase();
   updateStatusUI();
-  flashBoardEnd();
+  flashBoardEnd(false); // blue flash: someone won
   dom.downloadBtn.disabled = false;
   showMessage("");
   scheduleEndedAutoRestart();
@@ -955,11 +964,21 @@ function endGameDraw(reason = "draw") {
   Game.winner = null;
   Game.endReason = reason;
   Game.lastMove = null;
+  // On a mutual-enclosure draw, tint every cell in each color's sealed-off
+  // pocket (pieces and empty cells alike, background only — see
+  // applyHighlights/.hex-cell.enclosed-cell) so it's clear *why* the game
+  // ended this way. A plain offered/accepted draw has nothing to tint.
+  Game.enclosedCells = reason === "mutual-enclosure"
+    ? new Set([
+        ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "black"),
+        ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "white"),
+      ])
+    : null;
   updateSetupVisibility();
   renderBoard();
   updateButtonsForPhase();
   updateStatusUI();
-  flashBoardEnd();
+  flashBoardEnd(true); // red flash: draw
   dom.downloadBtn.disabled = false;
   showMessage("");
   scheduleEndedAutoRestart();
@@ -1022,18 +1041,26 @@ function cancelBoardFade() {
 /** Brief, non-blocking glow across the board to mark that the game just
  *  ended — retriggerable, since the class is removed once the animation
  *  finishes (or after a timeout fallback, in case animationend doesn't
- *  fire for some reason). */
-function flashBoardEnd() {
+ *  fire for some reason). Blue ("flashing") for a win, red
+ *  ("flashing-draw") for a draw, so the color alone hints at what just
+ *  happened before anyone reads the status text. Runs for
+ *  CONFIG.END_FLASH_MS — deliberately much longer than a quick blip so
+ *  there's time to register which one it was, but still well inside
+ *  CONFIG.ENDED_PAUSE_MS (the fixed total time before the next game
+ *  begins), which is untouched by this: only how long the flash itself
+ *  stays visible changed, not the overall pause. */
+function flashBoardEnd(isDraw) {
   const el = dom.boardFlash;
   if (!el) return;
-  el.classList.remove("flashing");
+  const flashClass = isDraw ? "flashing-draw" : "flashing";
+  el.classList.remove("flashing", "flashing-draw");
   // force reflow so re-adding the class restarts the animation even if
   // the previous flash hadn't finished yet
   void el.offsetWidth;
-  el.classList.add("flashing");
-  const clear = () => el.classList.remove("flashing");
+  el.classList.add(flashClass);
+  const clear = () => el.classList.remove(flashClass);
   el.addEventListener("animationend", clear, { once: true });
-  setTimeout(clear, 1200);
+  setTimeout(clear, CONFIG.END_FLASH_MS + 200);
 }
 
 /** Same idea as flashBoardEnd(), but green instead of cyan, and fired the
@@ -1398,6 +1425,8 @@ function updatePlayersUI() {
   dom.playerBadgeWhite.textContent = whiteWon ? "\u{1F3C6}" : isDraw ? "Draw" : "";
   dom.playerBadgeBlack.classList.toggle("badge-icon", blackWon);
   dom.playerBadgeWhite.classList.toggle("badge-icon", whiteWon);
+  dom.playerBadgeBlack.classList.toggle("badge-draw", isDraw);
+  dom.playerBadgeWhite.classList.toggle("badge-draw", isDraw);
   dom.playerBadgeBlack.title = blackWon ? "Winner" : "";
   dom.playerBadgeWhite.title = whiteWon ? "Winner" : "";
 
@@ -1671,6 +1700,7 @@ function beginSetupPreview() {
   Game.pieRuleAvailable = true;
   Game.selectedKey = null;
   Game.lastMove = null;
+  Game.enclosedCells = null;
   Game.winner = null;
   Game.endReason = null;
   Game.drawOffered = null;
@@ -1872,6 +1902,14 @@ function handleRemoteMessage(msg) {
       Game.lastMove = null;
       Game.winner = msg.winner;
       Game.endReason = msg.endReason;
+      // Mirror endGameDraw's tinting so a guest who syncs into an already
+      // mutual-enclosure-drawn game sees the same sealed-off pockets.
+      Game.enclosedCells = msg.endReason === "mutual-enclosure"
+        ? new Set([
+            ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "black"),
+            ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "white"),
+          ])
+        : null;
       // The board radius/pieces bars are always visible and are never
       // ours to control here (we're the guest), but they should still
       // reflect the host's actual values rather than staying stuck at
