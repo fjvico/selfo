@@ -90,7 +90,7 @@ const Game = {
   pieRuleAvailable: false, // true only right before white's first move
   selectedKey: null,
   lastMove: null,          // { from, to } for highlight
-  enclosedCells: null,     // Set of cell keys to tint on a mutual-enclosure draw, or null
+  enclosedCells: null,     // Set of cell keys holding a trapped piece, to mark on a mutual-enclosure draw, or null
   winner: null,             // 'black' | 'white' | null
   drawOffered: null,        // color that offered a draw, or null
   endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | 'mutual-enclosure' | null
@@ -654,8 +654,9 @@ function applyHighlights() {
       poly.classList.add("last-move");
     }
     // Background-only tint (the piece drawn on top, if any, is untouched)
-    // marking cells that ended up sealed off from either color on a
-    // mutual-enclosure draw — see endGameDraw.
+    // marking cells that ended up with a piece trapped in a sealed-off
+    // pocket on a mutual-enclosure draw — see endGameDraw. Empty cells in
+    // the same pocket are never marked.
     if (Game.enclosedCells && Game.enclosedCells.has(k)) {
       poly.classList.add("enclosed-cell");
     }
@@ -958,22 +959,36 @@ function endGame(winnerColor, reason) {
   scheduleEndedAutoRestart();
 }
 
+/** Cell keys holding an actually-trapped piece on a mutual-enclosure draw
+ *  (both colors' sealed-off pockets combined) — never empty cells, even
+ *  if they sit in the same pocket, since there's nothing there to mark.
+ *  Shared by endGameDraw and the online "sync" handler so a guest joining
+ *  an already-drawn game sees exactly the same marks. Returns null for
+ *  any other end reason (nothing to mark). */
+function computeEnclosedPieceCells(cells, neighborKeys, reason) {
+  if (reason !== "mutual-enclosure") return null;
+  const pocketCells = new Set([
+    ...MoveRules.getEnclosedCells(cells, neighborKeys, "black"),
+    ...MoveRules.getEnclosedCells(cells, neighborKeys, "white"),
+  ]);
+  const pieceCells = new Set();
+  for (const k of pocketCells) if (cells.get(k).color) pieceCells.add(k);
+  return pieceCells;
+}
+
 function endGameDraw(reason = "draw") {
   cancelScheduledCpuMove();
   Game.phase = "ended";
   Game.winner = null;
   Game.endReason = reason;
   Game.lastMove = null;
-  // On a mutual-enclosure draw, tint every cell in each color's sealed-off
-  // pocket (pieces and empty cells alike, background only — see
+  // On a mutual-enclosure draw, mark just the trapped pieces themselves
+  // (background tint under the piece, which is never altered — see
   // applyHighlights/.hex-cell.enclosed-cell) so it's clear *why* the game
-  // ended this way. A plain offered/accepted draw has nothing to tint.
-  Game.enclosedCells = reason === "mutual-enclosure"
-    ? new Set([
-        ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "black"),
-        ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "white"),
-      ])
-    : null;
+  // ended this way. Empty cells in the same sealed-off pocket aren't
+  // marked — nothing was actually trapped there. A plain offered/accepted
+  // draw has nothing to mark at all.
+  Game.enclosedCells = computeEnclosedPieceCells(Game.cells, Game.neighborKeys, reason);
   updateSetupVisibility();
   renderBoard();
   updateButtonsForPhase();
@@ -1902,14 +1917,9 @@ function handleRemoteMessage(msg) {
       Game.lastMove = null;
       Game.winner = msg.winner;
       Game.endReason = msg.endReason;
-      // Mirror endGameDraw's tinting so a guest who syncs into an already
-      // mutual-enclosure-drawn game sees the same sealed-off pockets.
-      Game.enclosedCells = msg.endReason === "mutual-enclosure"
-        ? new Set([
-            ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "black"),
-            ...MoveRules.getEnclosedCells(Game.cells, Game.neighborKeys, "white"),
-          ])
-        : null;
+      // Mirror endGameDraw's marking so a guest who syncs into an already
+      // mutual-enclosure-drawn game sees the same trapped pieces.
+      Game.enclosedCells = computeEnclosedPieceCells(Game.cells, Game.neighborKeys, msg.endReason);
       // The board radius/pieces bars are always visible and are never
       // ours to control here (we're the guest), but they should still
       // reflect the host's actual values rather than staying stuck at

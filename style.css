@@ -554,16 +554,18 @@ body {
   stroke: rgba(255, 208, 96, 0.65);
   stroke-width: 2;
 }
-/* Background-only tint for the end of a mutual-enclosure draw — the
-   piece drawn on top (if any) is a separate SVG element and is never
-   touched by this, only the cell fill underneath it. A piece's circle
+/* Background-only tint marking a trapped piece at the end of a
+   mutual-enclosure draw — the piece drawn on top is a separate SVG
+   element and is never touched by this, only the cell fill underneath
+   it. Only applied to cells that actually hold a trapped piece; empty
+   cells in the same sealed-off pocket are left alone. A piece's circle
    covers most of a hex cell, leaving only the corners of the fill
-   visible, so the tint alone was too easy to miss on occupied cells —
-   the stroke makes every sealed-off cell readable at a glance even
-   when a piece sits on top of it. Stays applied for as long as the
-   finished board is on screen (see Game.enclosedCells /
-   applyHighlights() / endGameDraw()) — it isn't tied to the shorter
-   end-of-game flash timing at all. */
+   visible, so the tint alone was too easy to miss — the stroke makes
+   every trapped piece's cell readable at a glance even with the piece
+   sitting on top of it. Stays applied for as long as the finished board
+   is on screen (see Game.enclosedCells / applyHighlights() /
+   endGameDraw()) — it isn't tied to the shorter end-of-game flash timing
+   at all. */
 .hex-cell.enclosed-cell {
   fill: var(--enclosed-fill);
   stroke: var(--danger);
