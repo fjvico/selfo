@@ -53,7 +53,7 @@ const CONFIG = {
   TOUCH_LONG_PRESS_MS: 220,   // touch: hold-still time before a drag is "armed" (and page panning gets locked)
   TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
-  DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
+  DEFAULT_MODE: "vscomputer",   // a mode (and its board preview) is always active — there's no empty/unselected state
   // Whether a move that would trap an opponent piece — directly boxing it
   // in, or sealing it inside a pocket of empty cells and/or other
   // same-color pieces with no way out — is offered as a legal
@@ -1523,7 +1523,10 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactIconLeft.classList.toggle("winner", leftColor === winnerColor);
   dom.compactIconRight.classList.toggle("winner", rightColor === winnerColor);
 
-  dom.compactSwapBtn.hidden = !pieRuleWindow;
+  // visibility (not the [hidden] attribute) so this button keeps its
+  // layout box and the fixed gap on either side of it never changes —
+  // see the .compact-players/.compact-swap-inactive comments in style.css
+  dom.compactSwapBtn.classList.toggle("compact-swap-inactive", !pieRuleWindow);
 }
 
 function updateStatusUI() {

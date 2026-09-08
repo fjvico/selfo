@@ -224,36 +224,36 @@ body {
    the options panel's players box + button stack (see index.html's
    #compactPlayers and updateCompactBar() in script.js).
    --------------------------------------------------------------- */
-/* Three-column grid, not a centered flex row: the left/right groups
-   (swatch + icon) are pinned to the outer edges of their own 1fr
-   column (via justify-content: flex-start/flex-end below), so they
-   never move when the middle column's content (the swap button)
-   appears, disappears, or changes width — only the empty space
-   between the groups and the middle column grows/shrinks. The
-   padding on the container is the "some separation from the edge"
-   inset the groups sit at, rather than the board's true edge. */
+/* Centered flex row with fixed (not container-width-dependent) gaps
+   between the three groups, so the icons sit close together under
+   the board at the same distance on a wide desktop panel as on a
+   narrow mobile one — rather than the previous 1fr/1fr grid, which
+   pinned them to the *panel's* edges and pulled them far apart on
+   wide screens. The swap button's own box always stays in the flow
+   (see .compact-swap-btn.compact-swap-hidden below) instead of being
+   removed via the [hidden] attribute, so its appearing/disappearing
+   never changes the fixed gap on either side of it. */
 .compact-players {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  justify-content: center;
   width: 100%;
-  padding: 0 28px;
-  gap: 10px;
+  padding: 0 12px;
 }
 .compact-players[hidden] { display: none; }
 .compact-side {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
+  flex-shrink: 0;
 }
-.compact-side-left { justify-content: flex-start; }
-.compact-side-right { justify-content: flex-end; }
 .compact-side-center {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  margin: 0 14px;
 }
 .compact-swatch {
   width: 18px; height: 18px; border-radius: 50%;
@@ -284,26 +284,40 @@ body {
   color: var(--accent);
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
-/* Winner indicator: a fixed "halo" left on the winning side's swatch
-   and icon once the game ends, until the next game starts (see
-   Game.winner reset in newGame()/beginSetupPreview()) — no trophy or
-   other icon, just this glow, slightly stronger than the turn
-   indicator so a finished game still reads differently from a live
-   one. */
+/* Winner indicator: a blinking halo on the winning side's swatch, and
+   a little celebratory bounce on its icon, both looping until the
+   next game starts (see Game.winner reset in beginSetupPreview()) —
+   no trophy or other icon, just this animated glow/motion. Kept as
+   two separate keyframe sets (glow vs. transform) so they can run at
+   different speeds without interfering with each other. */
 .compact-swatch.winner {
-  border-color: var(--accent);
-  box-shadow: 0 0 12px 2px var(--accent-glow);
+  animation: compact-winner-halo 1.4s ease-in-out infinite;
 }
 .compact-mode-icon.winner {
   color: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
+  animation: compact-winner-bounce 1.4s ease-in-out infinite;
+}
+@keyframes compact-winner-halo {
+  0%, 100% { border-color: var(--accent-dim); box-shadow: 0 0 6px 1px var(--accent-glow); }
+  50% { border-color: var(--accent); box-shadow: 0 0 16px 4px var(--accent-glow); }
+}
+@keyframes compact-winner-bounce {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 4px var(--accent-glow)); }
+  50% { transform: translateY(-3px); filter: drop-shadow(0 0 9px var(--accent-glow)); }
 }
 .compact-swap-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.compact-swap-btn[hidden] { display: none; }
+/* Replaces the [hidden] attribute for this one button: visibility
+   (not display) so the button keeps its layout box — see the comment
+   on .compact-players above for why that matters — while still being
+   untabbable/unclickable when the pie-rule window isn't open. */
+.compact-swap-btn.compact-swap-inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* ---------------------------------------------------------------
    Options panel
