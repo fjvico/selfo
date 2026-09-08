@@ -36,8 +36,8 @@ const CONFIG = {
   MAX_RADIUS: 5,
   DEFAULT_RADIUS: 2,
   CELL_SIZE: 30, // px, constant regardless of board radius
-  DEFAULT_CPU_TIME_SECONDS: 5,
-  DEFAULT_CPU_DEPTH: 2,
+  DEFAULT_CPU_TIME_SECONDS: 30,
+  DEFAULT_CPU_DEPTH: 5,
   // Black moves first, so whenever the CPU is the one making that first
   // move — vscomputer with the human playing white, or computerself
   // (no human at all) — it's capped at this depth instead of the
@@ -78,6 +78,7 @@ const Game = {
   phase: "setup", // 'setup' | 'playing' | 'ended' — see file header for the flow
   setupReady: false, // 'setup' only becomes interactive once this flips true, after the start-grace wait
   mode: CONFIG.DEFAULT_MODE, // 'local2p' | 'online2p' | 'vscomputer' | 'computerself' — always set
+  showAdvanced: false, // ?showAdvanced=true — see applyUrlConfig(); gates board params, "No enclosure", and the CPU search settings
 
   radius: CONFIG.DEFAULT_RADIUS,
   piecesPerColor: 0,
@@ -101,7 +102,7 @@ const Game = {
     white: { name: "Player 2", isLocal: true },
   },
   localColor: null, // in online mode, which color this browser controls
-  humanColor: "black", // in vscomputer mode, which color the human plays
+  humanColor: "white", // in vscomputer mode, which color the human plays
   localNames: { black: null, white: null }, // set by editing a name label directly; null means "use the default" for that slot
 
   // online play
@@ -220,15 +221,14 @@ ModeIcons.renderAll();
 // DOM references
 // ---------------------------------------------------------------------
 const dom = {
-  gameIdValue: document.getElementById("gameIdValue"),
-  copyLinkBtn: document.getElementById("copyLinkBtn"),
+  layout: document.querySelector(".layout"),
+  panelSetup: document.querySelector(".panel-setup"),
   shareLinkBtn: document.getElementById("shareLinkBtn"),
   shareMenu: document.getElementById("shareMenu"),
   shareMenuEmail: document.getElementById("shareMenuEmail"),
   shareMenuWhatsApp: document.getElementById("shareMenuWhatsApp"),
   shareMenuTelegram: document.getElementById("shareMenuTelegram"),
   shareMenuCopy: document.getElementById("shareMenuCopy"),
-  turnIndicator: document.getElementById("turnIndicator"),
 
   playerNameBlack: document.getElementById("playerNameBlack"),
   playerNameWhite: document.getElementById("playerNameWhite"),
@@ -249,6 +249,8 @@ const dom = {
   boardSvg: document.getElementById("boardSvg"),
 
   modeSelectBlock: document.getElementById("modeSelectBlock"),
+  modeMenuToggle: document.getElementById("modeMenuToggle"),
+  modeMenu: document.getElementById("modeMenu"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
 
   noEnclosureCheckbox: document.getElementById("noEnclosureCheckbox"),
@@ -1385,10 +1387,9 @@ function updateSetupVisibility() {
   const isCpuMode = Game.mode === "vscomputer" || Game.mode === "computerself";
   const guestOnline = Game.mode === "online2p" && !Game.isHost;
 
-  dom.onlineBlock.hidden = Game.mode !== "online2p";
-  dom.colorChoiceBlock.hidden = Game.mode !== "vscomputer";
-  dom.cpuParamsBlock.hidden = !isCpuMode;
-  dom.copyLinkBtn.title = Game.mode === "online2p" ? "Copy invite link" : "Copy a link that opens with this setup";
+  dom.onlineBlock.hidden = !(Game.mode === "online2p" && Game.showAdvanced);
+  dom.colorChoiceBlock.hidden = !(Game.mode === "vscomputer" && Game.showAdvanced);
+  dom.cpuParamsBlock.hidden = !(isCpuMode && Game.showAdvanced);
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
   // a guest doesn't control the host's board — visible (fixed position),
@@ -1397,7 +1398,27 @@ function updateSetupVisibility() {
   dom.piecesRange.disabled = guestOnline;
   dom.noEnclosureCheckbox.disabled = guestOnline;
 
+  updateSetupPanelVisibility();
   updateButtonsForPhase();
+}
+
+/** The left setup panel now only ever holds mode-dependent blocks
+ *  (connection, CPU search settings, color choice) plus the
+ *  board-radius/pieces/no-enclosure controls, which are themselves only
+ *  shown behind ?showAdvanced=true (see applyUrlConfig). Mode selection
+ *  itself lives in the top bar now, not in this panel — so in the default
+ *  minimalist setup (local2p, no advanced flag) every block in here is
+ *  hidden and the panel would just be dead empty space. Hide the whole
+ *  panel in that case, and collapse the layout grid to match (see
+ *  .layout.no-setup-panel), rather than reserving a column for nothing. */
+function updateSetupPanelVisibility() {
+  const anyVisible = !dom.boardParamsBlock.hidden
+    || !dom.noEnclosureBlock.hidden
+    || !dom.onlineBlock.hidden
+    || !dom.cpuParamsBlock.hidden
+    || !dom.colorChoiceBlock.hidden;
+  dom.panelSetup.hidden = !anyVisible;
+  dom.layout.classList.toggle("no-setup-panel", !anyVisible);
 }
 
 function updateButtonsForPhase() {
@@ -1408,17 +1429,6 @@ function updateButtonsForPhase() {
 }
 
 function updateStatusUI() {
-  const ind = dom.turnIndicator;
-  ind.classList.remove("turn-black", "turn-white", "turn-over");
-  if (Game.phase === "setup" || Game.phase === "playing") {
-    ind.hidden = false;
-    const name = Game.players[Game.turn].name;
-    ind.textContent = `${name.toUpperCase()} TO MOVE (${Game.turn.toUpperCase()})`;
-    ind.classList.add(Game.turn === "black" ? "turn-black" : "turn-white");
-  } else {
-    ind.hidden = true;
-    ind.textContent = "";
-  }
   updatePlayersUI();
   updateButtonsForPhase();
 }
@@ -1611,8 +1621,45 @@ dom.cpuDepthRange.addEventListener("input", () => {
 dom.modeButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     if (btn.disabled) return;
-    selectMode(btn.dataset.mode);
+    const mode = btn.dataset.mode;
+    selectMode(mode);
+    closeModeMenu();
+    // Minimalist flow (no ?showAdvanced=true): there's no Connection
+    // panel to click "Create game" in, so picking "Play online" jumps
+    // straight to opening a room and sharing its invite link. Skipped
+    // if selectMode() didn't actually land on online2p (e.g. the user
+    // cancelled an in-progress-game confirmation) or if it kept an
+    // existing connection alive (re-picking online2p while already
+    // connected — see the keepOnlineConnection case in selectMode()).
+    if (mode === "online2p" && !Game.showAdvanced && Game.mode === "online2p" && !Game.conn) {
+      createOnlineGame();
+    }
   });
+});
+
+/** Mode dropdown: a single "four squares" icon toggles a vertical menu of
+ *  the four (icon-only, hover-for-title) mode buttons — same open/close
+ *  pattern as the share menu above (outside click / Escape / picking an
+ *  option all close it). */
+function openModeMenu() {
+  dom.modeMenu.hidden = false;
+  dom.modeMenuToggle.setAttribute("aria-expanded", "true");
+}
+function closeModeMenu() {
+  dom.modeMenu.hidden = true;
+  dom.modeMenuToggle.setAttribute("aria-expanded", "false");
+}
+dom.modeMenuToggle.addEventListener("click", () => {
+  if (dom.modeMenu.hidden) openModeMenu();
+  else closeModeMenu();
+});
+document.addEventListener("click", (ev) => {
+  if (dom.modeMenu.hidden) return;
+  if (dom.modeMenu.contains(ev.target) || dom.modeMenuToggle.contains(ev.target)) return;
+  closeModeMenu();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.modeMenu.hidden) closeModeMenu();
 });
 
 /** Switches to (or restarts) a mode: abandons any game in progress (with
@@ -1648,8 +1695,6 @@ function selectMode(mode) {
   Game.mode = mode;
   Game.isHost = mode === "online2p" ? true : Game.isHost; // default assumption until join overrides
   Game.gameId = null;
-  dom.gameIdValue.textContent = "\u2014";
-  dom.copyLinkBtn.disabled = true;
   dom.shareLinkBtn.disabled = true;
   dom.onlineStatus.textContent = "";
   dom.onlineStatus.className = "online-status";
@@ -1725,8 +1770,6 @@ function beginSetupPreview() {
   assignPreviewPlayers();
   syncColorButtonsSelection();
 
-  dom.gameIdValue.textContent = Game.gameId || "\u2014";
-  dom.copyLinkBtn.disabled = !Game.gameId;
   dom.shareLinkBtn.disabled = !Game.gameId;
   dom.downloadBtn.disabled = true;
 
@@ -1759,7 +1802,7 @@ function assignPreviewPlayers() {
       Game.players.white = { name: "Waiting\u2026", isLocal: false };
     }
   } else if (Game.mode === "vscomputer") {
-    const human = Game.humanColor || "black";
+    const human = Game.humanColor || "white";
     const cpu = opponentOf(human);
     Game.players[human] = { name: Game.localNames[human] || "You", isLocal: true };
     Game.players[cpu] = { name: "AI", isLocal: false };
@@ -2036,7 +2079,13 @@ function updateOnlineButtonsState() {
   dom.joinCodeSubmit.disabled = busy;
 }
 
-dom.createGameBtn.addEventListener("click", () => {
+/** Opens a fresh hosted room: tears down any previous connection, assigns
+ *  the local player black/host, and opens a PeerJS room under a random
+ *  code. Used by the "Create game" button (shown only behind
+ *  ?showAdvanced=true) and, directly, by the minimalist "Play online"
+ *  mode button — see the modeButtons click handler below, which skips
+ *  the Connection panel entirely and calls this straight away. */
+function createOnlineGame() {
   if (!confirmSettingChange()) return;
   teardownOnline();
   Game.isHost = true;
@@ -2049,11 +2098,13 @@ dom.createGameBtn.addEventListener("click", () => {
 
   Game.peer = new Peer(id);
   Game.peer.on("open", () => {
-    dom.gameIdValue.textContent = Game.gameId;
-    dom.copyLinkBtn.disabled = false;
     dom.shareLinkBtn.disabled = false;
     dom.onlineStatus.textContent = `Room open. Share code ${Game.gameId} with your opponent.`;
     dom.onlineStatus.className = "online-status ok";
+    // Minimalist flow (no ?showAdvanced=true): there's no Connection
+    // panel to show the room code in, so hand the invite straight to
+    // the share sheet/menu instead of leaving the player stranded.
+    if (!Game.showAdvanced) dom.shareLinkBtn.click();
   });
   Game.peer.on("connection", (conn) => {
     // A new connection always takes over from whatever was here before —
@@ -2076,7 +2127,9 @@ dom.createGameBtn.addEventListener("click", () => {
 
   dom.joinCodeWrap.hidden = true;
   updatePlayersUI();
-});
+}
+
+dom.createGameBtn.addEventListener("click", createOnlineGame);
 
 dom.joinGameBtn.addEventListener("click", () => {
   dom.joinCodeWrap.hidden = false;
@@ -2097,7 +2150,6 @@ function connectToRoom(code) {
   Game.localColor = "white";
   Game.gameId = code;
   beginSetupPreview(); // a local placeholder, replaced the moment the host's "sync" message arrives
-  dom.gameIdValue.textContent = code;
 
   dom.onlineStatus.textContent = "Connecting...";
   dom.onlineStatus.className = "online-status";
@@ -2153,14 +2205,6 @@ function copyTextToClipboard(text) {
     }
   });
 }
-
-dom.copyLinkBtn.addEventListener("click", () => {
-  const url = currentShareUrl();
-  copyTextToClipboard(url).then(
-    () => showMessage("Link copied to clipboard."),
-    () => showMessage(`Link: ${url}`)
-  );
-});
 
 dom.shareLinkBtn.addEventListener("click", async () => {
   const url = currentShareUrl();
@@ -2311,6 +2355,20 @@ dom.downloadBtn.addEventListener("click", () => {
 function applyUrlConfig() {
   const params = new URLSearchParams(location.search);
 
+  // Minimalist default UI: the board-radius/pieces-per-player sliders and
+  // the "No enclosure" checkbox are hidden unless the page is opened with
+  // ?showAdvanced=true. They're still fully configurable via their own
+  // URL params either way (see below and buildSetupUrl()) — this flag
+  // only controls whether their *controls* are shown, for anyone who
+  // wants to tweak them by hand rather than via a pre-built link.
+  const showAdvanced = params.get("showAdvanced") === "true";
+  Game.showAdvanced = showAdvanced;
+  dom.boardParamsBlock.hidden = !showAdvanced;
+  // "No enclosure" has its own separate lock (FeatureConfig.no_enclosure's
+  // show_in_ui) — both that AND showAdvanced must allow it for the
+  // control to actually appear.
+  dom.noEnclosureBlock.hidden = !showAdvanced || !FeatureConfig.no_enclosure[0];
+
   const mode = params.get("mode");
   if (["local2p", "online2p", "vscomputer", "computerself"].includes(mode)) {
     Game.mode = mode;
@@ -2431,8 +2489,11 @@ function resetAllRangeInputs() {
   dom.radiusValue.textContent = String(Game.radius);
   refreshPieceRangeUI(); // also forces piecesRange's value + label together, from Game.radius
 
-  const [showNoEnclosure, noEnclosureDefault] = FeatureConfig.no_enclosure;
-  dom.noEnclosureBlock.hidden = !showNoEnclosure;
+  const [, noEnclosureDefault] = FeatureConfig.no_enclosure;
+  // Visibility of this block is decided in applyUrlConfig() (which runs
+  // right after this), combining FeatureConfig.no_enclosure's show_in_ui
+  // with the ?showAdvanced URL flag — not repeated here to avoid the two
+  // ever disagreeing.
   Game.noEnclosure = noEnclosureDefault;
   dom.noEnclosureCheckbox.checked = Game.noEnclosure;
 

@@ -104,32 +104,6 @@ body {
   gap: 8px;
   font-size: 13px;
 }
-.game-id-value {
-  font-family: "Courier New", monospace;
-  background: #0e1114;
-  border: 1px solid var(--metal-line);
-  border-radius: 6px;
-  padding: 4px 10px;
-  color: var(--accent);
-  min-width: 64px;
-  text-align: center;
-  letter-spacing: 1px;
-}
-
-.status-wrap { min-width: 160px; text-align: right; }
-.turn-indicator {
-  font-family: var(--font-display), sans-serif;
-  font-size: 13px;
-  letter-spacing: 1px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  border: 1px solid var(--metal-line);
-  background: #14171a;
-  color: var(--metal-mid);
-}
-.turn-indicator.turn-black { color: var(--metal-light); border-color: var(--metal-mid); }
-.turn-indicator.turn-white { color: #fff; border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow) inset; }
-.turn-indicator.turn-over { color: var(--danger); border-color: var(--danger); }
 
 /* ---------------------------------------------------------------
    Layout: options | board | setup  (desktop = row)
@@ -140,6 +114,14 @@ body {
   grid-template-columns: 280px 1fr 250px;
   gap: 14px;
   padding: 14px;
+}
+/* Mode selection lives in the top bar now, so in the default minimalist
+   setup (local2p, no ?showAdvanced=true) the left setup panel has nothing
+   left to show at all — see updateSetupPanelVisibility() in script.js,
+   which hides the panel and adds this class together, so the grid
+   doesn't keep reserving a column for empty space. */
+.layout.no-setup-panel {
+  grid-template-columns: 1fr 250px;
 }
 
 .panel {
@@ -320,7 +302,10 @@ body {
   line-height: 1.4;
 }
 
-.support-link:hover {
+/* Shared "halo" hover glow — originally only on the support link, now
+   also used by the mode-menu toggle and the share button (see index.html)
+   so all three read as the same family of icon actions in the top bar. */
+.icon-halo:hover {
   color: var(--accent);
   border-color: var(--accent-dim);
   box-shadow: 0 0 10px var(--accent-glow);
@@ -462,6 +447,26 @@ body {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
+/* Mode selector: a single toggle button opens this vertical dropdown of
+   icon-only mode buttons (title shown as a native tooltip on hover, same
+   as before — this only changes the container layout, .mode-btn itself
+   is untouched since .color-btn below shares that same base class). */
+.mode-menu-wrap { position: relative; display: inline-block; }
+.mode-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+  border: 1px solid var(--metal-line);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+  z-index: 20;
+}
+.mode-menu[hidden] { display: none; }
 .mode-btn {
   font-family: var(--font-body), sans-serif;
   font-size: 12px;
@@ -650,7 +655,6 @@ body {
   .topbar-left { gap: 10px; flex-wrap: wrap; row-gap: 6px; }
   .game-id-wrap { gap: 6px; }
   .chip-btn { padding: 4px 7px; font-size: 9px; letter-spacing: 0.5px; }
-  .status-wrap { text-align: left; min-width: 0; }
 
   .layout {
     grid-template-columns: 1fr;

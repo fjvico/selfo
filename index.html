@@ -36,10 +36,32 @@
         <span class="brand-text">SELF<span class="brand-accent">O</span></span>
       </div>
       <div class="game-id-wrap">
-        <span id="gameIdValue" class="game-id-value">&mdash;</span>
-        <button id="copyLinkBtn" class="chip-btn" disabled title="Copy invite link">LINK</button>
+        <div class="mode-menu-wrap">
+          <button id="modeMenuToggle" class="chip-btn icon-btn icon-halo" title="Mode" aria-label="Mode" aria-haspopup="true" aria-expanded="false">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </button>
+          <div class="mode-menu" id="modeMenu" hidden>
+            <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
+              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+            </button>
+            <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
+              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+            </button>
+            <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
+              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+            </button>
+            <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
+              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+            </button>
+          </div>
+        </div>
         <div class="share-wrap">
-          <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup" aria-label="Share this setup">
+          <button id="shareLinkBtn" class="chip-btn icon-btn icon-halo" disabled title="Share this setup" aria-label="Share this setup">
             <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
               <circle cx="18" cy="5" r="2.6"/>
               <circle cx="6" cy="12" r="2.6"/>
@@ -81,15 +103,12 @@
             </button>
           </div>
         </div>
-        <a id="supportLink" class="chip-btn icon-btn support-link" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
+        <a id="supportLink" class="chip-btn icon-btn icon-halo" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
           <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
             <path d="M12 20.5s-7.3-4.4-9.6-8.9C.9 8.3 2.2 4.9 5.4 4.2 7.7 3.7 10 4.7 12 7.1c2-2.4 4.3-3.4 6.6-2.9 3.2.7 4.5 4.1 2.9 7.4-2.2 4.5-9.5 8.9-9.5 8.9z"/>
           </svg>
         </a>
       </div>
-    </div>
-    <div class="status-wrap">
-      <span id="turnIndicator" class="turn-indicator"></span>
     </div>
   </header>
 
@@ -101,8 +120,11 @@
     <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup">
 
-      <!-- board parameters: always visible, always first, fixed position -->
-      <div class="setup-block" id="boardParamsBlock">
+      <!-- board parameters: hidden unless ?showAdvanced=true is present in
+           the URL (see applyUrlConfig in script.js) — kept out of the
+           minimalist default UI, but still fully configurable via URL
+           params for anyone who links directly to a specific setup. -->
+      <div class="setup-block" id="boardParamsBlock" hidden>
         <label class="setup-label" for="radiusRange">
           Board radius <span class="value-pill" id="radiusValue">2</span>
         </label>
@@ -114,30 +136,16 @@
         <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
       </div>
 
-      <!-- mode selection: always visible -->
-      <div class="setup-block" id="modeSelectBlock">
-        <label class="setup-label">Mode</label>
-        <div class="mode-grid">
-          <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-          <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-          <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-          <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
-            <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-          </button>
-        </div>
-      </div>
+      <!-- mode selection now lives in the top bar (see #modeMenuToggle /
+           #modeMenu) — nothing left to render here for it. -->
 
       <!-- "No enclosure" rule toggle: checking it blocks any move that
            would trap an opponent piece (see MoveRules.legalMoveTargets),
            except a move that also wins the game outright. Checked by
-           default. -->
-      <div class="setup-block" id="noEnclosureBlock">
+           default. Hidden unless ?showAdvanced=true is present in the URL
+           (and only ever shown at all when FeatureConfig.no_enclosure's
+           show_in_ui is true — see applyUrlConfig in script.js). -->
+      <div class="setup-block" id="noEnclosureBlock" hidden>
         <label class="setup-check" for="noEnclosureCheckbox" title="Enemy pieces can't be enclosed, except by a move that wins the game outright.">
           <input type="checkbox" id="noEnclosureCheckbox" autocomplete="off" />
           No enclosure
@@ -164,22 +172,22 @@
       <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>
         <legend>Computer</legend>
         <label class="setup-label" for="cpuTimeRange">
-          Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
+          Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
         </label>
-        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" autocomplete="off" />
+        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
 
         <label class="setup-label" for="cpuDepthRange">
-          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
+          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
         </label>
-        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="2" class="range-input" autocomplete="off" />
+        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
       </fieldset>
 
       <!-- color choice (vs computer only) — last, so it's the final choice before play -->
       <div class="setup-block" id="colorChoiceBlock" hidden>
         <label class="setup-label">Play as</label>
         <div class="mode-grid">
-          <button class="mode-btn color-btn selected" data-color="black">Black<br /><small>moves first</small></button>
-          <button class="mode-btn color-btn" data-color="white">White<br /><small>pie rule</small></button>
+          <button class="mode-btn color-btn" data-color="black">Black<br /><small>moves first</small></button>
+          <button class="mode-btn color-btn selected" data-color="white">White<br /><small>pie rule</small></button>
         </div>
       </div>
     </section>
@@ -223,7 +231,7 @@
         <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
       </div>
 
-      <div id="messageBox" class="message-box" aria-live="polite"></div>
+      <div id="messageBox" class="message-box" aria-live="polite" hidden></div>
     </section>
 
   </main>
