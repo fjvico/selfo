@@ -15,7 +15,6 @@
   --cell-fill: #808080;      /* 50% gray */
   --cell-fill-hover: #8f8f8f;
   --cell-edge: #707070;      /* just a touch darker than the fill — barely visible */
-  --enclosed-fill: #e0636e;  /* light red: background tint for cells sealed off in a mutual-enclosure draw — see .hex-cell.enclosed-cell */
 
   /* accent (cool cyan, "energy" glow) */
   --accent: #35e0ff;
@@ -104,6 +103,20 @@ body {
   gap: 8px;
   font-size: 13px;
 }
+.status-wrap { min-width: 160px; text-align: right; }
+.turn-indicator {
+  font-family: var(--font-display), sans-serif;
+  font-size: 13px;
+  letter-spacing: 1px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--metal-line);
+  background: #14171a;
+  color: var(--metal-mid);
+}
+.turn-indicator.turn-black { color: var(--metal-light); border-color: var(--metal-mid); }
+.turn-indicator.turn-white { color: #fff; border-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow) inset; }
+.turn-indicator.turn-over { color: var(--danger); border-color: var(--danger); }
 
 /* ---------------------------------------------------------------
    Layout: options | board | setup  (desktop = row)
@@ -114,28 +127,6 @@ body {
   grid-template-columns: 280px 1fr 250px;
   gap: 14px;
   padding: 14px;
-}
-/* Mode selection lives in the top bar now, so in the default minimalist
-   setup (local2p, no ?showAdvanced=true) the left setup panel has nothing
-   left to show at all — see updateSetupPanelVisibility() in script.js,
-   which hides the panel and adds this class together, so the grid
-   doesn't keep reserving a column for empty space. */
-.layout.no-setup-panel {
-  grid-template-columns: 1fr 250px;
-}
-/* Minimalist mode (no ?showAdvanced=true) also drops the right-hand
-   options panel entirely (see updateSetupVisibility() in script.js,
-   which toggles .panel-options[hidden] and this class together) — the
-   compact players/swap strip below the board replaces it, so there's no
-   250px column left to reserve either. In practice this always lands
-   together with .no-setup-panel (every setup-panel block is itself
-   showAdvanced-gated), but each combination is covered here in case
-   that ever changes. */
-.layout.no-options-panel {
-  grid-template-columns: 280px 1fr;
-}
-.layout.no-setup-panel.no-options-panel {
-  grid-template-columns: 1fr;
 }
 
 .panel {
@@ -149,10 +140,8 @@ body {
 
 .panel-board {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   padding: 10px;
   position: relative;
 }
@@ -170,12 +159,8 @@ body {
   opacity: 0;
 }
 .board-flash-overlay.flashing {
-  animation: boardEndFlash 2.6s ease-out;
+  animation: boardEndFlash 1s ease-out;
   background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
-}
-.board-flash-overlay.flashing-draw {
-  animation: boardEndFlash 2.6s ease-out;
-  background: radial-gradient(ellipse at center, var(--danger-glow) 0%, transparent 70%);
 }
 .board-flash-overlay.flashing-start {
   animation: boardEndFlash 0.8s ease-out;
@@ -206,11 +191,7 @@ body {
 
 .board-scroll {
   width: 100%;
-  /* flex (not a fixed height:100%) so the compact players/swap strip
-     below it (see .compact-players) still gets room to lay out under
-     ?showAdvanced=false — see .panel-board's column flex-direction. */
-  flex: 1 1 auto;
-  min-height: 0;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -218,92 +199,6 @@ body {
 }
 
 .board-svg { display: block; }
-
-/* ---------------------------------------------------------------
-   Minimalist players/swap strip (no ?showAdvanced=true) — replaces
-   the options panel's players box + button stack (see index.html's
-   #compactPlayers and updateCompactBar() in script.js).
-   --------------------------------------------------------------- */
-/* Three-column grid, not a centered flex row: the left/right groups
-   (swatch + icon) are pinned to the outer edges of their own 1fr
-   column (via justify-content: flex-start/flex-end below), so they
-   never move when the middle column's content (the swap button)
-   appears, disappears, or changes width — only the empty space
-   between the groups and the middle column grows/shrinks. The
-   padding on the container is the "some separation from the edge"
-   inset the groups sit at, rather than the board's true edge. */
-.compact-players {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  width: 100%;
-  padding: 0 28px;
-  gap: 10px;
-}
-.compact-players[hidden] { display: none; }
-.compact-side {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.compact-side-left { justify-content: flex-start; }
-.compact-side-right { justify-content: flex-end; }
-.compact-side-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.compact-swatch {
-  width: 18px; height: 18px; border-radius: 50%;
-  flex-shrink: 0;
-  border: 1px solid var(--metal-line);
-  box-sizing: border-box;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.compact-mode-icon {
-  /* fixed height, auto width — person and tower glyphs have different
-     viewBox aspect ratios (see ModeIcons.buildSideIcon), this keeps
-     both undistorted instead of stretching to a fixed box */
-  height: 22px; width: auto;
-  color: var(--metal-mid);
-  flex-shrink: 0;
-  transition: color 0.2s, filter 0.2s;
-}
-/* Turn indicator: same treatment as .player-row.active-turn in the
-   ?showAdvanced=true players box (blue border/glow) — here applied
-   directly to the swatch (a ring around the circle) and the icon (a
-   matching drop-shadow, since an SVG glyph has no useful border box)
-   of whichever side currently has the move. See updateCompactBar(). */
-.compact-swatch.active-turn {
-  border-color: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-.compact-mode-icon.active-turn {
-  color: var(--accent);
-  filter: drop-shadow(0 0 4px var(--accent-glow));
-}
-/* Winner indicator: a fixed "halo" left on the winning side's swatch
-   and icon once the game ends, until the next game starts (see
-   Game.winner reset in newGame()/beginSetupPreview()) — no trophy or
-   other icon, just this glow, slightly stronger than the turn
-   indicator so a finished game still reads differently from a live
-   one. */
-.compact-swatch.winner {
-  border-color: var(--accent);
-  box-shadow: 0 0 12px 2px var(--accent-glow);
-}
-.compact-mode-icon.winner {
-  color: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
-}
-.compact-swap-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.compact-swap-btn[hidden] { display: none; }
 
 /* ---------------------------------------------------------------
    Options panel
@@ -387,12 +282,6 @@ body {
   font-size: 16px;
   line-height: 1;
 }
-/* Draw badge: red instead of the default accent (blue/cyan), so a draw
-   reads visually distinct from a win at a glance. */
-.player-badge.badge-draw {
-  background: var(--danger);
-  color: #330006;
-}
 
 .btn-stack {
   display: flex;
@@ -408,14 +297,10 @@ body {
   line-height: 1.4;
 }
 
-/* Shared "halo" hover glow — originally only on the support link, now
-   also used by the mode-menu toggle and the share button (see index.html)
-   so all three read as the same family of icon actions in the top bar. */
-.icon-halo:hover {
-  color: var(--accent);
-  border-color: var(--accent-dim);
-  box-shadow: 0 0 10px var(--accent-glow);
-}
+/* .support-link's hover glow is now just .chip-btn:hover — kept in the
+   shared rule above so all three topbar icons (mode, share, support)
+   highlight identically. */
+
 
 /* ---------------------------------------------------------------
    Buttons
@@ -469,7 +354,12 @@ body {
   color: var(--metal-mid);
   cursor: pointer;
 }
-.chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+.chip-btn:hover:not(:disabled),
+.chip-btn.active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
 .chip-btn.icon-btn {
   display: inline-flex;
   align-items: center;
@@ -493,7 +383,7 @@ body {
 .share-menu {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -524,6 +414,18 @@ body {
 }
 .share-menu-item:hover { background: rgba(53, 224, 255, 0.1); color: var(--accent); }
 
+.mode-menu { width: 88px; min-width: 0; padding: 8px; }
+.mode-menu .mode-grid { grid-template-columns: 1fr; gap: 6px; }
+.mode-menu .mode-btn {
+  width: 100%;
+  height: 46px;
+  padding: 0 10px;
+  flex-direction: row;
+  justify-content: center;
+  border-color: #4a5158;
+}
+.mode-menu .mode-icon { max-width: 100%; }
+
 /* ---------------------------------------------------------------
    Setup panel
    --------------------------------------------------------------- */
@@ -553,26 +455,6 @@ body {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
-/* Mode selector: a single toggle button opens this vertical dropdown of
-   icon-only mode buttons (title shown as a native tooltip on hover, same
-   as before — this only changes the container layout, .mode-btn itself
-   is untouched since .color-btn below shares that same base class). */
-.mode-menu-wrap { position: relative; display: inline-block; }
-.mode-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
-  border: 1px solid var(--metal-line);
-  border-radius: 10px;
-  padding: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.55);
-  z-index: 20;
-}
-.mode-menu[hidden] { display: none; }
 .mode-btn {
   font-family: var(--font-body), sans-serif;
   font-size: 12px;
@@ -594,25 +476,7 @@ body {
 .mode-btn:hover:not(:disabled) { border-color: var(--accent-dim); box-shadow: 0 0 10px var(--accent-glow); }
 .mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
 .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-.online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
-.join-code-wrap { display: flex; gap: 8px; margin-top: 6px; }
-.join-code-wrap[hidden] { display: none; }
-.online-status { font-size: 12px; color: var(--metal-mid); margin-top: 8px; min-height: 18px; }
-.online-status.ok { color: var(--accent); }
-.online-status.err { color: var(--danger); }
-
-.text-input {
-  flex: 1;
-  background: #0e1114;
-  border: 1px solid var(--metal-line);
-  border-radius: 6px;
-  color: var(--metal-light);
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: "Courier New", monospace;
-}
-.text-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.mode-btn[hidden] { display: none; } /* .mode-btn's own display:flex above would otherwise win over the [hidden] UA default */
 
 .range-input {
   width: 100%;
@@ -664,23 +528,6 @@ body {
 .hex-cell.last-move {
   stroke: rgba(255, 208, 96, 0.65);
   stroke-width: 2;
-}
-/* Background-only tint marking a trapped piece at the end of a
-   mutual-enclosure draw — the piece drawn on top is a separate SVG
-   element and is never touched by this, only the cell fill underneath
-   it. Only applied to cells that actually hold a trapped piece; empty
-   cells in the same sealed-off pocket are left alone. A piece's circle
-   covers most of a hex cell, leaving only the corners of the fill
-   visible, so the tint alone was too easy to miss — the stroke makes
-   every trapped piece's cell readable at a glance even with the piece
-   sitting on top of it. Stays applied for as long as the finished board
-   is on screen (see Game.enclosedCells / applyHighlights() /
-   endGameDraw()) — it isn't tied to the shorter end-of-game flash timing
-   at all. */
-.hex-cell.enclosed-cell {
-  fill: var(--enclosed-fill);
-  stroke: var(--danger);
-  stroke-width: 3;
 }
 
 .piece { cursor: grab; }
@@ -739,18 +586,6 @@ body {
 }
 .onboarding-check input { accent-color: var(--accent); cursor: pointer; }
 
-.setup-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  letter-spacing: 0.5px;
-  color: var(--metal-mid);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.setup-check input { accent-color: var(--accent); cursor: pointer; }
-
 /* ---------------------------------------------------------------
    Responsive: mobile layout — setup on top, board middle, options bottom
    --------------------------------------------------------------- */
@@ -761,22 +596,9 @@ body {
   .topbar-left { gap: 10px; flex-wrap: wrap; row-gap: 6px; }
   .game-id-wrap { gap: 6px; }
   .chip-btn { padding: 4px 7px; font-size: 9px; letter-spacing: 0.5px; }
+  .status-wrap { text-align: left; min-width: 0; }
 
-  .layout,
-  .layout.no-setup-panel,
-  .layout.no-options-panel,
-  .layout.no-setup-panel.no-options-panel {
-    /* Each of these (one or two classes) is more specific than the
-       plain `.layout` rule above and would otherwise keep winning here
-       (desktop's row-of-columns grid), even inside this mobile query,
-       whenever the setup and/or options panel is hidden — which, for
-       the options panel, is every non-?showAdvanced session. Repeating
-       every combination with the same specificity, later in the source,
-       is what actually forces mobile's single-column stack in those
-       (very common) cases. Without this, mobile got squeezed into a
-       multi-column grid wider than the screen — Chrome overflowed it
-       (board visible but other panels shoved off to the side), Firefox
-       collapsed the board's 1fr track to ~0 and showed nothing. */
+  .layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     height: auto;
@@ -788,5 +610,4 @@ body {
   .panel-options { order: 3; }
 
   .panel { max-height: none; }
-
 }

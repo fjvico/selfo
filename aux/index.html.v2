@@ -36,32 +36,34 @@
         <span class="brand-text">SELF<span class="brand-accent">O</span></span>
       </div>
       <div class="game-id-wrap">
-        <div class="mode-menu-wrap">
-          <button id="modeMenuToggle" class="chip-btn icon-btn icon-halo" title="Mode" aria-label="Mode" aria-haspopup="true" aria-expanded="false">
-            <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-              <rect x="3" y="3" width="7" height="7"/>
-              <rect x="14" y="3" width="7" height="7"/>
-              <rect x="3" y="14" width="7" height="7"/>
-              <rect x="14" y="14" width="7" height="7"/>
+        <div class="share-wrap">
+          <button id="modeMenuBtn" class="chip-btn icon-btn" title="Select mode" aria-label="Select mode">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"/>
             </svg>
           </button>
-          <div class="mode-menu" id="modeMenu" hidden>
-            <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
-              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-            </button>
-            <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
-              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-            </button>
-            <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
-              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-            </button>
-            <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
-              <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
-            </button>
+          <div class="share-menu mode-menu" id="modeMenu" hidden>
+            <div class="mode-grid">
+              <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+            </div>
           </div>
         </div>
         <div class="share-wrap">
-          <button id="shareLinkBtn" class="chip-btn icon-btn icon-halo" disabled title="Share this setup" aria-label="Share this setup">
+          <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup" aria-label="Share this setup">
             <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
               <circle cx="18" cy="5" r="2.6"/>
               <circle cx="6" cy="12" r="2.6"/>
@@ -103,12 +105,15 @@
             </button>
           </div>
         </div>
-        <a id="supportLink" class="chip-btn icon-btn icon-halo" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
+        <a id="supportLink" class="chip-btn icon-btn support-link" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
           <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
             <path d="M12 20.5s-7.3-4.4-9.6-8.9C.9 8.3 2.2 4.9 5.4 4.2 7.7 3.7 10 4.7 12 7.1c2-2.4 4.3-3.4 6.6-2.9 3.2.7 4.5 4.1 2.9 7.4-2.2 4.5-9.5 8.9-9.5 8.9z"/>
           </svg>
         </a>
       </div>
+    </div>
+    <div class="status-wrap">
+      <span id="turnIndicator" class="turn-indicator"></span>
     </div>
   </header>
 
@@ -120,15 +125,12 @@
     <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup">
 
-      <!-- board parameters: hidden unless ?showAdvanced=true is present in
-           the URL (see applyUrlConfig in script.js) — kept out of the
-           minimalist default UI, but still fully configurable via URL
-           params for anyone who links directly to a specific setup. -->
-      <div class="setup-block" id="boardParamsBlock" hidden>
+      <!-- board parameters: always visible, always first, fixed position -->
+      <div class="setup-block" id="boardParamsBlock">
         <label class="setup-label" for="radiusRange">
-          Board radius <span class="value-pill" id="radiusValue">2</span>
+          Board radius <span class="value-pill" id="radiusValue">3</span>
         </label>
-        <input type="range" id="radiusRange" min="2" max="5" step="1" value="2" class="range-input" autocomplete="off" />
+        <input type="range" id="radiusRange" min="2" max="6" step="1" value="3" class="range-input" autocomplete="off" />
 
         <label class="setup-label" for="piecesRange">
           Pieces per player <span class="value-pill" id="piecesValue">&mdash;</span>
@@ -136,58 +138,33 @@
         <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
       </div>
 
-      <!-- mode selection now lives in the top bar (see #modeMenuToggle /
-           #modeMenu) — nothing left to render here for it. -->
-
-      <!-- "No enclosure" rule toggle: checking it blocks any move that
-           would trap an opponent piece (see MoveRules.legalMoveTargets),
-           except a move that also wins the game outright. Checked by
-           default. Hidden unless ?showAdvanced=true is present in the URL
-           (and only ever shown at all when FeatureConfig.no_enclosure's
-           show_in_ui is true — see applyUrlConfig in script.js). -->
-      <div class="setup-block" id="noEnclosureBlock" hidden>
-        <label class="setup-check" for="noEnclosureCheckbox" title="Enemy pieces can't be enclosed, except by a move that wins the game outright.">
-          <input type="checkbox" id="noEnclosureCheckbox" autocomplete="off" />
-          No enclosure
-        </label>
-      </div>
+      <!-- mode selection now lives in the topbar dropdown (#modeMenu) -->
 
       <!-- below here: whatever applies to the current mode -->
 
-      <!-- online connection block (create / join) -->
-      <div class="setup-block" id="onlineBlock" hidden>
-        <label class="setup-label">Connection</label>
-        <div class="online-choice">
-          <button id="createGameBtn" class="btn btn-metal-sm">Create game</button>
-          <button id="joinGameBtn" class="btn btn-metal-sm">Join game</button>
-        </div>
-        <div id="joinCodeWrap" class="join-code-wrap" hidden>
-          <input id="joinCodeInput" class="text-input" placeholder="Enter game code" autocomplete="off" />
-          <button id="joinCodeSubmit" class="btn btn-metal-sm">Connect</button>
-        </div>
-        <div id="onlineStatus" class="online-status"></div>
-      </div>
+      <!-- online2p now hosts a room and opens Share automatically (see
+           hostOnlineGame() in script.js) — no create/join UI needed here -->
 
       <!-- CPU search parameters (vs computer / computer vs computer only) -->
       <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>
         <legend>Computer</legend>
         <label class="setup-label" for="cpuTimeRange">
-          Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
+          Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
         </label>
-        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
+        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" autocomplete="off" />
 
         <label class="setup-label" for="cpuDepthRange">
-          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
+          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
         </label>
-        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
+        <input type="range" id="cpuDepthRange" min="1" max="12" step="1" value="2" class="range-input" autocomplete="off" />
       </fieldset>
 
       <!-- color choice (vs computer only) — last, so it's the final choice before play -->
       <div class="setup-block" id="colorChoiceBlock" hidden>
         <label class="setup-label">Play as</label>
         <div class="mode-grid">
-          <button class="mode-btn color-btn" data-color="black">Black<br /><small>moves first</small></button>
-          <button class="mode-btn color-btn selected" data-color="white">White<br /><small>pie rule</small></button>
+          <button class="mode-btn color-btn selected" data-color="black">Black<br /><small>moves first</small></button>
+          <button class="mode-btn color-btn" data-color="white">White<br /><small>pie rule</small></button>
         </div>
       </div>
     </section>
@@ -199,32 +176,6 @@
       </div>
       <div id="boardFlash" class="board-flash-overlay" aria-hidden="true"></div>
       <div id="boardFadeOverlay" class="board-fade-overlay" aria-hidden="true"></div>
-
-      <!-- Minimalist (non-?showAdvanced) stand-in for the players box +
-           button stack: just the two piece colors, the mode's own icon
-           split in half beside each, and (only right before white's
-           first move — the pie-rule window) a swap control. No names, no
-           edit pencil, no draw/resign/download — see updateCompactBar()
-           in script.js, which is what actually shows/hides this. -->
-      <div id="compactPlayers" class="compact-players" hidden>
-        <div class="compact-side compact-side-left">
-          <span id="compactSwatchLeft" class="compact-swatch"></span>
-          <svg id="compactIconLeft" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
-        </div>
-        <div class="compact-side-center">
-          <button id="compactSwapBtn" class="btn btn-metal-sm compact-swap-btn" type="button" hidden title="Swap colors">
-            <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-              <path d="M7 7h12M15.5 3l3.5 4-3.5 4"/>
-              <path d="M17 17H5M8.5 21 5 17l3.5-4"/>
-            </svg>
-            <span>Swap colors</span>
-          </button>
-        </div>
-        <div class="compact-side compact-side-right">
-          <svg id="compactIconRight" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
-          <span id="compactSwatchRight" class="compact-swatch"></span>
-        </div>
-      </div>
     </section>
 
     <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
@@ -257,7 +208,7 @@
         <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
       </div>
 
-      <div id="messageBox" class="message-box" aria-live="polite" hidden></div>
+      <div id="messageBox" class="message-box" aria-live="polite"></div>
     </section>
 
   </main>
@@ -277,13 +228,23 @@
     </div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- GENERIC INFO POPUP (e.g. "this game link isn't active")      -->
+  <!-- ============================================================ -->
+  <div id="infoOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2 id="infoOverlayTitle"></h2>
+      <p id="infoOverlayText"></p>
+      <button id="infoOverlayCloseBtn" class="btn btn-metal-accent">OK</button>
+    </div>
+  </div>
+
   <!-- peerjs cdn: only needed for online mode, loaded lazily -->
-  <script src="config.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="turn-config.js"></script>
   <script src="hexgeometry.js"></script>
   <script src="fitness.js"></script>
   <script src="boardinit.js"></script>
-  <script src="moverules.js"></script>
   <script src="aistrategies.js"></script>
   <script src="script.js"></script>
 </body>

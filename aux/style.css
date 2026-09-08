@@ -224,43 +224,18 @@ body {
    the options panel's players box + button stack (see index.html's
    #compactPlayers and updateCompactBar() in script.js).
    --------------------------------------------------------------- */
-/* Three-column grid, not a centered flex row: the left/right groups
-   (swatch + icon) are pinned to the outer edges of their own 1fr
-   column (via justify-content: flex-start/flex-end below), so they
-   never move when the middle column's content (the swap button)
-   appears, disappears, or changes width — only the empty space
-   between the groups and the middle column grows/shrinks. The
-   padding on the container is the "some separation from the edge"
-   inset the groups sit at, rather than the board's true edge. */
 .compact-players {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  width: 100%;
-  padding: 0 28px;
-  gap: 10px;
-}
-.compact-players[hidden] { display: none; }
-.compact-side {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.compact-side-left { justify-content: flex-start; }
-.compact-side-right { justify-content: flex-end; }
-.compact-side-center {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
 }
+.compact-players[hidden] { display: none; }
 .compact-swatch {
   width: 18px; height: 18px; border-radius: 50%;
   flex-shrink: 0;
   border: 1px solid var(--metal-line);
-  box-sizing: border-box;
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
 .compact-mode-icon {
   /* fixed height, auto width — person and tower glyphs have different
@@ -269,34 +244,6 @@ body {
   height: 22px; width: auto;
   color: var(--metal-mid);
   flex-shrink: 0;
-  transition: color 0.2s, filter 0.2s;
-}
-/* Turn indicator: same treatment as .player-row.active-turn in the
-   ?showAdvanced=true players box (blue border/glow) — here applied
-   directly to the swatch (a ring around the circle) and the icon (a
-   matching drop-shadow, since an SVG glyph has no useful border box)
-   of whichever side currently has the move. See updateCompactBar(). */
-.compact-swatch.active-turn {
-  border-color: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-.compact-mode-icon.active-turn {
-  color: var(--accent);
-  filter: drop-shadow(0 0 4px var(--accent-glow));
-}
-/* Winner indicator: a fixed "halo" left on the winning side's swatch
-   and icon once the game ends, until the next game starts (see
-   Game.winner reset in newGame()/beginSetupPreview()) — no trophy or
-   other icon, just this glow, slightly stronger than the turn
-   indicator so a finished game still reads differently from a live
-   one. */
-.compact-swatch.winner {
-  border-color: var(--accent);
-  box-shadow: 0 0 12px 2px var(--accent-glow);
-}
-.compact-mode-icon.winner {
-  color: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 .compact-swap-btn {
   display: inline-flex;
