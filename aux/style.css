@@ -224,18 +224,43 @@ body {
    the options panel's players box + button stack (see index.html's
    #compactPlayers and updateCompactBar() in script.js).
    --------------------------------------------------------------- */
+/* Centered flex row with fixed (not container-width-dependent) gaps
+   between the three groups, so the icons sit close together under
+   the board at the same distance on a wide desktop panel as on a
+   narrow mobile one — rather than the previous 1fr/1fr grid, which
+   pinned them to the *panel's* edges and pulled them far apart on
+   wide screens. The swap button's own box always stays in the flow
+   (see .compact-swap-btn.compact-swap-hidden below) instead of being
+   removed via the [hidden] attribute, so its appearing/disappearing
+   never changes the fixed gap on either side of it. */
 .compact-players {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  width: 100%;
+  padding: 0 12px;
 }
 .compact-players[hidden] { display: none; }
+.compact-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.compact-side-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0 14px;
+}
 .compact-swatch {
   width: 18px; height: 18px; border-radius: 50%;
   flex-shrink: 0;
   border: 1px solid var(--metal-line);
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 .compact-mode-icon {
   /* fixed height, auto width — person and tower glyphs have different
@@ -244,13 +269,55 @@ body {
   height: 22px; width: auto;
   color: var(--metal-mid);
   flex-shrink: 0;
+  transition: color 0.2s, filter 0.2s;
+}
+/* Turn indicator: same treatment as .player-row.active-turn in the
+   ?showAdvanced=true players box (blue border/glow) — here applied
+   directly to the swatch (a ring around the circle) and the icon (a
+   matching drop-shadow, since an SVG glyph has no useful border box)
+   of whichever side currently has the move. See updateCompactBar(). */
+.compact-swatch.active-turn {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.compact-mode-icon.active-turn {
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+}
+/* Winner indicator: a blinking halo on the winning side's swatch, and
+   a little celebratory bounce on its icon, both looping until the
+   next game starts (see Game.winner reset in beginSetupPreview()) —
+   no trophy or other icon, just this animated glow/motion. Kept as
+   two separate keyframe sets (glow vs. transform) so they can run at
+   different speeds without interfering with each other. */
+.compact-swatch.winner {
+  animation: compact-winner-halo 1.4s ease-in-out infinite;
+}
+.compact-mode-icon.winner {
+  color: var(--accent);
+  animation: compact-winner-bounce 1.4s ease-in-out infinite;
+}
+@keyframes compact-winner-halo {
+  0%, 100% { border-color: var(--accent-dim); box-shadow: 0 0 6px 1px var(--accent-glow); }
+  50% { border-color: var(--accent); box-shadow: 0 0 16px 4px var(--accent-glow); }
+}
+@keyframes compact-winner-bounce {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 4px var(--accent-glow)); }
+  50% { transform: translateY(-3px); filter: drop-shadow(0 0 9px var(--accent-glow)); }
 }
 .compact-swap-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.compact-swap-btn[hidden] { display: none; }
+/* Replaces the [hidden] attribute for this one button: visibility
+   (not display) so the button keeps its layout box — see the comment
+   on .compact-players above for why that matters — while still being
+   untabbable/unclickable when the pie-rule window isn't open. */
+.compact-swap-btn.compact-swap-inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* ---------------------------------------------------------------
    Options panel

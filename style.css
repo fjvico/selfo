@@ -609,6 +609,18 @@ body {
 .mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
 .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* Difficulty picker: reuses .mode-menu/.mode-btn wholesale (same look
+   and feel as the mode dropdown right next to it) — see
+   buildDifficultyMenu() in script.js, which builds one .mode-btn per
+   FeatureConfig.difficulty_levels entry (config.js) and gives it a
+   .difficulty-icon (an ascending-bars glyph built by
+   buildDifficultyIcon()) instead of a .mode-icon. Icon-only, laid out
+   in a row rather than the mode menu's column, since there's no label
+   under each one to stack. */
+.difficulty-menu { flex-direction: row; }
+.difficulty-btn { padding: 10px 12px; }
+.difficulty-icon { height: 16px; width: auto; }
+
 .online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
 .join-code-wrap { display: flex; gap: 8px; margin-top: 6px; }
 .join-code-wrap[hidden] { display: none; }

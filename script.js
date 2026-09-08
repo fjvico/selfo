@@ -282,6 +282,10 @@ const dom = {
   modeMenu: document.getElementById("modeMenu"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
 
+  difficultyMenuToggle: document.getElementById("difficultyMenuToggle"),
+  difficultyMenu: document.getElementById("difficultyMenu"),
+  difficultyButtons: [], // filled by buildDifficultyMenu() below, one per FeatureConfig.difficulty_levels entry
+
   noEnclosureCheckbox: document.getElementById("noEnclosureCheckbox"),
   noEnclosureBlock: document.getElementById("noEnclosureBlock"),
 
@@ -315,6 +319,63 @@ const dom = {
   onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
 };
+
+/** One ascending-bars glyph per difficulty button: `total` bars of
+ *  increasing height, the first `index + 1` filled solid, the rest left
+ *  as outline — i.e. purely "how far along the easy-to-hard row is
+ *  this one", never the level's actual r/f (see FeatureConfig.
+ *  difficulty_levels in config.js, which this deliberately doesn't
+ *  read anything numeric out of into the UI). */
+function buildDifficultyIcon(index, total) {
+  const barWidth = 4;
+  const gap = 3;
+  const minHeight = 6;
+  const maxHeight = 16;
+  const baseline = 19;
+  let markup = "";
+  for (let i = 0; i < total; i++) {
+    const h = total > 1 ? minHeight + (i * (maxHeight - minHeight)) / (total - 1) : maxHeight;
+    const x = i * (barWidth + gap);
+    const y = baseline - h;
+    const filled = i <= index;
+    markup += filled
+      ? `<rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="1" fill="currentColor" stroke="none"/>`
+      : `<rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="1" fill="none" stroke="currentColor"/>`;
+  }
+  const viewBoxWidth = total * barWidth + Math.max(0, total - 1) * gap;
+  return { viewBox: `0 0 ${viewBoxWidth} ${baseline + 1}`, markup };
+}
+
+/** Builds #difficultyMenu's buttons from FeatureConfig.difficulty_levels
+ *  (config.js) — one .mode-btn (same base look as the mode dropdown's
+ *  buttons) per level, in list order, icon-only with the level's label
+ *  as a hover title/aria-label only. Run once at startup; the level
+ *  list is static for the session. */
+function buildDifficultyMenu() {
+  const levels = FeatureConfig.difficulty_levels || [];
+  dom.difficultyMenu.innerHTML = "";
+  dom.difficultyButtons = levels.map((level, index) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mode-btn difficulty-btn";
+    btn.dataset.difficultyIndex = String(index);
+    const title = level.label || `Level ${index + 1}`;
+    btn.title = title;
+    btn.setAttribute("aria-label", `Difficulty: ${title}`);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "icon-wire mode-icon difficulty-icon");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const icon = buildDifficultyIcon(index, levels.length);
+    svg.setAttribute("viewBox", icon.viewBox);
+    svg.innerHTML = icon.markup;
+    btn.appendChild(svg);
+    btn.addEventListener("click", () => selectDifficultyLevel(index));
+    dom.difficultyMenu.appendChild(btn);
+    return btn;
+  });
+}
+buildDifficultyMenu();
 
 // =======================================================================
 // Utility helpers
@@ -1435,7 +1496,9 @@ function updateSetupVisibility() {
   dom.radiusRange.disabled = guestOnline;
   dom.piecesRange.disabled = guestOnline;
   dom.noEnclosureCheckbox.disabled = guestOnline;
+  dom.difficultyMenuToggle.disabled = guestOnline;
 
+  syncDifficultyMenuSelection();
   updateSetupPanelVisibility();
   updateButtonsForPhase();
 }
@@ -1662,6 +1725,47 @@ function confirmSettingChange() {
   return true;
 }
 
+/** Highlights whichever difficulty button's level currently matches the
+ *  board in play (both r and f, exactly) — none if the current
+ *  radius/pieces came from somewhere else (the advanced sliders, a
+ *  ?radius=/?pieces= URL param, an online host's own custom setup...).
+ *  Re-run on every setup-visibility update (see updateSetupVisibility())
+ *  so it can never drift from Game.radius/Game.piecesPerColor. */
+function syncDifficultyMenuSelection() {
+  const levels = FeatureConfig.difficulty_levels || [];
+  dom.difficultyButtons.forEach((btn, index) => {
+    const level = levels[index];
+    const matches = !!level && level.r === Game.radius && level.f === Game.piecesPerColor;
+    btn.classList.toggle("selected", matches);
+  });
+}
+
+/** Applies one FeatureConfig.difficulty_levels entry (config.js) to the
+ *  radius/pieces controls and rebuilds the board from it — the same
+ *  "define the board itself" action as dragging the radius/pieces
+ *  sliders themselves (see confirmSettingChange() above), just picking
+ *  a whole preset pair in one click instead of two independent drags.
+ *  `f` is clamped into whatever pieceRangeForRadius(r) actually allows,
+ *  in case a level in config.js doesn't fit its own radius exactly. */
+function selectDifficultyLevel(index) {
+  const level = (FeatureConfig.difficulty_levels || [])[index];
+  if (!level) return;
+  if (Game.phase === "playing" && !confirmSettingChange()) return;
+
+  dom.radiusRange.value = String(level.r);
+  dom.radiusValue.textContent = String(level.r);
+  const { min, max } = pieceRangeForRadius(level.r);
+  const f = Math.min(max, Math.max(min, level.f));
+  dom.piecesRange.min = String(min);
+  dom.piecesRange.max = String(max);
+  dom.piecesRange.value = String(f);
+  dom.piecesValue.textContent = `${f} (${min}-${max})`;
+
+  beginSetupPreview();
+  closeDifficultyMenu();
+}
+
+
 dom.radiusRange.addEventListener("input", () => {
   // live label/bounds feedback while dragging, even before it's
   // committed (during play, committing only happens on release — see
@@ -1743,6 +1847,7 @@ dom.modeButtons.forEach((btn) => {
  *  pattern as the share menu above (outside click / Escape / picking an
  *  option all close it). */
 function openModeMenu() {
+  closeDifficultyMenu();
   dom.modeMenu.hidden = false;
   dom.modeMenuToggle.setAttribute("aria-expanded", "true");
 }
@@ -1761,6 +1866,31 @@ document.addEventListener("click", (ev) => {
 });
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && !dom.modeMenu.hidden) closeModeMenu();
+});
+
+/** Difficulty dropdown: same toggle/outside-click/Escape pattern as the
+ *  mode dropdown right next to it (see openModeMenu() above) — opening
+ *  one closes the other, so they never sit open side by side. */
+function openDifficultyMenu() {
+  closeModeMenu();
+  dom.difficultyMenu.hidden = false;
+  dom.difficultyMenuToggle.setAttribute("aria-expanded", "true");
+}
+function closeDifficultyMenu() {
+  dom.difficultyMenu.hidden = true;
+  dom.difficultyMenuToggle.setAttribute("aria-expanded", "false");
+}
+dom.difficultyMenuToggle.addEventListener("click", () => {
+  if (dom.difficultyMenu.hidden) openDifficultyMenu();
+  else closeDifficultyMenu();
+});
+document.addEventListener("click", (ev) => {
+  if (dom.difficultyMenu.hidden) return;
+  if (dom.difficultyMenu.contains(ev.target) || dom.difficultyMenuToggle.contains(ev.target)) return;
+  closeDifficultyMenu();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.difficultyMenu.hidden) closeDifficultyMenu();
 });
 
 /** Switches to (or restarts) a mode: abandons any game in progress (with
@@ -2588,10 +2718,22 @@ function boot() {
  * user first touches it. Setting both the DOM value and the label here,
  * together, from the same source, guarantees they start in sync. */
 function resetAllRangeInputs() {
-  Game.radius = CONFIG.DEFAULT_RADIUS;
+  const levels = FeatureConfig.difficulty_levels || [];
+  const defaultLevel = levels[FeatureConfig.DEFAULT_DIFFICULTY_INDEX];
+
+  Game.radius = defaultLevel ? defaultLevel.r : CONFIG.DEFAULT_RADIUS;
   dom.radiusRange.value = String(Game.radius);
   dom.radiusValue.textContent = String(Game.radius);
-  refreshPieceRangeUI(); // also forces piecesRange's value + label together, from Game.radius
+  refreshPieceRangeUI(); // sets pieces to a mid-range value first...
+
+  if (defaultLevel) {
+    // ...then, if a default level is configured, use its own f instead
+    // of that mid-range guess (still clamped to what this radius allows).
+    const { min, max } = pieceRangeForRadius(Game.radius);
+    const f = Math.min(max, Math.max(min, defaultLevel.f));
+    dom.piecesRange.value = String(f);
+    dom.piecesValue.textContent = `${f} (${min}-${max})`;
+  }
 
   const [, noEnclosureDefault] = FeatureConfig.no_enclosure;
   // Visibility of this block is decided in applyUrlConfig() (which runs

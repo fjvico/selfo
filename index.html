@@ -60,6 +60,20 @@
             </button>
           </div>
         </div>
+        <div class="mode-menu-wrap difficulty-menu-wrap">
+          <button id="difficultyMenuToggle" class="chip-btn icon-btn icon-halo" title="Difficulty" aria-label="Difficulty" aria-haspopup="true" aria-expanded="false">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <path d="M4 19a8 8 0 0 1 16 0"/>
+              <path d="M12 19 16.2 9.8"/>
+              <circle cx="12" cy="19" r="1.3" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <!-- Populated by buildDifficultyMenu() in script.js, one button
+               per FeatureConfig.difficulty_levels entry (config.js) — not
+               hardcoded here since the level count/order lives entirely
+               in that config file. -->
+          <div class="mode-menu difficulty-menu" id="difficultyMenu" hidden></div>
+        </div>
         <div class="share-wrap">
           <button id="shareLinkBtn" class="chip-btn icon-btn icon-halo" disabled title="Share this setup" aria-label="Share this setup">
             <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">

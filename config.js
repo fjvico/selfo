@@ -35,4 +35,44 @@
  */
 const FeatureConfig = {
   no_enclosure: [true, false],
+
+  /**
+   * difficulty_levels: presets behind the "Difficulty" picker in the top
+   * bar (the icon between the mode selector and the share button — see
+   * index.html's #difficultyMenuToggle/#difficultyMenu, which are built
+   * from this array by script.js's buildDifficultyMenu(), and applied by
+   * selectDifficultyLevel()). Each entry is a full board definition:
+   *
+   *   { label, r, f }
+   *
+   *   label  used only as the button's tooltip/accessible name — never
+   *          shown as text in the picker itself, and the r/f values
+   *          below are never surfaced to the player anywhere in that
+   *          picker either. Selecting a level tells the player nothing
+   *          about board size or piece count, only its position from
+   *          easiest to hardest (shown purely as an ascending bars icon
+   *          — see buildDifficultyIcon() in script.js).
+   *   r      board radius (must be within CONFIG.MIN_RADIUS/MAX_RADIUS
+   *          in script.js).
+   *   f      pieces per color. Should fit pieceRangeForRadius(r) (see
+   *          script.js) for that same r — a value outside that range is
+   *          silently clamped into it when the level is applied, rather
+   *          than rejected, so keep r/f matched to avoid a level quietly
+   *          not doing what its position in the list implies.
+   *
+   * MUST be listed easiest first, hardest last: the picker renders them
+   * in this exact order with no other cue to their relative difficulty.
+   */
+  difficulty_levels: [
+    { label: "Easy",   r: 2, f: 6 },
+    { label: "Medium", r: 3, f: 10 },
+    { label: "Hard",   r: 4, f: 16 },
+  ],
+
+  // Index into difficulty_levels applied at the start of every fresh
+  // session (see resetAllRangeInputs() in script.js), before the player
+  // has touched the picker — and again after every hard reload, since
+  // the choice isn't remembered between visits. A ?radius=/?pieces= URL
+  // param, if present, still overrides this (see applyUrlConfig()).
+  DEFAULT_DIFFICULTY_INDEX: 0,
 };

@@ -53,7 +53,7 @@ const CONFIG = {
   TOUCH_LONG_PRESS_MS: 220,   // touch: hold-still time before a drag is "armed" (and page panning gets locked)
   TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
   MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
-  DEFAULT_MODE: "local2p",   // a mode (and its board preview) is always active — there's no empty/unselected state
+  DEFAULT_MODE: "vscomputer",   // a mode (and its board preview) is always active — there's no empty/unselected state
   // Whether a move that would trap an opponent piece — directly boxing it
   // in, or sealing it inside a pocket of empty cells and/or other
   // same-color pieces with no way out — is offered as a legal
@@ -1487,12 +1487,46 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactIconRight.setAttribute("viewBox", rightIcon.viewBox);
   dom.compactIconRight.innerHTML = rightIcon.markup;
 
-  // Clicking "Swap colors" swaps which side these two swatches are
-  // drawn on (the icons beside them stay put) — see swapColors().
-  dom.compactSwatchLeft.className = "compact-swatch " + (Game.compactSwapped ? "swatch-white" : "swatch-black");
-  dom.compactSwatchRight.className = "compact-swatch " + (Game.compactSwapped ? "swatch-black" : "swatch-white");
+  // Which color swatch sits on which side. vscomputer's left/right
+  // icons are a fixed person (human) / tower (computer) composition
+  // (see ModeIcons.buildSideIcon), so there the swatch colors must
+  // track who's actually controlling which color right now — i.e.
+  // Game.players[color].isLocal, which the pie-rule swap can change
+  // mid-game (see swapColors()) — rather than the plain left/right
+  // toggle used for local2p/online2p, where neither side has a fixed
+  // human/computer meaning.
+  let leftColor, rightColor;
+  if (Game.mode === "vscomputer") {
+    leftColor = Game.players.black.isLocal ? "black" : "white";
+    rightColor = opponentOf(leftColor);
+  } else {
+    leftColor = Game.compactSwapped ? "white" : "black";
+    rightColor = Game.compactSwapped ? "black" : "white";
+  }
+  dom.compactSwatchLeft.className = "compact-swatch swatch-" + leftColor;
+  dom.compactSwatchRight.className = "compact-swatch swatch-" + rightColor;
 
-  dom.compactSwapBtn.hidden = !pieRuleWindow;
+  // Turn indicator (only while a game is actually being played) and
+  // winner indicator (persists once Game.phase is "ended", cleared
+  // the moment the next game's setup preview resets Game.winner) —
+  // same blue halo treatment as .player-row.active-turn/.winner in
+  // the ?showAdvanced=true players box, applied here to the swatch
+  // and icon directly instead of a whole row.
+  const activeColor = Game.phase === "playing" ? Game.turn : null;
+  const winnerColor = Game.phase === "ended" ? Game.winner : null;
+  dom.compactSwatchLeft.classList.toggle("active-turn", leftColor === activeColor);
+  dom.compactSwatchRight.classList.toggle("active-turn", rightColor === activeColor);
+  dom.compactIconLeft.classList.toggle("active-turn", leftColor === activeColor);
+  dom.compactIconRight.classList.toggle("active-turn", rightColor === activeColor);
+  dom.compactSwatchLeft.classList.toggle("winner", leftColor === winnerColor);
+  dom.compactSwatchRight.classList.toggle("winner", rightColor === winnerColor);
+  dom.compactIconLeft.classList.toggle("winner", leftColor === winnerColor);
+  dom.compactIconRight.classList.toggle("winner", rightColor === winnerColor);
+
+  // visibility (not the [hidden] attribute) so this button keeps its
+  // layout box and the fixed gap on either side of it never changes —
+  // see the .compact-players/.compact-swap-inactive comments in style.css
+  dom.compactSwapBtn.classList.toggle("compact-swap-inactive", !pieRuleWindow);
 }
 
 function updateStatusUI() {
