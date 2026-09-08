@@ -284,7 +284,7 @@ const dom = {
 
   difficultyMenuToggle: document.getElementById("difficultyMenuToggle"),
   difficultyMenu: document.getElementById("difficultyMenu"),
-  difficultyButtons: [], // filled by buildDifficultyMenu() below, one per FeatureConfig.difficulty_levels entry
+  difficultyRange: document.getElementById("difficultyRange"),
 
   noEnclosureCheckbox: document.getElementById("noEnclosureCheckbox"),
   noEnclosureBlock: document.getElementById("noEnclosureBlock"),
@@ -320,62 +320,21 @@ const dom = {
   downloadBtn: document.getElementById("downloadBtn"),
 };
 
-/** One ascending-bars glyph per difficulty button: `total` bars of
- *  increasing height, the first `index + 1` filled solid, the rest left
- *  as outline — i.e. purely "how far along the easy-to-hard row is
- *  this one", never the level's actual r/f (see FeatureConfig.
- *  difficulty_levels in config.js, which this deliberately doesn't
- *  read anything numeric out of into the UI). */
-function buildDifficultyIcon(index, total) {
-  const barWidth = 4;
-  const gap = 3;
-  const minHeight = 6;
-  const maxHeight = 16;
-  const baseline = 19;
-  let markup = "";
-  for (let i = 0; i < total; i++) {
-    const h = total > 1 ? minHeight + (i * (maxHeight - minHeight)) / (total - 1) : maxHeight;
-    const x = i * (barWidth + gap);
-    const y = baseline - h;
-    const filled = i <= index;
-    markup += filled
-      ? `<rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="1" fill="currentColor" stroke="none"/>`
-      : `<rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="1" fill="none" stroke="currentColor"/>`;
-  }
-  const viewBoxWidth = total * barWidth + Math.max(0, total - 1) * gap;
-  return { viewBox: `0 0 ${viewBoxWidth} ${baseline + 1}`, markup };
-}
-
-/** Builds #difficultyMenu's buttons from FeatureConfig.difficulty_levels
- *  (config.js) — one .mode-btn (same base look as the mode dropdown's
- *  buttons) per level, in list order, icon-only with the level's label
- *  as a hover title/aria-label only. Run once at startup; the level
- *  list is static for the session. */
-function buildDifficultyMenu() {
+/** Sets #difficultyRange's min/max/step from FeatureConfig.
+ *  difficulty_levels' length (config.js) — a continuous vertical slider
+ *  from 0 (easiest, bottom) to levels.length - 1 (hardest, top) with
+ *  integer steps, so it works the same whether that list has 2 levels
+ *  or 20 without any other code here needing to change. Run once at
+ *  startup; the level list is static for the session. */
+function initDifficultyControl() {
   const levels = FeatureConfig.difficulty_levels || [];
-  dom.difficultyMenu.innerHTML = "";
-  dom.difficultyButtons = levels.map((level, index) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "mode-btn difficulty-btn";
-    btn.dataset.difficultyIndex = String(index);
-    const title = level.label || `Level ${index + 1}`;
-    btn.title = title;
-    btn.setAttribute("aria-label", `Difficulty: ${title}`);
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("class", "icon-wire mode-icon difficulty-icon");
-    svg.setAttribute("aria-hidden", "true");
-    svg.setAttribute("focusable", "false");
-    const icon = buildDifficultyIcon(index, levels.length);
-    svg.setAttribute("viewBox", icon.viewBox);
-    svg.innerHTML = icon.markup;
-    btn.appendChild(svg);
-    btn.addEventListener("click", () => selectDifficultyLevel(index));
-    dom.difficultyMenu.appendChild(btn);
-    return btn;
-  });
+  const lastIndex = Math.max(0, levels.length - 1);
+  dom.difficultyRange.min = "0";
+  dom.difficultyRange.max = String(lastIndex);
+  dom.difficultyRange.step = "1";
+  dom.difficultyRange.disabled = levels.length <= 1;
 }
-buildDifficultyMenu();
+initDifficultyControl();
 
 // =======================================================================
 // Utility helpers
@@ -1497,6 +1456,7 @@ function updateSetupVisibility() {
   dom.piecesRange.disabled = guestOnline;
   dom.noEnclosureCheckbox.disabled = guestOnline;
   dom.difficultyMenuToggle.disabled = guestOnline;
+  dom.difficultyRange.disabled = guestOnline || (FeatureConfig.difficulty_levels || []).length <= 1;
 
   syncDifficultyMenuSelection();
   updateSetupPanelVisibility();
@@ -1725,32 +1685,30 @@ function confirmSettingChange() {
   return true;
 }
 
-/** Highlights whichever difficulty button's level currently matches the
- *  board in play (both r and f, exactly) — none if the current
- *  radius/pieces came from somewhere else (the advanced sliders, a
- *  ?radius=/?pieces= URL param, an online host's own custom setup...).
- *  Re-run on every setup-visibility update (see updateSetupVisibility())
- *  so it can never drift from Game.radius/Game.piecesPerColor. */
+/** Moves #difficultyRange's thumb to whichever level currently matches
+ *  the board in play (both r and f, exactly) — left untouched if the
+ *  current radius/pieces came from somewhere else (the advanced
+ *  sliders, a ?radius=/?pieces= URL param, an online host's own custom
+ *  setup...), rather than snapping to a wrong "closest" level. Re-run on
+ *  every setup-visibility update (see updateSetupVisibility()) so it
+ *  can never drift from Game.radius/Game.piecesPerColor. */
 function syncDifficultyMenuSelection() {
   const levels = FeatureConfig.difficulty_levels || [];
-  dom.difficultyButtons.forEach((btn, index) => {
-    const level = levels[index];
-    const matches = !!level && level.r === Game.radius && level.f === Game.piecesPerColor;
-    btn.classList.toggle("selected", matches);
-  });
+  const index = levels.findIndex((level) => level.r === Game.radius && level.f === Game.piecesPerColor);
+  if (index >= 0) dom.difficultyRange.value = String(index);
 }
 
 /** Applies one FeatureConfig.difficulty_levels entry (config.js) to the
  *  radius/pieces controls and rebuilds the board from it — the same
  *  "define the board itself" action as dragging the radius/pieces
  *  sliders themselves (see confirmSettingChange() above), just picking
- *  a whole preset pair in one click instead of two independent drags.
- *  `f` is clamped into whatever pieceRangeForRadius(r) actually allows,
- *  in case a level in config.js doesn't fit its own radius exactly. */
-function selectDifficultyLevel(index) {
+ *  a whole preset pair from #difficultyRange in one drag instead of two
+ *  independent ones. `f` is clamped into whatever pieceRangeForRadius(r)
+ *  actually allows, in case a level in config.js doesn't fit its own
+ *  radius exactly. */
+function applyDifficultyLevel(index) {
   const level = (FeatureConfig.difficulty_levels || [])[index];
   if (!level) return;
-  if (Game.phase === "playing" && !confirmSettingChange()) return;
 
   dom.radiusRange.value = String(level.r);
   dom.radiusValue.textContent = String(level.r);
@@ -1762,8 +1720,24 @@ function selectDifficultyLevel(index) {
   dom.piecesValue.textContent = `${f} (${min}-${max})`;
 
   beginSetupPreview();
-  closeDifficultyMenu();
 }
+
+// Same "input" (live, while dragging) / "change" (commit, revert-if-
+// declined mid-game) split as radiusRange/piecesRange just below —
+// dragging #difficultyRange previews levels immediately during setup,
+// and only asks for confirmation (currently always granted, see
+// confirmSettingChange() above) if it's dragged mid-game.
+dom.difficultyRange.addEventListener("input", () => {
+  if (Game.phase !== "playing") applyDifficultyLevel(Number(dom.difficultyRange.value));
+});
+dom.difficultyRange.addEventListener("change", () => {
+  if (Game.phase !== "playing") return; // already applied live by "input" above
+  if (confirmSettingChange()) {
+    applyDifficultyLevel(Number(dom.difficultyRange.value));
+  } else {
+    syncDifficultyMenuSelection(); // snap the thumb back to the actual current level
+  }
+});
 
 
 dom.radiusRange.addEventListener("input", () => {
@@ -2733,6 +2707,7 @@ function resetAllRangeInputs() {
     const f = Math.min(max, Math.max(min, defaultLevel.f));
     dom.piecesRange.value = String(f);
     dom.piecesValue.textContent = `${f} (${min}-${max})`;
+    dom.difficultyRange.value = String(FeatureConfig.DEFAULT_DIFFICULTY_INDEX);
   }
 
   const [, noEnclosureDefault] = FeatureConfig.no_enclosure;

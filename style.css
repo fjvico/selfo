@@ -609,17 +609,32 @@ body {
 .mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
 .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* Difficulty picker: reuses .mode-menu/.mode-btn wholesale (same look
-   and feel as the mode dropdown right next to it) — see
-   buildDifficultyMenu() in script.js, which builds one .mode-btn per
-   FeatureConfig.difficulty_levels entry (config.js) and gives it a
-   .difficulty-icon (an ascending-bars glyph built by
-   buildDifficultyIcon()) instead of a .mode-icon. Icon-only, laid out
-   in a row rather than the mode menu's column, since there's no label
-   under each one to stack. */
-.difficulty-menu { flex-direction: row; }
-.difficulty-btn { padding: 10px 12px; }
-.difficulty-icon { height: 16px; width: auto; }
+/* Difficulty picker: same dropdown chrome as .mode-menu right next to
+   it (reused directly, just column layout + centered content instead
+   of a row of cards), holding one continuous vertical range slider
+   (#difficultyRange, see initDifficultyControl()/applyDifficultyLevel()
+   in script.js) rather than a button per level — so it looks and works
+   the same regardless of how many entries FeatureConfig.difficulty_levels
+   (config.js) ends up with. "Hard"/"Easy" text labels mark the two ends;
+   the actual r/f values behind each step are never shown anywhere here.
+   (.difficulty-range itself is styled further down, right after
+   .range-input, so its overrides of .range-input's width/margin win —
+   see the comment there.) */
+.difficulty-menu {
+  align-items: center;
+  padding: 10px 10px 12px;
+}
+.difficulty-end-icon {
+  color: var(--metal-mid);
+  flex-shrink: 0;
+}
+.difficulty-range-track {
+  width: 28px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
 .join-code-wrap { display: flex; gap: 8px; margin-top: 6px; }
@@ -646,6 +661,19 @@ body {
   margin-bottom: 12px;
   cursor: pointer;
 }
+/* Standard rotated-<input type=range> vertical-slider technique: the
+   input keeps its normal horizontal layout box (100px x its native
+   thickness) in the flow and is only rotated visually, so the
+   flex-centered .difficulty-range-track (above) ends up centering it
+   correctly with no extra offset math. Comes after .range-input, whose
+   base rules it's overriding here (width/margin), so it wins the
+   cascade despite equal selector specificity. */
+.difficulty-range {
+  width: 100px;
+  margin: 0;
+  transform: rotate(-90deg);
+}
+.difficulty-range:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .cpu-params {
   border: 1px dashed var(--metal-line);
