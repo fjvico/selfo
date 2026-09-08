@@ -217,7 +217,22 @@ body {
   overflow: auto;
 }
 
-.board-svg { display: block; }
+.board-svg {
+  display: block;
+  /* Board pixel size scales with radius (CONFIG.CELL_SIZE is constant —
+     see script.js), so without this a bigger board would render at its
+     literal larger size instead of shrinking to fit .board-scroll. Since
+     the SVG already carries a matching viewBox (see renderBoard()), this
+     is enough for the browser to scale it down (preserving aspect ratio)
+     to whatever box actually contains it — keeping .board-scroll's own
+     height constant across radii, which in turn keeps .compact-players
+     right after it at a fixed position instead of getting pushed down by
+     a physically taller board. */
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
 
 /* ---------------------------------------------------------------
    Minimalist players/swap strip (no ?showAdvanced=true) — replaces
@@ -838,7 +853,16 @@ body {
   }
 
   .panel-setup { order: 1; }
-  .panel-board { order: 2; min-height: 60vh; }
+  /* Fixed (not min-) height: with .board-svg now scaling down to fit
+     (see that rule above), .board-scroll's flex:1 share of this fixed
+     box stays the same size across every difficulty/radius, so
+     .compact-players (right after it, see .panel-board's column flex)
+     lands at the same height regardless of the board's actual radius —
+     rather than the panel growing taller for a bigger board and pushing
+     the strip further down the page. The extra bottom padding (~1/6 of
+     the 60vh) is empty space reserved below the board+strip, so they
+     don't sit flush against the panel's bottom edge. */
+  .panel-board { order: 2; height: 60vh; padding-bottom: calc(10px + 10vh); }
   .panel-options { order: 3; }
 
   .panel { max-height: none; }
