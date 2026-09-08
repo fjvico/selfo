@@ -89,6 +89,7 @@ const Game = {
 
   turn: "black",
   pieRuleAvailable: false, // true only right before white's first move
+  compactSwapped: false, // minimalist (no showAdvanced) players strip only: whether the swap control has been used this game — swaps which side each piece-color swatch is drawn on (the role icons themselves stay put) — see updateCompactBar()
   selectedKey: null,
   lastMove: null,          // { from, to } for highlight
   enclosedCells: null,     // Set of cell keys holding a trapped piece, to mark on a mutual-enclosure draw, or null
@@ -213,7 +214,27 @@ const ModeIcons = (() => {
     });
   }
 
-  return { renderAll };
+  /** A single glyph (person or tower) for one side of a mode's icon,
+   *  standalone in its own small viewBox at x=0 — used by the minimalist
+   *  players strip (#compactIconLeft/#compactIconRight, see
+   *  updateCompactBar()) to show each half of the same icon the mode
+   *  button itself uses, split apart and placed beside the pieces
+   *  instead of combined into one glyph. Always the mode's fixed
+   *  left/right composition (COMPOSITION / online2p's two people) —
+   *  not tied to which color a human/host currently controls, exactly
+   *  like the mode button's own icon isn't. */
+  function buildSideIcon(mode, side) {
+    if (mode === "online2p") {
+      const size = side === "left" ? 1.0 : ONLINE_FAR_PERSON.size;
+      const width = PERSON_WIDTH * size;
+      return { viewBox: `0 0 ${width} 24`, markup: person(0, size) };
+    }
+    const [leftName, rightName] = COMPOSITION[mode];
+    const glyph = GLYPH[side === "left" ? leftName : rightName];
+    return { viewBox: `0 0 ${glyph.width} 24`, markup: glyph.draw(0) };
+  }
+
+  return { renderAll, buildSideIcon };
 })();
 ModeIcons.renderAll();
 
@@ -223,6 +244,7 @@ ModeIcons.renderAll();
 const dom = {
   layout: document.querySelector(".layout"),
   panelSetup: document.querySelector(".panel-setup"),
+  panelOptions: document.querySelector(".panel-options"),
   shareLinkBtn: document.getElementById("shareLinkBtn"),
   shareMenu: document.getElementById("shareMenu"),
   shareMenuEmail: document.getElementById("shareMenuEmail"),
@@ -247,6 +269,13 @@ const dom = {
   messageBox: document.getElementById("messageBox"),
 
   boardSvg: document.getElementById("boardSvg"),
+
+  compactPlayers: document.getElementById("compactPlayers"),
+  compactSwatchLeft: document.getElementById("compactSwatchLeft"),
+  compactIconLeft: document.getElementById("compactIconLeft"),
+  compactSwapBtn: document.getElementById("compactSwapBtn"),
+  compactIconRight: document.getElementById("compactIconRight"),
+  compactSwatchRight: document.getElementById("compactSwatchRight"),
 
   modeSelectBlock: document.getElementById("modeSelectBlock"),
   modeMenuToggle: document.getElementById("modeMenuToggle"),
@@ -1117,6 +1146,8 @@ function swapColors() {
   // next is still "white" — now played by whoever was just reassigned
   // to that seat (the original black player).
   Game.turn = "white";
+  // minimalist players strip only — see updateCompactBar()
+  Game.compactSwapped = !Game.compactSwapped;
 
   if (Game.mode === "online2p" && Game.isHost) {
     sendToRemote({ type: "swap" });
@@ -1392,6 +1423,13 @@ function updateSetupVisibility() {
   dom.cpuParamsBlock.hidden = !(isCpuMode && Game.showAdvanced);
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
+  // Minimalist mode (no ?showAdvanced=true): the whole options panel
+  // (players box + swap/draw/resign/download) disappears — the compact
+  // players/swap strip under the board (see updateCompactBar()) is its
+  // stand-in.
+  dom.panelOptions.hidden = !Game.showAdvanced;
+  dom.layout.classList.toggle("no-options-panel", !Game.showAdvanced);
+
   // a guest doesn't control the host's board — visible (fixed position),
   // just inert
   dom.radiusRange.disabled = guestOnline;
@@ -1423,9 +1461,38 @@ function updateSetupPanelVisibility() {
 
 function updateButtonsForPhase() {
   const playing = Game.phase === "playing";
-  dom.swapColorBtn.disabled = !(playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally());
+  const pieRuleWindow = playing && Game.pieRuleAvailable && Game.turn === "white" && isMyTurnLocally();
+  dom.swapColorBtn.disabled = !pieRuleWindow;
   dom.offerDrawBtn.disabled = !playing || Game.mode === "computerself" || !isMyTurnLocally();
   dom.resignBtn.disabled = !playing || Game.mode === "computerself";
+  updateCompactBar(pieRuleWindow);
+}
+
+/** Minimalist mode (no ?showAdvanced=true) stand-in for the players box:
+ *  a piece-color swatch on each side of the board, the mode's own icon
+ *  split into its two halves right next to them (always the mode
+ *  button's fixed left/right composition — see ModeIcons.buildSideIcon
+ *  — not tied to who currently controls which color), and, only during
+ *  the pie-rule window (right before white's first move), a "Swap
+ *  colors" control between them. No names, no edit pencil — see
+ *  index.html's #compactPlayers. */
+function updateCompactBar(pieRuleWindow) {
+  dom.compactPlayers.hidden = Game.showAdvanced;
+  if (Game.showAdvanced) return;
+
+  const leftIcon = ModeIcons.buildSideIcon(Game.mode, "left");
+  dom.compactIconLeft.setAttribute("viewBox", leftIcon.viewBox);
+  dom.compactIconLeft.innerHTML = leftIcon.markup;
+  const rightIcon = ModeIcons.buildSideIcon(Game.mode, "right");
+  dom.compactIconRight.setAttribute("viewBox", rightIcon.viewBox);
+  dom.compactIconRight.innerHTML = rightIcon.markup;
+
+  // Clicking "Swap colors" swaps which side these two swatches are
+  // drawn on (the icons beside them stay put) — see swapColors().
+  dom.compactSwatchLeft.className = "compact-swatch " + (Game.compactSwapped ? "swatch-white" : "swatch-black");
+  dom.compactSwatchRight.className = "compact-swatch " + (Game.compactSwapped ? "swatch-black" : "swatch-white");
+
+  dom.compactSwapBtn.hidden = !pieRuleWindow;
 }
 
 function updateStatusUI() {
@@ -1726,6 +1793,7 @@ function syncColorButtonsSelection() {
 }
 
 dom.swapColorBtn.addEventListener("click", swapColors);
+dom.compactSwapBtn.addEventListener("click", swapColors);
 dom.offerDrawBtn.addEventListener("click", offerDraw);
 dom.resignBtn.addEventListener("click", resign);
 
@@ -1758,6 +1826,7 @@ function beginSetupPreview() {
   Game.neighborKeys = built.neighborKeys;
   Game.turn = "black";
   Game.pieRuleAvailable = true;
+  Game.compactSwapped = false;
   Game.selectedKey = null;
   Game.lastMove = null;
   Game.enclosedCells = null;
@@ -2033,6 +2102,7 @@ function handleRemoteMessage(msg) {
       Game.localColor = opponentOf(Game.localColor);
       Game.pieRuleAvailable = false;
       Game.turn = "white";
+      Game.compactSwapped = !Game.compactSwapped; // minimalist players strip only — see updateCompactBar()
       renderBoard();
       updateStatusUI();
       updatePlayersUI();

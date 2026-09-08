@@ -199,6 +199,26 @@
       </div>
       <div id="boardFlash" class="board-flash-overlay" aria-hidden="true"></div>
       <div id="boardFadeOverlay" class="board-fade-overlay" aria-hidden="true"></div>
+
+      <!-- Minimalist (non-?showAdvanced) stand-in for the players box +
+           button stack: just the two piece colors, the mode's own icon
+           split in half beside each, and (only right before white's
+           first move — the pie-rule window) a swap control. No names, no
+           edit pencil, no draw/resign/download — see updateCompactBar()
+           in script.js, which is what actually shows/hides this. -->
+      <div id="compactPlayers" class="compact-players" hidden>
+        <span id="compactSwatchLeft" class="compact-swatch"></span>
+        <svg id="compactIconLeft" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
+        <button id="compactSwapBtn" class="btn btn-metal-sm compact-swap-btn" type="button" hidden title="Swap colors">
+          <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M7 7h12M15.5 3l3.5 4-3.5 4"/>
+            <path d="M17 17H5M8.5 21 5 17l3.5-4"/>
+          </svg>
+          <span>Swap colors</span>
+        </button>
+        <svg id="compactIconRight" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
+        <span id="compactSwatchRight" class="compact-swatch"></span>
+      </div>
     </section>
 
     <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->

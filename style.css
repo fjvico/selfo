@@ -123,6 +123,20 @@ body {
 .layout.no-setup-panel {
   grid-template-columns: 1fr 250px;
 }
+/* Minimalist mode (no ?showAdvanced=true) also drops the right-hand
+   options panel entirely (see updateSetupVisibility() in script.js,
+   which toggles .panel-options[hidden] and this class together) — the
+   compact players/swap strip below the board replaces it, so there's no
+   250px column left to reserve either. In practice this always lands
+   together with .no-setup-panel (every setup-panel block is itself
+   showAdvanced-gated), but each combination is covered here in case
+   that ever changes. */
+.layout.no-options-panel {
+  grid-template-columns: 280px 1fr;
+}
+.layout.no-setup-panel.no-options-panel {
+  grid-template-columns: 1fr;
+}
 
 .panel {
   background: var(--bg-panel);
@@ -135,8 +149,10 @@ body {
 
 .panel-board {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
   padding: 10px;
   position: relative;
 }
@@ -190,7 +206,11 @@ body {
 
 .board-scroll {
   width: 100%;
-  height: 100%;
+  /* flex (not a fixed height:100%) so the compact players/swap strip
+     below it (see .compact-players) still gets room to lay out under
+     ?showAdvanced=false — see .panel-board's column flex-direction. */
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -198,6 +218,39 @@ body {
 }
 
 .board-svg { display: block; }
+
+/* ---------------------------------------------------------------
+   Minimalist players/swap strip (no ?showAdvanced=true) — replaces
+   the options panel's players box + button stack (see index.html's
+   #compactPlayers and updateCompactBar() in script.js).
+   --------------------------------------------------------------- */
+.compact-players {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.compact-players[hidden] { display: none; }
+.compact-swatch {
+  width: 18px; height: 18px; border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid var(--metal-line);
+}
+.compact-mode-icon {
+  /* fixed height, auto width — person and tower glyphs have different
+     viewBox aspect ratios (see ModeIcons.buildSideIcon), this keeps
+     both undistorted instead of stretching to a fixed box */
+  height: 22px; width: auto;
+  color: var(--metal-mid);
+  flex-shrink: 0;
+}
+.compact-swap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.compact-swap-btn[hidden] { display: none; }
 
 /* ---------------------------------------------------------------
    Options panel
@@ -657,18 +710,20 @@ body {
   .chip-btn { padding: 4px 7px; font-size: 9px; letter-spacing: 0.5px; }
 
   .layout,
-  .layout.no-setup-panel {
-    /* `.layout.no-setup-panel` (two classes) is more specific than the
+  .layout.no-setup-panel,
+  .layout.no-options-panel,
+  .layout.no-setup-panel.no-options-panel {
+    /* Each of these (one or two classes) is more specific than the
        plain `.layout` rule above and would otherwise keep winning here
-       (desktop's 2-column "board | options" grid), even inside this
-       mobile query, whenever the setup panel is hidden — which is the
-       default minimalist setup. Repeating the selector with the same
-       specificity, later in the source, is what actually forces mobile's
-       single-column stack in that (very common) case. Without this,
-       mobile got squeezed into a 2-column "board | 250px options" grid
-       that's wider than the screen — Chrome overflowed it (board visible
-       but options shoved off to the side), Firefox collapsed the board's
-       1fr track to ~0 and showed nothing. */
+       (desktop's row-of-columns grid), even inside this mobile query,
+       whenever the setup and/or options panel is hidden — which, for
+       the options panel, is every non-?showAdvanced session. Repeating
+       every combination with the same specificity, later in the source,
+       is what actually forces mobile's single-column stack in those
+       (very common) cases. Without this, mobile got squeezed into a
+       multi-column grid wider than the screen — Chrome overflowed it
+       (board visible but other panels shoved off to the side), Firefox
+       collapsed the board's 1fr track to ~0 and showed nothing. */
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     height: auto;
