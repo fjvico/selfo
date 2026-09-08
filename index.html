@@ -142,10 +142,20 @@
   <!-- ============================================================ -->
   <!-- MAIN LAYOUT : setup (left/top) | board (center) | options (right/bottom) -->
   <!-- ============================================================ -->
-  <main class="layout">
+  <!-- Starts pre-collapsed to match the actual default runtime state
+       (CONFIG.DEFAULT_MODE, showAdvanced=false — see updateSetupVisibility()/
+       updateSetupPanelVisibility() in script.js, which reassert this same
+       state once they run anyway). Without this, the page briefly paints
+       the full 3-column layout with both side panels (and, worse, all
+       their showAdvanced=true-only content in panel-options) fully
+       visible before those scripts get a chance to hide them — especially
+       noticeable here since a blocking, network-loaded script
+       (peerjs.min.js) sits ahead of script.js and can delay that first
+       JS pass by a very visible amount. -->
+  <main class="layout no-setup-panel no-options-panel">
 
     <!-- ---------------- LEFT / TOP : setup ------------------------- -->
-    <section class="panel panel-setup" aria-label="Game setup">
+    <section class="panel panel-setup" aria-label="Game setup" hidden>
 
       <!-- board parameters: hidden unless ?showAdvanced=true is present in
            the URL (see applyUrlConfig in script.js) — kept out of the
@@ -255,7 +265,7 @@
     </section>
 
     <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
-    <section class="panel panel-options" aria-label="Game options">
+    <section class="panel panel-options" aria-label="Game options" hidden>
 
       <div class="players-box">
         <div class="player-row" id="playerRowBlack">

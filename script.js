@@ -693,7 +693,7 @@ function applyHighlights() {
 
   polys.forEach((poly) => {
     const k = poly.dataset.key;
-    poly.classList.remove("selected", "move-target", "selectable", "last-move", "enclosed-cell");
+    poly.classList.remove("selected", "move-target", "selectable", "last-move");
     const cell = Game.cells.get(k);
 
     if (isInteractivePhase() && isMyTurnLocally()) {
@@ -704,17 +704,21 @@ function applyHighlights() {
     if (Game.lastMove && (k === Game.lastMove.from || k === Game.lastMove.to)) {
       poly.classList.add("last-move");
     }
-    // Background-only tint (the piece drawn on top, if any, is untouched)
-    // marking cells that ended up with a piece trapped in a sealed-off
-    // pocket on a mutual-enclosure draw — see endGameDraw. Empty cells in
-    // the same pocket are never marked.
-    if (Game.enclosedCells && Game.enclosedCells.has(k)) {
-      poly.classList.add("enclosed-cell");
-    }
   });
 
+  // A winner (not a draw) marks their own pieces with a blue halo until
+  // the next game starts (Game.winner is reset in beginSetupPreview()).
+  const winningColor = Game.phase === "ended" && Game.winner ? Game.winner : null;
+
   dom.boardSvg.querySelectorAll(".piece").forEach((p) => {
-    p.classList.toggle("selected-piece", p.dataset.key === selected);
+    const k = p.dataset.key;
+    p.classList.toggle("selected-piece", k === selected);
+    // Red halo on the piece itself, marking one trapped in a pocket
+    // sealed off on a mutual-enclosure draw (see Game.enclosedCells /
+    // endGameDraw()) — replaces the old cell-background tint.
+    p.classList.toggle("enclosed-piece", !!(Game.enclosedCells && Game.enclosedCells.has(k)));
+    const cell = Game.cells.get(k);
+    p.classList.toggle("winning-piece", !!cell && cell.color === winningColor);
   });
 }
 
@@ -1034,11 +1038,10 @@ function endGameDraw(reason = "draw") {
   Game.endReason = reason;
   Game.lastMove = null;
   // On a mutual-enclosure draw, mark just the trapped pieces themselves
-  // (background tint under the piece, which is never altered — see
-  // applyHighlights/.hex-cell.enclosed-cell) so it's clear *why* the game
-  // ended this way. Empty cells in the same sealed-off pocket aren't
-  // marked — nothing was actually trapped there. A plain offered/accepted
-  // draw has nothing to mark at all.
+  // with a red halo (see applyHighlights()/.piece.enclosed-piece) so
+  // it's clear *why* the game ended this way. Empty cells in the same
+  // sealed-off pocket aren't marked — nothing was actually trapped
+  // there. A plain offered/accepted draw has nothing to mark at all.
   Game.enclosedCells = computeEnclosedPieceCells(Game.cells, Game.neighborKeys, reason);
   updateSetupVisibility();
   renderBoard();
@@ -1529,16 +1532,14 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactSwatchLeft.className = "compact-swatch swatch-" + leftColor;
   dom.compactSwatchRight.className = "compact-swatch swatch-" + rightColor;
 
-  // Turn indicator (only while a game is actually being played) and
-  // winner indicator (persists once Game.phase is "ended", cleared
-  // the moment the next game's setup preview resets Game.winner) —
-  // same blue halo treatment as .player-row.active-turn/.winner in
-  // the ?showAdvanced=true players box, applied here to the swatch
-  // and icon directly instead of a whole row.
+  // Turn indicator (only while a game is actually being played), on the
+  // icon only — not the swatch/"ficha" beside it, so the piece color
+  // itself stays neutral and only the person/tower glyph reads as "your
+  // move" — and winner indicator (persists once Game.phase is "ended",
+  // cleared the moment the next game's setup preview resets
+  // Game.winner), which does still halo both swatch and icon.
   const activeColor = Game.phase === "playing" ? Game.turn : null;
   const winnerColor = Game.phase === "ended" ? Game.winner : null;
-  dom.compactSwatchLeft.classList.toggle("active-turn", leftColor === activeColor);
-  dom.compactSwatchRight.classList.toggle("active-turn", rightColor === activeColor);
   dom.compactIconLeft.classList.toggle("active-turn", leftColor === activeColor);
   dom.compactIconRight.classList.toggle("active-turn", rightColor === activeColor);
   dom.compactSwatchLeft.classList.toggle("winner", leftColor === winnerColor);
