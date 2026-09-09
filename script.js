@@ -1719,15 +1719,23 @@ function confirmSettingChange() {
 }
 
 /** Moves #difficultyRange's thumb to whichever level currently matches
- *  the board in play (both r and f, exactly) — left untouched if the
- *  current radius/pieces came from somewhere else (the advanced
- *  sliders, a ?radius=/?pieces= URL param, an online host's own custom
- *  setup...), rather than snapping to a wrong "closest" level. Re-run on
- *  every setup-visibility update (see updateSetupVisibility()) so it
- *  can never drift from Game.radius/Game.piecesPerColor. */
+ *  the board/CPU settings in play exactly — r and f always, plus
+ *  cpuTime/cpuDepth/noEnclosure wherever that level actually specifies
+ *  one (see applyDifficultyLevel() below) — left untouched if nothing
+ *  matches (the advanced sliders, a ?radius=/?pieces=/?cpuTime=/etc URL
+ *  param, an online host's own custom setup, or the CPU settings having
+ *  been edited by hand since a level was picked), rather than snapping to
+ *  a wrong "closest" level. Re-run on every setup-visibility update (see
+ *  updateSetupVisibility()) so it can never drift out of sync. */
 function syncDifficultyMenuSelection() {
   const levels = FeatureConfig.difficulty_levels || [];
-  const index = levels.findIndex((level) => level.r === Game.radius && level.f === Game.piecesPerColor);
+  const index = levels.findIndex((level) => {
+    if (level.r !== Game.radius || level.f !== Game.piecesPerColor) return false;
+    if (Number.isFinite(level.cpuTime) && Number(dom.cpuTimeRange.value) !== level.cpuTime) return false;
+    if (Number.isFinite(level.cpuDepth) && Number(dom.cpuDepthRange.value) !== level.cpuDepth) return false;
+    if (typeof level.noEnclosure === "boolean" && Game.noEnclosure !== level.noEnclosure) return false;
+    return true;
+  });
   if (index >= 0) dom.difficultyRange.value = String(index);
 }
 
@@ -1738,7 +1746,13 @@ function syncDifficultyMenuSelection() {
  *  a whole preset pair from #difficultyRange in one drag instead of two
  *  independent ones. `f` is clamped into whatever pieceRangeForRadius(r)
  *  actually allows, in case a level in config.js doesn't fit its own
- *  radius exactly. */
+ *  radius exactly.
+ *
+ *  A level's optional cpuTime/cpuDepth/noEnclosure (also config.js) are
+ *  applied the same way if — and only if — that level actually specifies
+ *  them: an unset one leaves whatever was already in effect (the session
+ *  default, a ?cpuTime=/?cpuDepth=/?noEnclosure= URL param, or a manual
+ *  edit) untouched, rather than resetting it. */
 function applyDifficultyLevel(index) {
   const level = (FeatureConfig.difficulty_levels || [])[index];
   if (!level) return;
@@ -1751,6 +1765,20 @@ function applyDifficultyLevel(index) {
   dom.piecesRange.max = String(max);
   dom.piecesRange.value = String(f);
   dom.piecesValue.textContent = `${f} (${min}-${max})`;
+
+  if (Number.isFinite(level.cpuTime)) {
+    const cpuTime = Math.min(30, Math.max(1, level.cpuTime));
+    dom.cpuTimeRange.value = String(cpuTime);
+    dom.cpuTimeValue.textContent = String(cpuTime);
+  }
+  if (Number.isFinite(level.cpuDepth)) {
+    const cpuDepth = Math.min(5, Math.max(1, level.cpuDepth));
+    dom.cpuDepthRange.value = String(cpuDepth);
+    dom.cpuDepthValue.textContent = String(cpuDepth);
+  }
+  if (typeof level.noEnclosure === "boolean") {
+    dom.noEnclosureCheckbox.checked = level.noEnclosure; // read into Game.noEnclosure by beginSetupPreview() below
+  }
 
   beginSetupPreview();
 }
@@ -2792,6 +2820,27 @@ function resetAllRangeInputs() {
   dom.cpuTimeValue.textContent = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
   dom.cpuDepthRange.value = String(CONFIG.DEFAULT_CPU_DEPTH);
   dom.cpuDepthValue.textContent = String(CONFIG.DEFAULT_CPU_DEPTH);
+
+  // The default level's own optional cpuTime/cpuDepth/noEnclosure (see
+  // FeatureConfig.difficulty_levels above), applied last so they can
+  // override the plain defaults just set above — same "only if present"
+  // rule as picking the level by hand (see applyDifficultyLevel()).
+  if (defaultLevel) {
+    if (Number.isFinite(defaultLevel.cpuTime)) {
+      const cpuTime = Math.min(30, Math.max(1, defaultLevel.cpuTime));
+      dom.cpuTimeRange.value = String(cpuTime);
+      dom.cpuTimeValue.textContent = String(cpuTime);
+    }
+    if (Number.isFinite(defaultLevel.cpuDepth)) {
+      const cpuDepth = Math.min(5, Math.max(1, defaultLevel.cpuDepth));
+      dom.cpuDepthRange.value = String(cpuDepth);
+      dom.cpuDepthValue.textContent = String(cpuDepth);
+    }
+    if (typeof defaultLevel.noEnclosure === "boolean") {
+      Game.noEnclosure = defaultLevel.noEnclosure;
+      dom.noEnclosureCheckbox.checked = defaultLevel.noEnclosure;
+    }
+  }
 }
 
 boot();

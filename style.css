@@ -14,7 +14,7 @@
   /* board tones, as specified */
   --cell-fill: #808080;      /* 50% gray */
   --cell-fill-hover: #8f8f8f;
-  --cell-edge: #707070;      /* just a touch darker than the fill — barely visible */
+  --cell-edge: #7b7b7b;      /* very close to --cell-fill (#808080) — the grid line should barely register */
 
   /* accent (cool cyan, "energy" glow) */
   --accent: #35e0ff;
@@ -716,7 +716,7 @@ body {
 .hex-cell {
   fill: var(--cell-fill);
   stroke: var(--cell-edge);
-  stroke-width: 1.5;
+  stroke-width: 0.5;
   transition: fill 0.15s ease;
 }
 .hex-cell.selectable { cursor: pointer; }
