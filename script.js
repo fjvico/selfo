@@ -284,7 +284,11 @@ const dom = {
 
   difficultyMenuToggle: document.getElementById("difficultyMenuToggle"),
   difficultyMenu: document.getElementById("difficultyMenu"),
+  difficultyMenuWrap: document.getElementById("difficultyMenuWrap"),
   difficultyRange: document.getElementById("difficultyRange"),
+  difficultyTicks: document.getElementById("difficultyTicks"),
+  difficultyIncBtn: document.getElementById("difficultyIncBtn"),
+  difficultyDecBtn: document.getElementById("difficultyDecBtn"),
 
   noEnclosureCheckbox: document.getElementById("noEnclosureCheckbox"),
   noEnclosureBlock: document.getElementById("noEnclosureBlock"),
@@ -329,8 +333,11 @@ const dom = {
  *  difficulty_levels' length (config.js) — a continuous vertical slider
  *  from 0 (easiest, bottom) to levels.length - 1 (hardest, top) with
  *  integer steps, so it works the same whether that list has 2 levels
- *  or 20 without any other code here needing to change. Run once at
- *  startup; the level list is static for the session. */
+ *  or 20 without any other code here needing to change. Also builds
+ *  #difficultyTicks (one <option> per level, native browser tick marks
+ *  along the track — rotated along with the input itself, see
+ *  .difficulty-range in style.css). Run once at startup; the level list
+ *  is static for the session. */
 function initDifficultyControl() {
   const levels = FeatureConfig.difficulty_levels || [];
   const lastIndex = Math.max(0, levels.length - 1);
@@ -338,8 +345,35 @@ function initDifficultyControl() {
   dom.difficultyRange.max = String(lastIndex);
   dom.difficultyRange.step = "1";
   dom.difficultyRange.disabled = levels.length <= 1;
+
+  dom.difficultyTicks.innerHTML = "";
+  levels.forEach((_, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    dom.difficultyTicks.appendChild(option);
+  });
 }
 initDifficultyControl();
+
+/** Moves #difficultyRange by one level, same "define the board itself"
+ *  semantics as dragging it (see applyDifficultyLevel()) — the +/- ends
+ *  of the slider are clickable shortcuts for exactly that, clamped to
+ *  the first/last level instead of wrapping. */
+function stepDifficultyLevel(delta) {
+  if (dom.difficultyRange.disabled) return;
+  const max = Number(dom.difficultyRange.max);
+  const current = Number(dom.difficultyRange.value);
+  const next = Math.min(max, Math.max(0, current + delta));
+  if (next === current) return;
+  dom.difficultyRange.value = String(next);
+  if (Game.phase !== "playing" || confirmSettingChange()) {
+    applyDifficultyLevel(next);
+  } else {
+    syncDifficultyMenuSelection(); // snap back to the actual current level
+  }
+}
+dom.difficultyIncBtn.addEventListener("click", () => stepDifficultyLevel(1));
+dom.difficultyDecBtn.addEventListener("click", () => stepDifficultyLevel(-1));
 
 /** Fills #helpParamsList (the "?" help panel) with one row per URL_PARAMS
  *  entry (config.js) — param name + description, straight from that array
@@ -1718,6 +1752,28 @@ function confirmSettingChange() {
   return true;
 }
 
+/** Whichever level index was last explicitly applied (by dragging
+ *  #difficultyRange, clicking the +/- ends, or the session's initial
+ *  DEFAULT_DIFFICULTY_INDEX) — see applyDifficultyLevel() below and
+ *  syncDifficultyMenuSelection() just after it. Exists to disambiguate
+ *  two levels that happen to share identical r/f/cpuTime/cpuDepth and
+ *  differ only in whether they define noEnclosure at all (an unset
+ *  noEnclosure matches *any* current value — see the loop below — so
+ *  without this, picking the more specific level could still show the
+ *  earlier, less specific one as "selected" instead). Cleared back to
+ *  null whenever the level it points to no longer actually matches the
+ *  live radius/pieces/CPU/noEnclosure values, so it can't go stale. */
+let lastAppliedDifficultyIndex = null;
+
+function levelMatchesCurrentState(level) {
+  if (!level) return false;
+  if (level.r !== Game.radius || level.f !== Game.piecesPerColor) return false;
+  if (Number.isFinite(level.cpuTime) && Number(dom.cpuTimeRange.value) !== level.cpuTime) return false;
+  if (Number.isFinite(level.cpuDepth) && Number(dom.cpuDepthRange.value) !== level.cpuDepth) return false;
+  if (typeof level.noEnclosure === "boolean" && Game.noEnclosure !== level.noEnclosure) return false;
+  return true;
+}
+
 /** Moves #difficultyRange's thumb to whichever level currently matches
  *  the board/CPU settings in play exactly — r and f always, plus
  *  cpuTime/cpuDepth/noEnclosure wherever that level actually specifies
@@ -1725,18 +1781,31 @@ function confirmSettingChange() {
  *  matches (the advanced sliders, a ?radius=/?pieces=/?cpuTime=/etc URL
  *  param, an online host's own custom setup, or the CPU settings having
  *  been edited by hand since a level was picked), rather than snapping to
- *  a wrong "closest" level. Re-run on every setup-visibility update (see
- *  updateSetupVisibility()) so it can never drift out of sync. */
+ *  a wrong "closest" level. Prefers lastAppliedDifficultyIndex (above)
+ *  over a fresh search whenever that level still matches, since a plain
+ *  search can't tell two identical-except-for-an-unset-field levels
+ *  apart and would otherwise always report the earlier one in the list.
+ *  Re-run on every setup-visibility update (see updateSetupVisibility())
+ *  so it can never drift out of sync. Also refreshes the +/- end
+ *  buttons' enabled state (see stepDifficultyLevel()) to match, since
+ *  they share the same disabled/boundary conditions as the slider
+ *  itself. */
 function syncDifficultyMenuSelection() {
   const levels = FeatureConfig.difficulty_levels || [];
-  const index = levels.findIndex((level) => {
-    if (level.r !== Game.radius || level.f !== Game.piecesPerColor) return false;
-    if (Number.isFinite(level.cpuTime) && Number(dom.cpuTimeRange.value) !== level.cpuTime) return false;
-    if (Number.isFinite(level.cpuDepth) && Number(dom.cpuDepthRange.value) !== level.cpuDepth) return false;
-    if (typeof level.noEnclosure === "boolean" && Game.noEnclosure !== level.noEnclosure) return false;
-    return true;
-  });
+
+  if (lastAppliedDifficultyIndex !== null && !levelMatchesCurrentState(levels[lastAppliedDifficultyIndex])) {
+    lastAppliedDifficultyIndex = null; // whatever was picked no longer matches — something else changed it
+  }
+  const index = lastAppliedDifficultyIndex !== null
+    ? lastAppliedDifficultyIndex
+    : levels.findIndex(levelMatchesCurrentState);
   if (index >= 0) dom.difficultyRange.value = String(index);
+
+  const disabled = dom.difficultyRange.disabled;
+  const value = Number(dom.difficultyRange.value);
+  const max = Number(dom.difficultyRange.max);
+  dom.difficultyIncBtn.disabled = disabled || value >= max;
+  dom.difficultyDecBtn.disabled = disabled || value <= 0;
 }
 
 /** Applies one FeatureConfig.difficulty_levels entry (config.js) to the
@@ -1779,6 +1848,8 @@ function applyDifficultyLevel(index) {
   if (typeof level.noEnclosure === "boolean") {
     dom.noEnclosureCheckbox.checked = level.noEnclosure; // read into Game.noEnclosure by beginSetupPreview() below
   }
+
+  lastAppliedDifficultyIndex = index; // see syncDifficultyMenuSelection() above
 
   beginSetupPreview();
 }
@@ -1853,9 +1924,11 @@ dom.noEnclosureCheckbox.addEventListener("change", () => {
 // CPU's *next* move — no need to interrupt or restart the game for these.
 dom.cpuTimeRange.addEventListener("input", () => {
   dom.cpuTimeValue.textContent = dom.cpuTimeRange.value;
+  syncDifficultyMenuSelection(); // a manual edit here can un-match the previously-picked level
 });
 dom.cpuDepthRange.addEventListener("input", () => {
   dom.cpuDepthValue.textContent = dom.cpuDepthRange.value;
+  syncDifficultyMenuSelection(); // same as cpuTimeRange above
 });
 
 dom.modeButtons.forEach((btn) => {
@@ -1926,6 +1999,15 @@ document.addEventListener("click", (ev) => {
 });
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && !dom.difficultyMenu.hidden) closeDifficultyMenu();
+});
+// Desktop only: mouseleave doesn't fire from a tap on touch devices, so
+// this never interferes with the click-to-toggle behavior above on
+// mobile — it only auto-closes the dropdown once the mouse actually
+// leaves the button+panel area, without also closing it while the
+// cursor is just moving from the toggle button into the panel itself
+// (both live inside this one wrapper).
+dom.difficultyMenuWrap.addEventListener("mouseleave", () => {
+  if (!dom.difficultyMenu.hidden) closeDifficultyMenu();
 });
 
 /** Switches to (or restarts) a mode: abandons any game in progress (with
@@ -2840,6 +2922,7 @@ function resetAllRangeInputs() {
       Game.noEnclosure = defaultLevel.noEnclosure;
       dom.noEnclosureCheckbox.checked = defaultLevel.noEnclosure;
     }
+    lastAppliedDifficultyIndex = FeatureConfig.DEFAULT_DIFFICULTY_INDEX; // see syncDifficultyMenuSelection()
   }
 }
 

@@ -98,7 +98,7 @@ const FeatureConfig = {
 // #helpOverlay / script.js's dom.helpUrlExample) when illustrating how to
 // build a preconfigured game link — kept here, not hardcoded in the HTML,
 // so it's a one-line edit if the game ever moves to a different domain.
-const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3&cpuTime=15";
+const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3";
 
 /**
  * URL_PARAMS

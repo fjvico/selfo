@@ -502,9 +502,22 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 8px;
+  /* Fixed square box (not sized from padding+icon) so all four topbar
+     icon buttons (support, mode, difficulty, share) end up exactly the
+     same size regardless of how big or "inky" each one's own SVG is —
+     see the icon-specific width/height on each <svg> in index.html for
+     why those differ while this stays constant. */
+  width: 30px;
+  height: 30px;
+  padding: 0;
 }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* The gauge/speedometer glyph's ink (arc + needle) sits in the lower
+   half of its own 24x24 viewBox, so at the same box size it reads
+   smaller and lower than the other topbar icons (mode's grid, share's
+   nodes, the heart) — nudged up a couple px so it looks centered like
+   they do. */
+.difficulty-toggle-icon { transform: translateY(-2px); }
 
 /* wireframe icons: stroke only, no fill, inherit color from the palette */
 .icon-wire {
@@ -636,15 +649,39 @@ body {
    see the comment there.) */
 .difficulty-menu {
   align-items: center;
-  padding: 10px 10px 12px;
+  /* No gap from .mode-menu's default top: calc(100% + 8px) — that gap is
+     a real dead zone the pointer briefly leaves both the button and this
+     panel while crossing, which fires the mouseleave the whole group
+     closes on (see dom.difficultyMenuWrap's listener in script.js). Sits
+     flush against the button instead, with the same visual breathing
+     room recreated as top padding (hoverable, part of this element),
+     so the pointer never actually leaves the group while moving from
+     one to the other. */
+  top: 100%;
+  padding: 18px 10px 12px;
 }
 .difficulty-end-icon {
   color: var(--metal-mid);
   flex-shrink: 0;
 }
+.difficulty-end-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: inherit;
+  cursor: pointer;
+}
+.difficulty-end-btn:hover:not(:disabled) { background: rgba(53, 224, 255, 0.1); }
+.difficulty-end-btn:hover:not(:disabled) .difficulty-end-icon { color: var(--accent); }
+.difficulty-end-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .difficulty-range-track {
+  position: relative;
   width: 28px;
-  height: 100px;
+  height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -683,7 +720,7 @@ body {
    base rules it's overriding here (width/margin), so it wins the
    cascade despite equal selector specificity. */
 .difficulty-range {
-  width: 100px;
+  width: 160px;
   margin: 0;
   transform: rotate(-90deg);
 }
