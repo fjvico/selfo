@@ -39,9 +39,9 @@ const FeatureConfig = {
   /**
    * difficulty_levels: presets behind the "Difficulty" picker in the top
    * bar (the icon between the mode selector and the share button — see
-   * index.html's #difficultyMenuToggle/#difficultyMenu, which are built
-   * from this array by script.js's buildDifficultyMenu(), and applied by
-   * selectDifficultyLevel()). Each entry is a full board definition:
+   * index.html's #difficultyMenuToggle/#difficultyMenu, and
+   * script.js's initDifficultyControl()/applyDifficultyLevel()). Each
+   * entry is a full board definition:
    *
    *   { label, r, f }
    *
@@ -76,3 +76,41 @@ const FeatureConfig = {
   // param, if present, still overrides this (see applyUrlConfig()).
   DEFAULT_DIFFICULTY_INDEX: 0,
 };
+
+// Example base URL shown in the "?" help panel (see index.html's
+// #helpOverlay / script.js's dom.helpUrlExample) when illustrating how to
+// build a preconfigured game link — kept here, not hardcoded in the HTML,
+// so it's a one-line edit if the game ever moves to a different domain.
+const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3";
+
+/**
+ * URL_PARAMS
+ * ----------
+ * Documents every ?param=value query-string option applyUrlConfig() (see
+ * script.js) reads at load — shown to the player in the "?" help panel
+ * (index.html's #helpOverlay, built by script.js's buildHelpParamsList()),
+ * so that panel and what the URL actually accepts can't drift apart: they
+ * both come from this one list.
+ *
+ * Each entry: { param, description }
+ *   param        the exact query-string key as it must appear in the URL
+ *                (e.g. "radius" for ?radius=3) — keep it identical to the
+ *                matching params.get(...) call in applyUrlConfig().
+ *   description  one short, player-facing sentence: what it does and,
+ *                where useful, its accepted values or range.
+ *
+ * Listed in the order applyUrlConfig() reads them. Adding a new URL
+ * parameter there should mean adding one entry here too.
+ */
+const URL_PARAMS = [
+  { param: "showAdvanced", description: "true shows the full setup and options panels (board size, pieces, no-enclosure rule, CPU search settings, color choice) instead of the compact default view." },
+  { param: "mode", description: "Game mode: local2p (pass and play), online2p (remote, needs join), vscomputer, or computerself." },
+  { param: "radius", description: "Board radius, from 2 (smallest) to 5 (largest)." },
+  { param: "pieces", description: "Pieces per color. Out-of-range values are clamped to whatever the chosen radius allows." },
+  { param: "noEnclosure", description: "true or false — whether trapping an opponent's piece is blocked. Only takes effect if the \"No enclosure\" control itself isn't locked out of the UI." },
+  { param: "color", description: "black or white — which color the human player controls in vscomputer mode." },
+  { param: "cpuTime", description: "Computer's max think time per move, in seconds (1-30)." },
+  { param: "cpuDepth", description: "Computer's search depth — how many moves ahead it evaluates (1-5)." },
+  { param: "name", description: "Display name shown to the other player (online2p) or in the players box, up to 18 characters." },
+  { param: "join", description: "A room code — opens directly into online2p and connects to that room." },
+];

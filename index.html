@@ -35,7 +35,13 @@
         <span class="brand-hex">&#x2B22;</span>
         <span class="brand-text">SELF<span class="brand-accent">O</span></span>
       </div>
-      <div class="game-id-wrap">
+      <a id="supportLink" class="chip-btn icon-btn icon-halo" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
+        <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+          <path d="M12 20.5s-7.3-4.4-9.6-8.9C.9 8.3 2.2 4.9 5.4 4.2 7.7 3.7 10 4.7 12 7.1c2-2.4 4.3-3.4 6.6-2.9 3.2.7 4.5 4.1 2.9 7.4-2.2 4.5-9.5 8.9-9.5 8.9z"/>
+        </svg>
+      </a>
+    </div>
+    <div class="game-id-wrap">
         <div class="mode-menu-wrap">
           <button id="modeMenuToggle" class="chip-btn icon-btn icon-halo" title="Mode" aria-label="Mode" aria-haspopup="true" aria-expanded="false">
             <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
@@ -130,12 +136,6 @@
             </button>
           </div>
         </div>
-        <a id="supportLink" class="chip-btn icon-btn icon-halo" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
-          <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-            <path d="M12 20.5s-7.3-4.4-9.6-8.9C.9 8.3 2.2 4.9 5.4 4.2 7.7 3.7 10 4.7 12 7.1c2-2.4 4.3-3.4 6.6-2.9 3.2.7 4.5 4.1 2.9 7.4-2.2 4.5-9.5 8.9-9.5 8.9z"/>
-          </svg>
-        </a>
-      </div>
     </div>
   </header>
 
@@ -205,19 +205,12 @@
         <div id="onlineStatus" class="online-status"></div>
       </div>
 
-      <!-- CPU search parameters (vs computer / computer vs computer only) -->
-      <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>
-        <legend>Computer</legend>
-        <label class="setup-label" for="cpuTimeRange">
-          Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
-        </label>
-        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
-
-        <label class="setup-label" for="cpuDepthRange">
-          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
-        </label>
-        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
-      </fieldset>
+      <!-- CPU search parameters (vs computer / computer vs computer only) —
+           moved into #helpOverlay (see below): the "?" help panel is now
+           the one place this control lives, reachable regardless of
+           ?showAdvanced=true, since adjusting it never resets the game in
+           progress (see the cpuTimeRange/cpuDepthRange "input" listeners
+           in script.js) and that's exactly the point of exposing it there. -->
 
       <!-- color choice (vs computer only) — last, so it's the final choice before play -->
       <div class="setup-block" id="colorChoiceBlock" hidden>
@@ -298,6 +291,49 @@
     </section>
 
   </main>
+
+  <!-- ============================================================ -->
+  <!-- HELP / ADVANCED PARAMETERS OVERLAY                             -->
+  <!-- Undocumented dev tool: opened by pressing the "?" key (see       -->
+  <!-- script.js's keydown listener near openHelpOverlay()) — no        -->
+  <!-- visible button on purpose, so regular players never stumble on   -->
+  <!-- it or the URL params it documents.                                -->
+  <!-- ============================================================ -->
+  <div id="helpOverlay" class="overlay" hidden>
+    <div class="overlay-card help-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <button id="helpCloseBtn" class="overlay-close-btn" type="button" aria-label="Close">
+        <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+          <path d="M6 6 18 18M18 6 6 18"/>
+        </svg>
+      </button>
+      <h2 id="helpTitle">Advanced parameters</h2>
+      <p class="help-intro">
+        Preconfigure a game by adding these to the URL, e.g.
+        <code id="helpUrlExample" class="help-url-example"></code>
+      </p>
+      <!-- Rows filled by buildHelpParamsList() in script.js, straight from
+           URL_PARAMS in config.js — this list and what the URL actually
+           accepts can never drift apart, since both read the same array. -->
+      <div id="helpParamsList" class="help-params-list"></div>
+
+      <!-- CPU search settings for the game in progress — only shown for
+           vscomputer/computerself (see updateSetupVisibility() in
+           script.js), and changing them here never resets the current
+           game, unlike every other setting in this file. -->
+      <fieldset class="cpu-params setup-block help-cpu-params" id="cpuParamsBlock" hidden>
+        <legend>This game's computer settings</legend>
+        <label class="setup-label" for="cpuTimeRange">
+          Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
+        </label>
+        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
+
+        <label class="setup-label" for="cpuDepthRange">
+          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
+        </label>
+        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
+      </fieldset>
+    </div>
+  </div>
 
   <!-- ============================================================ -->
   <!-- FIRST-RUN ONBOARDING OVERLAY                                  -->

@@ -318,6 +318,11 @@ const dom = {
   onboardingDontShow: document.getElementById("onboardingDontShow"),
   onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
+
+  helpOverlay: document.getElementById("helpOverlay"),
+  helpCloseBtn: document.getElementById("helpCloseBtn"),
+  helpParamsList: document.getElementById("helpParamsList"),
+  helpUrlExample: document.getElementById("helpUrlExample"),
 };
 
 /** Sets #difficultyRange's min/max/step from FeatureConfig.
@@ -335,6 +340,30 @@ function initDifficultyControl() {
   dom.difficultyRange.disabled = levels.length <= 1;
 }
 initDifficultyControl();
+
+/** Fills #helpParamsList (the "?" help panel) with one row per URL_PARAMS
+ *  entry (config.js) — param name + description, straight from that array
+ *  so the panel can never list something the URL doesn't actually accept
+ *  (or vice versa) — and the example URL from HELP_URL_EXAMPLE (also
+ *  config.js). Run once at startup; both are static for the session. */
+function buildHelpParamsList() {
+  dom.helpUrlExample.textContent = HELP_URL_EXAMPLE || "";
+  const params = URL_PARAMS || [];
+  dom.helpParamsList.innerHTML = "";
+  params.forEach(({ param, description }) => {
+    const row = document.createElement("div");
+    row.className = "help-param-row";
+    const name = document.createElement("code");
+    name.className = "help-param-name";
+    name.textContent = param;
+    const desc = document.createElement("div");
+    desc.className = "help-param-desc";
+    desc.textContent = description;
+    row.append(name, desc);
+    dom.helpParamsList.appendChild(row);
+  });
+}
+buildHelpParamsList();
 
 // =======================================================================
 // Utility helpers
@@ -1443,7 +1472,10 @@ function updateSetupVisibility() {
 
   dom.onlineBlock.hidden = !(Game.mode === "online2p" && Game.showAdvanced);
   dom.colorChoiceBlock.hidden = !(Game.mode === "vscomputer" && Game.showAdvanced);
-  dom.cpuParamsBlock.hidden = !(isCpuMode && Game.showAdvanced);
+  // Lives in #helpOverlay now (not panel-setup), reachable via the "?"
+  // button regardless of ?showAdvanced= — see buildHelpParamsList() and
+  // the help panel comments in index.html for why.
+  dom.cpuParamsBlock.hidden = !isCpuMode;
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
   // Minimalist mode (no ?showAdvanced=true): the whole options panel
@@ -1467,19 +1499,19 @@ function updateSetupVisibility() {
 }
 
 /** The left setup panel now only ever holds mode-dependent blocks
- *  (connection, CPU search settings, color choice) plus the
- *  board-radius/pieces/no-enclosure controls, which are themselves only
- *  shown behind ?showAdvanced=true (see applyUrlConfig). Mode selection
- *  itself lives in the top bar now, not in this panel — so in the default
- *  minimalist setup (local2p, no advanced flag) every block in here is
- *  hidden and the panel would just be dead empty space. Hide the whole
- *  panel in that case, and collapse the layout grid to match (see
+ *  (connection, color choice — CPU search settings moved to the "?" help
+ *  panel, see updateSetupVisibility() above) plus the board-radius/
+ *  pieces/no-enclosure controls, which are themselves only shown behind
+ *  ?showAdvanced=true (see applyUrlConfig). Mode selection itself lives
+ *  in the top bar now, not in this panel — so in the default minimalist
+ *  setup (local2p, no advanced flag) every block in here is hidden and
+ *  the panel would just be dead empty space. Hide the whole panel in
+ *  that case, and collapse the layout grid to match (see
  *  .layout.no-setup-panel), rather than reserving a column for nothing. */
 function updateSetupPanelVisibility() {
   const anyVisible = !dom.boardParamsBlock.hidden
     || !dom.noEnclosureBlock.hidden
     || !dom.onlineBlock.hidden
-    || !dom.cpuParamsBlock.hidden
     || !dom.colorChoiceBlock.hidden;
   dom.panelSetup.hidden = !anyVisible;
   dom.layout.classList.toggle("no-setup-panel", !anyVisible);
@@ -2491,6 +2523,43 @@ function closeOnboarding() {
 }
 
 dom.onboardingCloseBtn.addEventListener("click", closeOnboarding);
+
+// =======================================================================
+// "?" help / advanced-parameters panel
+// =======================================================================
+// Undocumented on purpose — no visible button, opened only by pressing the
+// "?" key. This is a dev/power-user tool (the URL params it documents are
+// meant for building preconfigured links, not everyday play), so it
+// deliberately isn't discoverable by a regular player just clicking
+// around.
+
+function openHelpOverlay() {
+  dom.helpOverlay.hidden = false;
+}
+function closeHelpOverlay() {
+  dom.helpOverlay.hidden = true;
+}
+dom.helpCloseBtn.addEventListener("click", closeHelpOverlay);
+// Clicking the dimmed backdrop (not the card itself) also closes it —
+// standard modal behavior, on top of the close button and Escape (see
+// the shared keydown listener below).
+dom.helpOverlay.addEventListener("click", (ev) => {
+  if (ev.target === dom.helpOverlay) closeHelpOverlay();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !dom.helpOverlay.hidden) {
+    closeHelpOverlay();
+    return;
+  }
+  // "?" opens it — ignored while typing in a text field (join code,
+  // player name, etc.), where "?" is a normal character, not a shortcut.
+  if (ev.key !== "?") return;
+  const target = ev.target;
+  const tag = target && target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || (target && target.isContentEditable)) return;
+  ev.preventDefault();
+  openHelpOverlay();
+});
 
 // =======================================================================
 // Download finished game summary

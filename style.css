@@ -76,7 +76,7 @@ body {
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 10px;
 }
 
 .brand {
@@ -93,6 +93,11 @@ body {
   color: var(--accent);
   text-shadow: 0 0 10px var(--accent-glow);
   font-size: 20px;
+  line-height: 1;
+  /* The ⬢ glyph sits low in its own font's line box relative to the
+     "SELFO" text next to it, even with align-items: center on .brand —
+     nudge it up to actually line up with the text visually. */
+  transform: translateY(-2px);
 }
 .brand-text { color: var(--metal-light); }
 .brand-accent { color: var(--accent); }
@@ -516,7 +521,7 @@ body {
 .share-menu {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -749,7 +754,7 @@ body {
 .piece.winning-piece { filter: drop-shadow(0 0 7px var(--accent-glow)) drop-shadow(0 0 7px var(--accent-glow)); }
 
 /* ---------------------------------------------------------------
-   Winner overlay
+   Overlays (winner announcement, first-run onboarding, help panel)
    --------------------------------------------------------------- */
 .overlay {
   position: fixed;
@@ -763,6 +768,7 @@ body {
 }
 .overlay[hidden] { display: none; }
 .overlay-card {
+  position: relative;
   background: var(--bg-panel);
   border: 1px solid var(--accent-dim);
   box-shadow: 0 0 40px var(--accent-glow);
@@ -795,6 +801,74 @@ body {
   cursor: pointer;
 }
 .onboarding-check input { accent-color: var(--accent); cursor: pointer; }
+
+/* "?" help panel: reuses .overlay/.overlay-card wholesale (see above),
+   just left-aligned and scrollable instead of the short, centered
+   onboarding/winner cards — this one can hold a param-by-param list of
+   arbitrary length (see URL_PARAMS in config.js / buildHelpParamsList()
+   in script.js) plus the current game's CPU sliders. */
+.overlay-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--metal-mid);
+  cursor: pointer;
+}
+.overlay-close-btn:hover { color: var(--accent); background: rgba(53, 224, 255, 0.1); }
+.help-card {
+  text-align: left;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 32px 32px 24px;
+}
+.help-intro {
+  font-size: 13px;
+  color: var(--metal-mid);
+  line-height: 1.6;
+}
+.help-url-example {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #0e1114;
+  border: 1px solid var(--metal-line);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  word-break: break-all;
+}
+.help-params-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.help-param-row { display: flex; flex-direction: column; gap: 2px; }
+.help-param-name {
+  align-self: flex-start;
+  background: #0e1114;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.help-param-desc { font-size: 12.5px; color: var(--metal-light); line-height: 1.5; }
+.help-cpu-params {
+  margin-top: 6px;
+  margin-bottom: 0;
+  border-style: solid;
+}
 
 .setup-check {
   display: flex;
