@@ -315,15 +315,33 @@ body {
 }
 .compact-mode-icon.winner {
   color: var(--accent);
-  animation: compact-winner-bounce 1.4s ease-in-out infinite;
+  animation: compact-winner-bounce 1.6s ease-in-out infinite;
 }
 @keyframes compact-winner-halo {
   0%, 100% { border-color: var(--accent-dim); box-shadow: 0 0 6px 1px var(--accent-glow); }
   50% { border-color: var(--accent); box-shadow: 0 0 16px 4px var(--accent-glow); }
 }
+/* A proper "jump for joy" rather than a gentle bob: a beat of rest, a
+   big hop with a squash-and-stretch takeoff/landing, a smaller second
+   hop, then rest again before repeating — the held rest at 0%/20% and
+   80%/100% is what reads as discrete little jumps instead of continuous
+   swaying. */
 @keyframes compact-winner-bounce {
-  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 4px var(--accent-glow)); }
-  50% { transform: translateY(-3px); filter: drop-shadow(0 0 9px var(--accent-glow)); }
+  0%, 20%, 100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 4px var(--accent-glow));
+  }
+  28% { transform: translateY(2px) scaleX(1.18) scaleY(0.82); }
+  45% {
+    transform: translateY(-11px) scale(1);
+    filter: drop-shadow(0 0 11px var(--accent-glow));
+  }
+  58% { transform: translateY(1px) scaleX(1.1) scaleY(0.9); }
+  68% {
+    transform: translateY(-5px) scale(1);
+    filter: drop-shadow(0 0 8px var(--accent-glow));
+  }
+  80% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 4px var(--accent-glow)); }
 }
 .compact-swap-btn {
   display: inline-flex;
