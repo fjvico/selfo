@@ -2604,7 +2604,16 @@ dom.shareMenuCopy.addEventListener("click", () => {
 });
 
 // any click on an actual share option (email/WhatsApp/Telegram) also closes the menu
-dom.shareMenuEmail.addEventListener("click", closeShareMenu);
+// mailto: links ignore target="_blank" in enough browsers that clicking it
+// can navigate/unload the current tab (killing the game in progress)
+// instead of just handing off to the mail client — force it into an
+// actual new browsing context ourselves rather than relying on the
+// anchor's own target attribute for a non-http(s) scheme.
+dom.shareMenuEmail.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  window.open(dom.shareMenuEmail.href, "_blank", "noopener");
+  closeShareMenu();
+});
 dom.shareMenuWhatsApp.addEventListener("click", closeShareMenu);
 dom.shareMenuTelegram.addEventListener("click", closeShareMenu);
 
