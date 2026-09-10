@@ -2000,15 +2000,18 @@ document.addEventListener("click", (ev) => {
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && !dom.difficultyMenu.hidden) closeDifficultyMenu();
 });
-// Desktop only: mouseleave doesn't fire from a tap on touch devices, so
-// this never interferes with the click-to-toggle behavior above on
-// mobile — it only auto-closes the dropdown once the mouse actually
-// leaves the button+panel area, without also closing it while the
-// cursor is just moving from the toggle button into the panel itself
-// (both live inside this one wrapper).
-dom.difficultyMenuWrap.addEventListener("mouseleave", () => {
-  if (!dom.difficultyMenu.hidden) closeDifficultyMenu();
-});
+// Desktop only, checked with matchMedia rather than assumed from the
+// event type: touch devices are supposed to never fire mouseleave from
+// a tap, but Firefox for Android does synthesize one anyway, which was
+// closing this dropdown out from under the +/- buttons before their own
+// click could land (Chrome for Android doesn't have this quirk). Gating
+// on an actual fine-pointer/hover-capable device sidesteps relying on
+// which synthetic events a given mobile browser happens to emit.
+if (window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+  dom.difficultyMenuWrap.addEventListener("mouseleave", () => {
+    if (!dom.difficultyMenu.hidden) closeDifficultyMenu();
+  });
+}
 
 /** Switches to (or restarts) a mode: abandons any game in progress (with
  *  confirmation), tears down any online connection, and immediately

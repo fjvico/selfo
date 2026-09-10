@@ -273,6 +273,12 @@ body {
   justify-content: center;
   flex-shrink: 0;
   margin: 0 14px;
+  /* Fixed slot width — matches the button's old footprint back when it
+     still showed the "Swap colors" label, so the icon-only button (see
+     .compact-swap-btn below) can be visually smaller without the two
+     player groups on either side drifting inward to fill the freed-up
+     space. The icon just centers within this unchanged-size slot. */
+  width: 120px;
 }
 .compact-swatch {
   width: 18px; height: 18px; border-radius: 50%;
@@ -322,7 +328,10 @@ body {
 .compact-swap-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  /* Icon-only now (no "Swap colors" label) — smaller, square-ish
+     padding instead of .btn-metal-sm's text-sized default. */
+  padding: 6px;
 }
 /* Replaces the [hidden] attribute for this one button: visibility
    (not display) so the button keeps its layout box — see the comment
@@ -669,6 +678,13 @@ body {
   align-items: center;
   justify-content: center;
   padding: 5px;
+  /* Firefox (notably on Android) keeps its own native button chrome —
+     a light/white background and border — unless appearance is reset
+     explicitly; background:transparent/border:none alone (below) isn't
+     enough there, even though it is in Chrome. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   background: transparent;
   border: none;
   border-radius: 5px;
