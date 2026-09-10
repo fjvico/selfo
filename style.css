@@ -296,6 +296,40 @@ body {
   flex-shrink: 0;
   transition: color 0.2s, filter 0.2s;
 }
+/* Wraps just the icon (not the swatch beside it) so the "this is you"
+   marker below can sit centered under the icon alone, in its own row,
+   without disturbing the swatch+icon's horizontal alignment. */
+.compact-icon-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* "Play online" only — identifies which of the two identical-looking
+   person icons is *this browser's* player (host and guest otherwise
+   can't tell each other apart at a glance). A little glowing underline
+   "tab" rather than plain text: reads as "you are here" without adding
+   a word, and doubles as a tiny brand accent rather than a dry UI
+   label. Empty/invisible by default (both sides render the element,
+   see index.html, so its layout space is always reserved and nothing
+   shifts when it turns on) — .shown is added by updateCompactBar() in
+   script.js to exactly one side, only in online2p. */
+.compact-you-mark {
+  display: block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transform: scaleX(0.3);
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+.compact-you-mark.shown {
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  box-shadow: 0 0 6px var(--accent-glow);
+  transform: scaleX(1);
+  opacity: 1;
+}
 /* Turn indicator: icon only (not the swatch/"ficha" next to it, which
    stays a plain color swatch) — a blue tint + drop-shadow on whichever
    side's person/tower glyph currently has the move. See

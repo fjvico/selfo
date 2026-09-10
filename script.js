@@ -273,8 +273,10 @@ const dom = {
   compactPlayers: document.getElementById("compactPlayers"),
   compactSwatchLeft: document.getElementById("compactSwatchLeft"),
   compactIconLeft: document.getElementById("compactIconLeft"),
+  compactYouMarkLeft: document.getElementById("compactYouMarkLeft"),
   compactSwapBtn: document.getElementById("compactSwapBtn"),
   compactIconRight: document.getElementById("compactIconRight"),
+  compactYouMarkRight: document.getElementById("compactYouMarkRight"),
   compactSwatchRight: document.getElementById("compactSwatchRight"),
 
   modeSelectBlock: document.getElementById("modeSelectBlock"),
@@ -1604,12 +1606,6 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactSwatchLeft.className = "compact-swatch swatch-" + leftColor;
   dom.compactSwatchRight.className = "compact-swatch swatch-" + rightColor;
 
-  // Turn indicator (only while a game is actually being played), on the
-  // icon only — not the swatch/"ficha" beside it, so the piece color
-  // itself stays neutral and only the person/tower glyph reads as "your
-  // move" — and winner indicator (persists once Game.phase is "ended",
-  // cleared the moment the next game's setup preview resets
-  // Game.winner), which does still halo both swatch and icon.
   // Turn indicator: shown from the moment there's an actual game to
   // play, not just once Game.phase flips to "playing" on the literal
   // first move (see performMove()) — Game.turn already correctly reads
@@ -1617,8 +1613,13 @@ function updateCompactBar(pieRuleWindow) {
   // waiting for a move to happen first just left nobody highlighted
   // during setup, most noticeably for online2p while both sides are
   // sitting on a fully-connected, ready board waiting for black to
-  // actually move. "ended" is deliberately excluded — see winnerColor
-  // just below, which takes over once the game is over.
+  // actually move. Applied to the icon only — not the swatch/"ficha"
+  // beside it, so the piece color itself stays neutral and only the
+  // person/tower glyph reads as "your move". Winner indicator (persists
+  // once Game.phase is "ended", cleared the moment the next game's setup
+  // preview resets Game.winner) does still halo both swatch and icon.
+  // "ended" is deliberately excluded from the turn indicator — see
+  // winnerColor just below, which takes over once the game is over.
   const activeColor = Game.phase === "ended" ? null : Game.turn;
   const winnerColor = Game.phase === "ended" ? Game.winner : null;
   dom.compactIconLeft.classList.toggle("active-turn", leftColor === activeColor);
@@ -1627,6 +1628,17 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactSwatchRight.classList.toggle("winner", rightColor === winnerColor);
   dom.compactIconLeft.classList.toggle("winner", leftColor === winnerColor);
   dom.compactIconRight.classList.toggle("winner", rightColor === winnerColor);
+
+  // "Play online" only: mark whichever icon is *this browser's* player
+  // (Game.localColor — never itself sent over the wire, so this is a
+  // purely local, per-screen decision) with a small glowing underline,
+  // since host and guest otherwise look like two identical person
+  // icons with no way to tell "which one is me" apart. Every other mode
+  // gets neither mark — local2p is played by both people on one screen,
+  // and vscomputer/computerself already distinguish person vs. tower.
+  const youColor = Game.mode === "online2p" ? Game.localColor : null;
+  dom.compactYouMarkLeft.classList.toggle("shown", youColor !== null && leftColor === youColor);
+  dom.compactYouMarkRight.classList.toggle("shown", youColor !== null && rightColor === youColor);
 
   // visibility (not the [hidden] attribute) so this button keeps its
   // layout box and the fixed gap on either side of it never changes —

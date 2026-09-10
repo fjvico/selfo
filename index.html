@@ -245,7 +245,13 @@
       <div id="compactPlayers" class="compact-players" hidden>
         <div class="compact-side compact-side-left">
           <span id="compactSwatchLeft" class="compact-swatch"></span>
-          <svg id="compactIconLeft" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
+          <div class="compact-icon-col">
+            <svg id="compactIconLeft" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
+            <!-- "Play online" only — marks which icon is *this* screen's
+                 own player, since host/guest otherwise look identical
+                 from either side. See updateCompactBar() in script.js. -->
+            <span id="compactYouMarkLeft" class="compact-you-mark" aria-hidden="true"></span>
+          </div>
         </div>
         <div class="compact-side-center">
           <button id="compactSwapBtn" class="btn btn-metal-sm compact-swap-btn compact-swap-inactive" type="button" title="Swap colors" aria-label="Swap colors">
@@ -256,7 +262,10 @@
           </button>
         </div>
         <div class="compact-side compact-side-right">
-          <svg id="compactIconRight" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
+          <div class="compact-icon-col">
+            <svg id="compactIconRight" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
+            <span id="compactYouMarkRight" class="compact-you-mark" aria-hidden="true"></span>
+          </div>
           <span id="compactSwatchRight" class="compact-swatch"></span>
         </div>
       </div>
