@@ -1235,7 +1235,13 @@ function swapColors() {
   // minimalist players strip only — see updateCompactBar()
   Game.compactSwapped = !Game.compactSwapped;
 
-  if (Game.mode === "online2p" && Game.isHost) {
+  if (Game.mode === "online2p") {
+    // Either side can be the one whose turn it is when the pie-rule
+    // window is open (whoever ended up playing white), not just the
+    // host — gating this on Game.isHost meant a guest-triggered swap
+    // updated only their own screen and the host was never told, after
+    // which the two sides permanently disagreed about who controls
+    // white and neither could legally move it.
     sendToRemote({ type: "swap" });
   }
 
@@ -1604,7 +1610,16 @@ function updateCompactBar(pieRuleWindow) {
   // move" — and winner indicator (persists once Game.phase is "ended",
   // cleared the moment the next game's setup preview resets
   // Game.winner), which does still halo both swatch and icon.
-  const activeColor = Game.phase === "playing" ? Game.turn : null;
+  // Turn indicator: shown from the moment there's an actual game to
+  // play, not just once Game.phase flips to "playing" on the literal
+  // first move (see performMove()) — Game.turn already correctly reads
+  // "black" (who always moves first) the instant a board exists, so
+  // waiting for a move to happen first just left nobody highlighted
+  // during setup, most noticeably for online2p while both sides are
+  // sitting on a fully-connected, ready board waiting for black to
+  // actually move. "ended" is deliberately excluded — see winnerColor
+  // just below, which takes over once the game is over.
+  const activeColor = Game.phase === "ended" ? null : Game.turn;
   const winnerColor = Game.phase === "ended" ? Game.winner : null;
   dom.compactIconLeft.classList.toggle("active-turn", leftColor === activeColor);
   dom.compactIconRight.classList.toggle("active-turn", rightColor === activeColor);
@@ -1629,8 +1644,10 @@ function updatePlayersUI() {
   if (document.activeElement !== dom.playerNameWhite) dom.playerNameWhite.textContent = Game.players.white.name;
   dom.playerYouBlack.textContent = Game.mode === "online2p" && Game.localColor === "black" ? "(you)" : "";
   dom.playerYouWhite.textContent = Game.mode === "online2p" && Game.localColor === "white" ? "(you)" : "";
-  dom.playerRowBlack.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "black");
-  dom.playerRowWhite.classList.toggle("active-turn", Game.phase === "playing" && Game.turn === "white");
+  // See the matching comment in updateCompactBar() — shown from the
+  // moment there's a board to play, not just once phase is "playing".
+  dom.playerRowBlack.classList.toggle("active-turn", Game.phase !== "ended" && Game.turn === "black");
+  dom.playerRowWhite.classList.toggle("active-turn", Game.phase !== "ended" && Game.turn === "white");
 
   const blackWon = Game.phase === "ended" && Game.winner === "black";
   const whiteWon = Game.phase === "ended" && Game.winner === "white";
