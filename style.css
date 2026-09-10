@@ -329,9 +329,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Icon-only now (no "Swap colors" label) — smaller, square-ish
-     padding instead of .btn-metal-sm's text-sized default. */
-  padding: 6px;
+  /* Icon-only, no label — padding shrunk just enough to offset the
+     larger icon below (17px vs. the original 13px) so the button's own
+     outer box stays the same overall size, just with a bigger, more
+     legible pair of arrows inside it. */
+  padding: 4px;
 }
 /* Replaces the [hidden] attribute for this one button: visibility
    (not display) so the button keeps its layout box — see the comment
