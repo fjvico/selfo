@@ -68,22 +68,25 @@ const FeatureConfig = {
    *                present.
    *   cpuDepth     OPTIONAL. Computer's search depth (1-5, clamped).
    *                Same "only overrides if present" behavior as cpuTime.
-   *   noEnclosure  OPTIONAL boolean. Same "only overrides if present"
-   *                behavior, and still subject to FeatureConfig.
-   *                no_enclosure existing as a rule at all — this can't
-   *                turn the rule on/off if the game itself doesn't use it.
+   *   noEnclosure  OPTIONAL boolean. Unlike cpuTime/cpuDepth above, this
+   *                one does NOT just "leave it as-is" when omitted — a
+   *                level without it resets noEnclosure to the
+   *                FeatureConfig.no_enclosure default instead, since a
+   *                stale rule silently surviving a board change (whether
+   *                from picking a different level or dragging the
+   *                radius/pieces sliders directly) is exactly the
+   *                confusing behavior this is meant to avoid. Still
+   *                subject to FeatureConfig.no_enclosure existing as a
+   *                rule at all — this can't turn the rule on/off if the
+   *                game itself doesn't use it.
    *
    * MUST be listed easiest first, hardest last: the picker renders them
    * in this exact order with no other cue to their relative difficulty.
    */
   difficulty_levels: [
-    { label: "1_1", r: 2, f: 6,  cpuTime:  5, cpuDepth: 2 },
-    { label: "1_2", r: 2, f: 6,  cpuTime: 10, cpuDepth: 5 },
-    { label: "2_1", r: 3, f: 10, cpuTime: 15, cpuDepth: 3 },
-    { label: "2_2", r: 3, f: 10, cpuTime: 15, cpuDepth: 3, noEnclosure: true },
-    { label: "3_1", r: 4, f: 16, cpuTime:  5, cpuDepth: 5 },
-    { label: "3_2", r: 4, f: 16, cpuTime: 15, cpuDepth: 5 },
-    { label: "3_3", r: 4, f: 16, cpuTime: 30, cpuDepth: 5 },
+    { label: "Easy",   r: 2, f: 6,  cpuTime: 5,  cpuDepth: 2 },
+    { label: "Medium", r: 3, f: 10, cpuTime: 15, cpuDepth: 3 },
+    { label: "Hard",   r: 4, f: 16 },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh
@@ -98,7 +101,7 @@ const FeatureConfig = {
 // #helpOverlay / script.js's dom.helpUrlExample) when illustrating how to
 // build a preconfigured game link — kept here, not hardcoded in the HTML,
 // so it's a one-line edit if the game ever moves to a different domain.
-const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3";
+const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3&cpuTime=15";
 
 /**
  * URL_PARAMS

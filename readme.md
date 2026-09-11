@@ -63,13 +63,21 @@ the mode selector and Share). Each entry:
 | `f` | yes | Pieces per color. Should fit `pieceRangeForRadius(r)` (`script.js`) for that same `r` — an out-of-range value is **silently clamped**, not rejected, when the level is applied. Keep `r`/`f` matched on purpose so a level doesn't quietly do something other than what its position in the list implies. |
 | `cpuTime` | no | Computer's max think time in seconds, clamped to 1–30. |
 | `cpuDepth` | no | Computer's search depth, clamped to 1–5. |
-| `noEnclosure` | no | Boolean. Still subject to `no_enclosure` above existing as a rule at all — this can't turn it on if `show_in_ui` chain means the rule isn't in play. |
+| `noEnclosure` | no | Boolean. Unlike `cpuTime`/`cpuDepth`, omitting this **resets** it to the `no_enclosure` default rather than leaving it as-is — see below. Still subject to `no_enclosure` above existing as a rule at all — this can't turn it on if the `show_in_ui` chain means the rule isn't in play. |
 
-**`cpuTime`/`cpuDepth`/`noEnclosure` are override-if-present, not
-override-always.** Omitting one of them leaves whatever was already in
-effect (session default, a `?cpuTime=`/`?cpuDepth=`/`?noEnclosure=` URL
-param, or a manual edit in the advanced panel) untouched — it does **not**
-reset to some baseline. See `applyDifficultyLevel()` in `script.js`.
+**`cpuTime`/`cpuDepth` are override-if-present, not override-always.**
+Omitting one of them leaves whatever was already in effect (session
+default, a `?cpuTime=`/`?cpuDepth=` URL param, or a manual edit in the
+advanced panel) untouched — it does **not** reset to some baseline.
+
+**`noEnclosure` is different: it's always resolved, never left stale.**
+Selecting *any* level — or, in the advanced panel, dragging the
+radius/pieces sliders directly — sets it to that level's `noEnclosure` if
+defined, or back to the `no_enclosure` default if not. A manually-checked
+"No enclosure" that silently kept surviving a board change with no visible
+cause was confusing enough that it doesn't get the same "leave it alone"
+treatment as `cpuTime`/`cpuDepth`. See `applyDifficultyLevel()` and the
+`radiusRange`/`piecesRange` `"input"` listeners in `script.js`.
 
 **Ordering is meaningful and load-bearing:** the array **must** be listed
 easiest first, hardest last. The slider renders levels in exactly that
@@ -81,11 +89,13 @@ curve.
 only by one having `noEnclosure` set and the other not.** The app does track
 which level was actually picked (`lastAppliedDifficultyIndex` in
 `script.js`) so the slider generally still shows the right one, but a level
-that *omits* a field matches *any* value of that field — so an earlier,
-less-specific level can still end up looking selected if the state happens
-to coincide after something else changes it (a manual slider tweak, a URL
-param, an online host's custom setup). Give genuinely distinct levels at
-least one differing defined field to avoid this ambiguity entirely.
+that *omits* `cpuTime`/`cpuDepth` matches *any* value of that particular
+field (unlike `noEnclosure`, which is always resolved to a definite value —
+see above) — so an earlier, less-specific level can still end up looking
+selected if the state happens to coincide after something else changes it
+(a manual slider tweak, a URL param, an online host's custom setup). Give
+genuinely distinct levels at least one differing defined field to avoid
+this ambiguity entirely.
 
 `FeatureConfig.DEFAULT_DIFFICULTY_INDEX` is the index into this array applied
 at the start of every fresh session (see `resetAllRangeInputs()`), before the

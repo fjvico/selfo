@@ -1799,7 +1799,12 @@ function levelMatchesCurrentState(level) {
   if (level.r !== Game.radius || level.f !== Game.piecesPerColor) return false;
   if (Number.isFinite(level.cpuTime) && Number(dom.cpuTimeRange.value) !== level.cpuTime) return false;
   if (Number.isFinite(level.cpuDepth) && Number(dom.cpuDepthRange.value) !== level.cpuDepth) return false;
-  if (typeof level.noEnclosure === "boolean" && Game.noEnclosure !== level.noEnclosure) return false;
+  // Unlike cpuTime/cpuDepth above (still "wildcard" when a level omits
+  // them), noEnclosure is always resolved to a definite value the moment
+  // a level is applied — see applyDifficultyLevel() — so "omitted" here
+  // means "must be at the FeatureConfig default", not "matches anything".
+  const expectedNoEnclosure = typeof level.noEnclosure === "boolean" ? level.noEnclosure : FeatureConfig.no_enclosure[1];
+  if (Game.noEnclosure !== expectedNoEnclosure) return false;
   return true;
 }
 
@@ -1874,9 +1879,16 @@ function applyDifficultyLevel(index) {
     dom.cpuDepthRange.value = String(cpuDepth);
     dom.cpuDepthValue.textContent = String(cpuDepth);
   }
-  if (typeof level.noEnclosure === "boolean") {
-    dom.noEnclosureCheckbox.checked = level.noEnclosure; // read into Game.noEnclosure by beginSetupPreview() below
-  }
+  // Unlike cpuTime/cpuDepth just above, noEnclosure resets to the
+  // FeatureConfig default when a level doesn't specify it, rather than
+  // leaving whatever was manually checked before untouched — picking a
+  // level (or dragging radius/pieces directly, see those "input"
+  // listeners) redefines the board, and a stale "No enclosure" left
+  // over from a previous level/manual check was silently surviving
+  // that, checked, with no visible cause once the level itself moved on.
+  dom.noEnclosureCheckbox.checked = typeof level.noEnclosure === "boolean"
+    ? level.noEnclosure
+    : FeatureConfig.no_enclosure[1]; // read into Game.noEnclosure by beginSetupPreview() below
 
   lastAppliedDifficultyIndex = index; // see syncDifficultyMenuSelection() above
 
@@ -1907,7 +1919,15 @@ dom.radiusRange.addEventListener("input", () => {
   // the "change" listener below)
   dom.radiusValue.textContent = dom.radiusRange.value;
   refreshPieceRangeUI(Number(dom.radiusRange.value));
-  if (Game.phase !== "playing") beginSetupPreview();
+  if (Game.phase !== "playing") {
+    // Redefining the board resets "No enclosure" back to its
+    // FeatureConfig default rather than keeping whatever was manually
+    // checked before — same reasoning as applyDifficultyLevel() below:
+    // a board-defining control shouldn't leave a stale rule from a
+    // previous configuration silently still in effect.
+    dom.noEnclosureCheckbox.checked = FeatureConfig.no_enclosure[1];
+    beginSetupPreview();
+  }
 });
 dom.radiusRange.addEventListener("change", () => {
   if (Game.phase !== "playing") return; // already applied live above
@@ -1922,7 +1942,10 @@ dom.radiusRange.addEventListener("change", () => {
 dom.piecesRange.addEventListener("input", () => {
   const { min, max } = pieceRangeForRadius(Game.phase === "playing" ? Game.radius : Number(dom.radiusRange.value));
   dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
-  if (Game.phase !== "playing") beginSetupPreview();
+  if (Game.phase !== "playing") {
+    dom.noEnclosureCheckbox.checked = FeatureConfig.no_enclosure[1]; // see radiusRange's "input" listener above
+    beginSetupPreview();
+  }
 });
 dom.piecesRange.addEventListener("change", () => {
   if (Game.phase !== "playing") return;
