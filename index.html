@@ -211,12 +211,16 @@
         <div id="onlineStatus" class="online-status"></div>
       </div>
 
-      <!-- CPU search parameters (vs computer / computer vs computer only) —
-           moved into #helpOverlay (see below): the "?" help panel is now
-           the one place this control lives, reachable regardless of
-           ?showAdvanced=true, since adjusting it never resets the game in
-           progress (see the cpuTimeRange/cpuDepthRange "input" listeners
-           in script.js) and that's exactly the point of exposing it there. -->
+      <!-- CPU search parameters (vs computer / computer vs computer only).
+           The actual <fieldset id="cpuParamsBlock"> lives in the DOM only
+           once — script.js's placeCpuParamsBlock() moves it here when
+           ?showAdvanced=true (so it sits alongside the rest of the
+           advanced controls, as expected) and into #helpOverlay's
+           cpuParamsHelpSlot otherwise (so it's still reachable via the
+           "?" panel in the default minimalist UI, where adjusting it
+           never resets the game in progress — see the cpuTimeRange/
+           cpuDepthRange "input" listeners). -->
+      <div id="cpuParamsSetupSlot"></div>
 
       <!-- color choice (vs computer only) — last, so it's the final choice before play -->
       <div class="setup-block" id="colorChoiceBlock" hidden>
@@ -333,19 +337,25 @@
       <!-- CPU search settings for the game in progress — only shown for
            vscomputer/computerself (see updateSetupVisibility() in
            script.js), and changing them here never resets the current
-           game, unlike every other setting in this file. -->
-      <fieldset class="cpu-params setup-block help-cpu-params" id="cpuParamsBlock" hidden>
-        <legend>This game's computer settings</legend>
-        <label class="setup-label" for="cpuTimeRange">
-          Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
-        </label>
-        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
+           game, unlike every other setting in this file. This slot is
+           where the <fieldset> lives whenever ?showAdvanced= isn't set
+           — see cpuParamsSetupSlot above/placeCpuParamsBlock() in
+           script.js for the ?showAdvanced=true case, which moves the
+           very same element (not a copy) over there instead. -->
+      <div id="cpuParamsHelpSlot">
+        <fieldset class="cpu-params setup-block help-cpu-params" id="cpuParamsBlock" hidden>
+          <legend>This game's computer settings</legend>
+          <label class="setup-label" for="cpuTimeRange">
+            Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
+          </label>
+          <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
 
-        <label class="setup-label" for="cpuDepthRange">
-          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
-        </label>
-        <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
-      </fieldset>
+          <label class="setup-label" for="cpuDepthRange">
+            Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
+          </label>
+          <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
+        </fieldset>
+      </div>
     </div>
   </div>
 

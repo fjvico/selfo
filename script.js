@@ -312,6 +312,8 @@ const dom = {
   piecesRange: document.getElementById("piecesRange"),
   piecesValue: document.getElementById("piecesValue"),
   cpuParamsBlock: document.getElementById("cpuParamsBlock"),
+  cpuParamsSetupSlot: document.getElementById("cpuParamsSetupSlot"),
+  cpuParamsHelpSlot: document.getElementById("cpuParamsHelpSlot"),
   cpuTimeRange: document.getElementById("cpuTimeRange"),
   cpuTimeValue: document.getElementById("cpuTimeValue"),
   cpuDepthRange: document.getElementById("cpuDepthRange"),
@@ -1499,6 +1501,22 @@ function scheduleCpuMove() {
 // UI state / phase management
 // =======================================================================
 
+/** Moves the single #cpuParamsBlock element (never duplicated — see the
+ *  two slot comments in index.html) into whichever of its two possible
+ *  homes matches the current ?showAdvanced= state: alongside the rest of
+ *  the advanced setup controls when true (so it's visible right where an
+ *  advanced-mode player would expect it, without needing to know about
+ *  the "?" panel at all), or into the "?" help panel otherwise (so it's
+ *  still reachable in the default minimalist UI). appendChild() on an
+ *  element that already has a parent just re-parents it — no listeners
+ *  are lost, and it's a no-op if it's already in the right slot. */
+function placeCpuParamsBlock() {
+  const targetSlot = Game.showAdvanced ? dom.cpuParamsSetupSlot : dom.cpuParamsHelpSlot;
+  if (dom.cpuParamsBlock.parentElement !== targetSlot) {
+    targetSlot.appendChild(dom.cpuParamsBlock);
+  }
+}
+
 /** Shows/hides the setup controls based on the current mode. Board
  *  radius/pieces and the mode buttons are always visible, in a fixed
  *  position, in every phase — including while a game is being played,
@@ -1514,9 +1532,13 @@ function updateSetupVisibility() {
 
   dom.onlineBlock.hidden = !(Game.mode === "online2p" && Game.showAdvanced);
   dom.colorChoiceBlock.hidden = !(Game.mode === "vscomputer" && Game.showAdvanced);
-  // Lives in #helpOverlay now (not panel-setup), reachable via the "?"
-  // button regardless of ?showAdvanced= — see buildHelpParamsList() and
-  // the help panel comments in index.html for why.
+  // The actual <fieldset id="cpuParamsBlock"> element (not a copy) moves
+  // between two slots depending on ?showAdvanced=: alongside the rest of
+  // the advanced setup controls when it's true, or into the "?" help
+  // panel otherwise — see placeCpuParamsBlock() below and the comments
+  // on both slots in index.html for why it needs to live in either place
+  // depending on context.
+  placeCpuParamsBlock();
   dom.cpuParamsBlock.hidden = !isCpuMode;
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
@@ -1540,21 +1562,27 @@ function updateSetupVisibility() {
   updateButtonsForPhase();
 }
 
-/** The left setup panel now only ever holds mode-dependent blocks
- *  (connection, color choice — CPU search settings moved to the "?" help
- *  panel, see updateSetupVisibility() above) plus the board-radius/
- *  pieces/no-enclosure controls, which are themselves only shown behind
- *  ?showAdvanced=true (see applyUrlConfig). Mode selection itself lives
- *  in the top bar now, not in this panel — so in the default minimalist
- *  setup (local2p, no advanced flag) every block in here is hidden and
- *  the panel would just be dead empty space. Hide the whole panel in
- *  that case, and collapse the layout grid to match (see
- *  .layout.no-setup-panel), rather than reserving a column for nothing. */
+/** The left setup panel holds mode-dependent blocks (connection, color
+ *  choice, and — only while ?showAdvanced=true — CPU search settings,
+ *  see placeCpuParamsBlock() above) plus the board-radius/pieces/
+ *  no-enclosure controls, themselves only shown behind ?showAdvanced=true
+ *  (see applyUrlConfig). Mode selection itself lives in the top bar now,
+ *  not in this panel — so in the default minimalist setup (local2p, no
+ *  advanced flag) every block in here is hidden and the panel would just
+ *  be dead empty space. Hide the whole panel in that case, and collapse
+ *  the layout grid to match (see .layout.no-setup-panel), rather than
+ *  reserving a column for nothing. */
 function updateSetupPanelVisibility() {
+  // cpuParamsBlock only counts here while it's actually slotted into this
+  // panel (?showAdvanced=true — see placeCpuParamsBlock()); the rest of
+  // the time it lives in the help overlay instead and has no bearing on
+  // whether this panel itself has anything to show.
+  const cpuParamsHereAndVisible = dom.cpuParamsBlock.parentElement === dom.cpuParamsSetupSlot && !dom.cpuParamsBlock.hidden;
   const anyVisible = !dom.boardParamsBlock.hidden
     || !dom.noEnclosureBlock.hidden
     || !dom.onlineBlock.hidden
-    || !dom.colorChoiceBlock.hidden;
+    || !dom.colorChoiceBlock.hidden
+    || cpuParamsHereAndVisible;
   dom.panelSetup.hidden = !anyVisible;
   dom.layout.classList.toggle("no-setup-panel", !anyVisible);
 }
