@@ -29,12 +29,7 @@
  *   }
  *
  * Return shape:
- *   { move: { from, to } | null, score: number, nodesEvaluated: number, depthReached: number }
- *   (nodesEvaluated/depthReached are search-stats for the ?showAdvanced=
- *   true CPU log in script.js — see minimaxAlphaBetaID()'s own doc comment
- *   below for exactly what each counts. A strategy that doesn't do a
- *   depth-limited tree search at all is free to omit them; script.js
- *   treats both as optional and simply doesn't log a line it can't fill.)
+ *   { move: { from, to } | null, score: number }
  *
  * New algorithms are added the same way as in boardinit.js: register a
  * function under AiStrategies.strategies["name"], then either set it as
@@ -97,53 +92,13 @@ const AiStrategies = (() => {
     return copy;
   }
 
-  /** Returns a *new* board with the move applied (does not mutate input).
-   *  Kept as the stable, easy-to-reason-about public API (see the
-   *  `strategies`/`pickMove` export below) — a strategy that doesn't
-   *  need the speed of makeMove/undo (e.g. a simple one-ply evaluator,
-   *  or a future strategy with a much shallower tree) can just use this
-   *  and not worry about make/unmake bookkeeping at all. minimaxAlphaBetaID
-   *  itself no longer calls this internally — see makeMove() just below. */
+  /** Returns a *new* board with the move applied (does not mutate input). */
   function applyMove(cells, from, to) {
     const next = cloneCells(cells);
     const moving = next.get(from);
     next.get(to).color = moving.color;
     moving.color = null;
     return next;
-  }
-
-  /**
-   * In-place "make" half of a make/unmake move pair, for the hot search
-   * path (minimax/searchAtDepth below) — mutates `cells` directly instead
-   * of cloning a new board per node (see applyMove() above for the
-   * clone-based alternative kept for other callers). Returns an `undo()`
-   * closure that restores both the board *and* `connState` (see below) to
-   * exactly how they were before this call; callers MUST invoke it
-   * exactly once, in a `finally` block, so the board is correctly
-   * restored even when a SearchTimeoutError unwinds the recursion
-   * mid-search (see minimax()'s deadline check) — otherwise the next
-   * sibling move explored, or the next iterative-deepening depth, would
-   * silently start from a corrupted board.
-   *
-   * `connState` — { black: boolean, white: boolean }, "is this color
-   * currently one fully-connected group" — is the incremental-connectivity
-   * piece: moving a piece can only change *its own* color's connectivity
-   * (the opponent's pieces don't move), so only that one color is
-   * recomputed here (still an O(n) scan — see isGroupFullyConnected — but
-   * exactly one of the two BFS calls minimax() used to always do
-   * unconditionally at every node, not both).
-   */
-  function makeMove(cells, neighborKeys, from, to, connState) {
-    const color = cells.get(from).color;
-    const prevConn = connState[color];
-    cells.get(from).color = null;
-    cells.get(to).color = color;
-    connState[color] = isGroupFullyConnected(cells, neighborKeys, color);
-    return function undoMove() {
-      cells.get(to).color = null;
-      cells.get(from).color = color;
-      connState[color] = prevConn;
-    };
   }
 
   /** True if every piece of `color` belongs to a single connected group. */
@@ -239,31 +194,15 @@ const AiStrategies = (() => {
   // Minimax with alpha-beta pruning (single fixed-depth search).
   // `rootColor` never changes across the recursion: it's whose
   // perspective the evaluation is scored from. `moverColor` is whichever
-  // color is actually choosing a move at this node. `counter` is a
-  // { nodes } object shared (by reference) across one entire
-  // minimaxAlphaBetaID() call — every candidate move actually expanded
-  // (root-level, in searchAtDepth, or here) increments it once, so the
-  // caller ends up with a true "moves evaluated" total across all of
-  // iterative deepening's depths, not just the deepest/last one. Used to
-  // surface search stats in the UI — see minimaxAlphaBetaID()'s return
-  // value below and updateSetupVisibility()/logCpuSearch() in script.js,
-  // which only ever displays this behind ?showAdvanced=true.
-  //
-  // PERFORMANCE: this walks the tree via make/unmake (see makeMove()
-  // above) instead of cloning a new board per node, and reads
-  // connState[color] instead of re-running isGroupFullyConnected() for
-  // both colors at every single node — see makeMove()'s comment for why
-  // only the mover's color ever needs recomputing. `cells` is mutated
-  // and restored in place across the whole call; nothing here is safe to
-  // call concurrently against the same `cells`/`connState` pair.
+  // color is actually choosing a move at this node.
   // ---------------------------------------------------------------------
-  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed, counter, connState) {
+  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed) {
     if (nowMs() > deadline) throw new SearchTimeoutError();
 
     const opponentOfRoot = otherColor(rootColor);
     // instant win/loss short-circuits the search at any depth
-    if (connState[rootColor]) return SCORE.WIN + depth;
-    if (connState[opponentOfRoot]) return -(SCORE.WIN + depth);
+    if (isGroupFullyConnected(cells, neighborKeys, rootColor)) return SCORE.WIN + depth;
+    if (isGroupFullyConnected(cells, neighborKeys, opponentOfRoot)) return -(SCORE.WIN + depth);
 
     if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
@@ -275,14 +214,8 @@ const AiStrategies = (() => {
     let value = maximizing ? -Infinity : Infinity;
 
     for (const move of ordered) {
-      counter.nodes++;
-      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState);
-      let childValue;
-      try {
-        childValue = minimax(cells, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState);
-      } finally {
-        undo(); // always restore, even if the line above threw SearchTimeoutError
-      }
+      const child = applyMove(cells, move.from, move.to);
+      const childValue = minimax(child, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed);
 
       if (maximizing) {
         if (childValue > value) value = childValue;
@@ -297,10 +230,8 @@ const AiStrategies = (() => {
   }
 
   /** One full-width search at a fixed depth from the root, returning the
-   *  best move found (root is always the maximizing side). `counter`/
-   *  `connState` — see minimax() above; same make/unmake-in-`finally`
-   *  discipline applies here at the root level too. */
-  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState) {
+   *  best move found (root is always the maximizing side). */
+  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed) {
     const opponentColor = otherColor(rootColor);
     const rootMoves = orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor);
 
@@ -310,14 +241,8 @@ const AiStrategies = (() => {
     const beta = Infinity;
 
     for (const move of rootMoves) {
-      counter.nodes++;
-      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState);
-      let score;
-      try {
-        score = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState);
-      } finally {
-        undo();
-      }
+      const child = applyMove(cells, move.from, move.to);
+      const score = minimax(child, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed);
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
@@ -334,22 +259,6 @@ const AiStrategies = (() => {
    * depth's (incomplete, unreliable) result is discarded and the last
    * fully-completed depth's move is returned instead. Stops early if a
    * forced win/loss is already found, since deeper search can't change it.
-   *
-   * Returns { move, score, nodesEvaluated, depthReached } — the latter
-   * two purely for display (see the file-header comment and script.js's
-   * ?showAdvanced=true CPU search log): nodesEvaluated is the total
-   * candidate moves expanded across *every* depth tried this call (a
-   * fresh search each depth, no move/transposition caching between
-   * them), and depthReached is the last depth that actually completed
-   * before the time budget ran out (which can be less than
-   * options.maxDepth on a tight budget, or on a big/complex board).
-   *
-   * connState (see makeMove()) is computed once here, from the actual
-   * root position, and then threaded through every depth's search —
-   * each depth's own make/unmake calls fully unwind back to this same
-   * root state (via the `finally` blocks in minimax()/searchAtDepth())
-   * before the next depth starts, so recomputing it per depth would be
-   * redundant.
    */
   function minimaxAlphaBetaID(state, options = {}) {
     const { cells, neighborKeys, color, enclosureAllowed } = state;
@@ -357,23 +266,17 @@ const AiStrategies = (() => {
     const maxTimeMs = Math.max(200, (options.maxTimeSeconds ?? 5) * 1000);
     const deadline = nowMs() + maxTimeMs;
 
-    const counter = { nodes: 0 };
-    const connState = {
-      black: isGroupFullyConnected(cells, neighborKeys, "black"),
-      white: isGroupFullyConnected(cells, neighborKeys, "white"),
-    };
     let best = { move: null, score: -Infinity };
-    let depthReached = 0;
 
     for (let depth = 1; depth <= maxDepth; depth++) {
       let result;
       try {
-        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed, counter, connState);
+        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed);
       } catch (err) {
         if (err instanceof SearchTimeoutError) break; // keep the previous depth's result
         throw err;
       }
-      if (result.move) { best = result; depthReached = depth; }
+      if (result.move) best = result;
       if (Math.abs(best.score) >= SCORE.WIN) break; // forced win/loss found, deeper search won't help
       if (nowMs() > deadline) break;
     }
@@ -384,7 +287,7 @@ const AiStrategies = (() => {
       const fallback = getLegalMoves(cells, neighborKeys, state.color, enclosureAllowed)[0] || null;
       best = { move: fallback, score: 0 };
     }
-    return { move: best.move, score: best.score, nodesEvaluated: counter.nodes, depthReached };
+    return best;
   }
 
   strategies.minimaxAlphaBetaID = minimaxAlphaBetaID;
@@ -430,7 +333,7 @@ const AiStrategies = (() => {
 // Message protocol (plain postMessage — Map/Array/Object are all
 // structured-cloneable, no transferables needed):
 //   in  -> { requestId, state: { cells, neighborKeys, color, enclosureAllowed }, options }
-//   out -> { requestId, ok: true,  move, score, nodesEvaluated, depthReached }
+//   out -> { requestId, ok: true,  move, score }
 //        | { requestId, ok: false, error }
 // =========================================================================
 if (typeof importScripts === "function") {
@@ -438,14 +341,7 @@ if (typeof importScripts === "function") {
     const { requestId, state, options } = e.data || {};
     try {
       const result = AiStrategies.pickMove(state, options);
-      self.postMessage({
-        requestId,
-        ok: true,
-        move: result.move,
-        score: result.score,
-        nodesEvaluated: result.nodesEvaluated,
-        depthReached: result.depthReached,
-      });
+      self.postMessage({ requestId, ok: true, move: result.move, score: result.score });
     } catch (err) {
       self.postMessage({ requestId, ok: false, error: (err && err.message) || String(err) });
     }

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Selfo &mdash; connection board game</title>
+<link rel="stylesheet" href="style.css" />
+
+<link rel="icon" type="image/png" href="favicon.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+
+<!-- Open Graph: powers the preview shown by WhatsApp, Telegram, etc. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Selfo" />
+<meta property="og:title" content="Selfo &mdash; connection board game" />
+<meta property="og:description" content="Connect all of your pieces into a single group to win. Play locally, online, or against the CPU." />
+<meta property="og:image" content="https://fjvico.github.io/selfo/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://fjvico.github.io/selfo/" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Selfo &mdash; connection board game" />
+<meta name="twitter:description" content="Connect all of your pieces into a single group to win." />
+<meta name="twitter:image" content="https://fjvico.github.io/selfo/og-image.png" />
+</head>
+<body>
+
+  <!-- ============================================================ -->
+  <!-- TOP BAR : title + persistent game id                          -->
+  <!-- ============================================================ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <span class="brand-hex">&#x2B22;</span>
+        <span class="brand-text">SELF<span class="brand-accent">O</span></span>
+      </div>
+      <div class="game-id-wrap">
+        <div class="share-wrap">
+          <button id="modeMenuBtn" class="chip-btn icon-btn" title="Select mode" aria-label="Select mode">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+            </svg>
+          </button>
+          <div class="share-menu mode-menu" id="modeMenu" hidden>
+            <div class="mode-grid">
+              <button class="mode-btn" data-mode="local2p" title="Play together" aria-label="Play together">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="online2p" title="Play online" aria-label="Play online">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="vscomputer" title="Vs AI" aria-label="Vs computer">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+              <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
+                <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="share-wrap">
+          <button id="shareLinkBtn" class="chip-btn icon-btn" disabled title="Share this setup" aria-label="Share this setup">
+            <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+              <circle cx="18" cy="5" r="2.6"/>
+              <circle cx="6" cy="12" r="2.6"/>
+              <circle cx="18" cy="19" r="2.6"/>
+              <line x1="8.3" y1="10.6" x2="15.7" y2="6.3"/>
+              <line x1="8.3" y1="13.4" x2="15.7" y2="17.7"/>
+            </svg>
+          </button>
+          <div class="share-menu" id="shareMenu" hidden>
+            <a id="shareMenuEmail" class="share-menu-item" target="_blank" rel="noopener">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <rect x="3" y="5.5" width="18" height="13" rx="2"/>
+                <path d="M3.4 6.6 12 13l8.6-6.4"/>
+              </svg>
+              <span>Email</span>
+            </a>
+            <a id="shareMenuWhatsApp" class="share-menu-item" target="_blank" rel="noopener">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="M12 3.2c-4.9 0-8.8 3.8-8.8 8.5 0 1.9.7 3.7 1.9 5.1L4 20.8l4.2-1.2c1.2.6 2.5.9 3.8.9 4.9 0 8.8-3.8 8.8-8.5S16.9 3.2 12 3.2z"/>
+                <path d="M9.1 9.5c-.2.5-.5 1.2-.3 1.9.4 1.6 2.7 3.9 4.3 4.5.7.3 1.3.1 1.8-.3l.4-.5-1.6-1.4-.4.4c-.2.2-.5.2-.7 0-.6-.4-1.4-1.1-1.8-1.8-.1-.2-.1-.5.1-.7l.4-.5-1.1-1.7-.6-.1z"/>
+              </svg>
+              <span>WhatsApp</span>
+            </a>
+            <a id="shareMenuTelegram" class="share-menu-item" target="_blank" rel="noopener">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="8.8"/>
+                <path d="M6.6 12.1 17 7.9l-2.9 9.9-2.9-2.9-2 1.8-.6-2.9z"/>
+                <path d="M8.5 13.4 16.7 8"/>
+              </svg>
+              <span>Telegram</span>
+            </a>
+            <button id="shareMenuCopy" class="share-menu-item" type="button">
+              <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="M9.6 14.4 14.4 9.6"/>
+                <path d="M11 7.4 12.3 6a3.4 3.4 0 0 1 4.9 4.8L15.8 12.3"/>
+                <path d="M13 16.6 11.7 18a3.4 3.4 0 0 1-4.9-4.8L8.2 11.7"/>
+              </svg>
+              <span>Copy link</span>
+            </button>
+          </div>
+        </div>
+        <a id="supportLink" class="chip-btn icon-btn support-link" href="https://www.amazon.es/-/en/Cartas-Alias-pr%C3%B3ximo-inicio-sesi%C3%B3n-ebook/dp/B0GQJMRJ48?_encoding=UTF8&dib_tag=se&dib=eyJ2IjoiMSJ9.LTRgBFiHRKMYiI14gMHLcsZBLrg-3zwhFk82q3Qqa8vSpreKsYZzfhwuPzDlnWBNmDngalrQiDJsoV8pvLk5fr-R0q_WgefGQgcHJBDf5ZheaVwJwRY6sVzQrXOCs-CR8xy9kr1A4Vrlx8B3FFp6JhHfVkfg00KvgsW_Pj5fQJv3hF22ExAWwth5uhfcosTOmChYcyL2_NazYpiNJM16yULO_B2x2sCx7rMYheeOc_Q_fmHXRmq6FOAH3fy6Z1gShAXI_slskcIkIyJnrmgQ6qmDR-AwnyfvpUIhf3YjdBM.KhOsVvwHH8ptf3PM5-JD32q8j2a0Zu0S4MhW4lN_00o&qid=1787862884&sr=8-1" target="_blank" rel="noopener" title="Support development: buying one of my books helps fund new features">
+          <svg class="icon-wire" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+            <path d="M12 20.5s-7.3-4.4-9.6-8.9C.9 8.3 2.2 4.9 5.4 4.2 7.7 3.7 10 4.7 12 7.1c2-2.4 4.3-3.4 6.6-2.9 3.2.7 4.5 4.1 2.9 7.4-2.2 4.5-9.5 8.9-9.5 8.9z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+    <div class="status-wrap">
+      <span id="turnIndicator" class="turn-indicator"></span>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- MAIN LAYOUT : setup (left/top) | board (center) | options (right/bottom) -->
+  <!-- ============================================================ -->
+  <main class="layout">
+
+    <!-- ---------------- LEFT / TOP : setup ------------------------- -->
+    <section class="panel panel-setup" aria-label="Game setup">
+
+      <!-- board parameters: always visible, always first, fixed position -->
+      <div class="setup-block" id="boardParamsBlock">
+        <label class="setup-label" for="radiusRange">
+          Board radius <span class="value-pill" id="radiusValue">3</span>
+        </label>
+        <input type="range" id="radiusRange" min="2" max="6" step="1" value="3" class="range-input" autocomplete="off" />
+
+        <label class="setup-label" for="piecesRange">
+          Pieces per player <span class="value-pill" id="piecesValue">&mdash;</span>
+        </label>
+        <input type="range" id="piecesRange" min="1" max="1" step="1" value="1" class="range-input" autocomplete="off" />
+      </div>
+
+      <!-- mode selection now lives in the topbar dropdown (#modeMenu) -->
+
+      <!-- below here: whatever applies to the current mode -->
+
+      <!-- online2p now hosts a room and opens Share automatically (see
+           hostOnlineGame() in script.js) — no create/join UI needed here -->
+
+      <!-- CPU search parameters (vs computer / computer vs computer only) -->
+      <fieldset class="cpu-params setup-block" id="cpuParamsBlock" hidden>
+        <legend>Computer</legend>
+        <label class="setup-label" for="cpuTimeRange">
+          Max think time (s) <span class="value-pill" id="cpuTimeValue">5</span>
+        </label>
+        <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="5" class="range-input" autocomplete="off" />
+
+        <label class="setup-label" for="cpuDepthRange">
+          Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">2</span>
+        </label>
+        <input type="range" id="cpuDepthRange" min="1" max="12" step="1" value="2" class="range-input" autocomplete="off" />
+      </fieldset>
+
+      <!-- color choice (vs computer only) — last, so it's the final choice before play -->
+      <div class="setup-block" id="colorChoiceBlock" hidden>
+        <label class="setup-label">Play as</label>
+        <div class="mode-grid">
+          <button class="mode-btn color-btn selected" data-color="black">Black<br /><small>moves first</small></button>
+          <button class="mode-btn color-btn" data-color="white">White<br /><small>pie rule</small></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- CENTER : the board ------------------------- -->
+    <section class="panel panel-board" aria-label="Board">
+      <div id="boardScroll" class="board-scroll">
+        <svg id="boardSvg" class="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div id="boardFlash" class="board-flash-overlay" aria-hidden="true"></div>
+      <div id="boardFadeOverlay" class="board-fade-overlay" aria-hidden="true"></div>
+    </section>
+
+    <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
+    <section class="panel panel-options" aria-label="Game options">
+
+      <div class="players-box">
+        <div class="player-row" id="playerRowBlack">
+          <span class="player-swatch swatch-black"></span>
+          <span class="player-name" id="playerNameBlack">&mdash;</span>
+          <span class="edit-icon" id="editIconBlack" title="Click the name to rename yourself" hidden>&#9998;</span>
+          <span class="player-you" id="playerYouBlack"></span>
+          <span class="player-badge" id="playerBadgeBlack"></span>
+        </div>
+        <div class="player-row" id="playerRowWhite">
+          <span class="player-swatch swatch-white"></span>
+          <span class="player-name" id="playerNameWhite">&mdash;</span>
+          <span class="edit-icon" id="editIconWhite" title="Click the name to rename yourself" hidden>&#9998;</span>
+          <span class="player-you" id="playerYouWhite"></span>
+          <span class="player-badge" id="playerBadgeWhite"></span>
+        </div>
+      </div>
+
+      <div class="btn-stack">
+        <button id="swapColorBtn" class="btn btn-metal" disabled>Swap colors (pie rule)</button>
+        <button id="offerDrawBtn" class="btn btn-metal" disabled>Offer draw</button>
+        <button id="resignBtn" class="btn btn-metal btn-danger" disabled>Resign</button>
+      </div>
+
+      <div class="btn-stack">
+        <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
+      </div>
+
+      <div id="messageBox" class="message-box" aria-live="polite"></div>
+    </section>
+
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- FIRST-RUN ONBOARDING OVERLAY                                  -->
+  <!-- ============================================================ -->
+  <div id="onboardingOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2>Welcome to Selfo</h2>
+      <p class="onboarding-sub">Connect all of your pieces into a single group to win.<br />Move one piece per turn to an empty neighboring cell.<br />Black moves first — White can swap colors (pie rule).</p>
+      <label class="onboarding-check">
+        <input type="checkbox" id="onboardingDontShow" />
+        No mostrar de nuevo
+      </label>
+      <button id="onboardingCloseBtn" class="btn btn-metal-accent">Got it</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- GENERIC INFO POPUP (e.g. "this game link isn't active")      -->
+  <!-- ============================================================ -->
+  <div id="infoOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2 id="infoOverlayTitle"></h2>
+      <p id="infoOverlayText"></p>
+      <button id="infoOverlayCloseBtn" class="btn btn-metal-accent">OK</button>
+    </div>
+  </div>
+
+  <!-- peerjs cdn: only needed for online mode, loaded lazily -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="turn-config.js"></script>
+  <script src="hexgeometry.js"></script>
+  <script src="fitness.js"></script>
+  <script src="boardinit.js"></script>
+  <script src="aistrategies.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

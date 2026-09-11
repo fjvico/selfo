@@ -499,40 +499,6 @@ body {
   line-height: 1.4;
 }
 
-/* CPU search log (?showAdvanced=true, vscomputer/computerself only — see
-   updateSetupVisibility()/logCpuSearch() in script.js). Styled like a
-   little terminal/log tail: monospace, dark inset well, fixed height
-   that scrolls rather than pushing the rest of the panel around as
-   entries pile up over a long game. */
-.cpu-log-block { margin-bottom: 16px; }
-.cpu-log {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  max-height: 180px;
-  overflow-y: auto;
-  background: #0a0d10;
-  border: 1px solid var(--metal-line);
-  border-radius: 8px;
-  padding: 8px;
-  font-family: "Courier New", monospace;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.cpu-log-line {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.cpu-log-swatch {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1px solid var(--metal-line);
-}
-.cpu-log-text { color: var(--metal-light); white-space: nowrap; }
-
 /* Shared "halo" hover glow — originally only on the support link, now
    also used by the mode-menu toggle and the share button (see index.html)
    so all three read as the same family of icon actions in the top bar. */

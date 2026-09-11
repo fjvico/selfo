@@ -326,8 +326,6 @@ const dom = {
   onboardingDontShow: document.getElementById("onboardingDontShow"),
   onboardingCloseBtn: document.getElementById("onboardingCloseBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
-  cpuLogBlock: document.getElementById("cpuLogBlock"),
-  cpuLog: document.getElementById("cpuLog"),
 
   helpOverlay: document.getElementById("helpOverlay"),
   helpCloseBtn: document.getElementById("helpCloseBtn"),
@@ -1360,7 +1358,7 @@ function ensureCpuWorker() {
 }
 
 function onCpuWorkerMessage(e) {
-  const { requestId, ok, move, error, nodesEvaluated, depthReached } = e.data || {};
+  const { requestId, ok, move, error } = e.data || {};
   if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return; // stale reply
   const color = cpuPendingRequest.color;
   cpuPendingRequest = null;
@@ -1370,7 +1368,7 @@ function onCpuWorkerMessage(e) {
     showMessage("The computer player hit an error \u2014 check the console.");
     return;
   }
-  applyCpuResult(color, move, { nodesEvaluated, depthReached });
+  applyCpuResult(color, move);
 }
 
 function onCpuWorkerError(err) {
@@ -1403,7 +1401,7 @@ function runCpuSearchLocally(req) {
     cpuPendingRequest = null;
     try {
       const result = AiStrategies.pickMove(req.state, req.options);
-      applyCpuResult(req.color, result.move, { nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached });
+      applyCpuResult(req.color, result.move);
     } catch (err) {
       console.error("CPU local search failed:", err);
       showMessage("The computer player hit an error \u2014 check the console.");
@@ -1412,14 +1410,9 @@ function runCpuSearchLocally(req) {
 }
 
 /** Shared by both the Worker and local-fallback paths once a move (or
- *  lack thereof) has actually been decided. `stats` — { nodesEvaluated,
- *  depthReached }, straight from AiStrategies.minimaxAlphaBetaID()'s
- *  return value (see aistrategies.js) — is only ever used to append a
- *  line to the ?showAdvanced=true CPU search log (logCpuSearch() below);
- *  it plays no role in the move itself. */
-function applyCpuResult(color, move, stats) {
+ *  lack thereof) has actually been decided. */
+function applyCpuResult(color, move) {
   if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
-  logCpuSearch(color, stats);
   if (move) {
     performMove(move.from, move.to);
   } else {
@@ -1428,38 +1421,6 @@ function applyCpuResult(color, move, stats) {
     endGame(opponentOf(color), "no-moves");
   }
 }
-
-/** Appends one line to the ?showAdvanced=true CPU search log (the
- *  right-hand panel's #cpuLog — see index.html/updateSetupVisibility()
- *  for when that panel section itself is shown at all): one entry per
- *  CPU move, for both colors in computerself and for whichever color is
- *  CPU-controlled in vscomputer. No-op outside advanced mode, or if
- *  `stats` is missing/incomplete (e.g. a future non-search-based
- *  strategy that doesn't report nodesEvaluated/depthReached — see the
- *  Return shape comment in aistrategies.js). Trims old entries past a
- *  cap so the log can't grow unbounded over a very long game, and keeps
- *  the view scrolled to the newest line, like a live log tail. */
-function logCpuSearch(color, stats) {
-  if (!Game.showAdvanced) return;
-  if (!stats || !Number.isFinite(stats.nodesEvaluated) || !Number.isFinite(stats.depthReached)) return;
-
-  const line = document.createElement("div");
-  line.className = "cpu-log-line";
-  const swatch = document.createElement("span");
-  swatch.className = "cpu-log-swatch swatch-" + color;
-  const text = document.createElement("span");
-  text.className = "cpu-log-text";
-  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated`;
-  line.append(swatch, text);
-  dom.cpuLog.appendChild(line);
-
-  const MAX_LOG_LINES = 300;
-  while (dom.cpuLog.childElementCount > MAX_LOG_LINES) {
-    dom.cpuLog.removeChild(dom.cpuLog.firstChild);
-  }
-  dom.cpuLog.scrollTop = dom.cpuLog.scrollHeight; // keep the tail in view, like a live log
-}
-
 
 /** Stops any pending or in-flight CPU move: cancels the pre-dispatch
  *  delay, drops the outstanding request (so a late reply is ignored),
@@ -1579,9 +1540,6 @@ function updateSetupVisibility() {
   // depending on context.
   placeCpuParamsBlock();
   dom.cpuParamsBlock.hidden = !isCpuMode;
-  // Only in advanced mode, and only for the two modes with a CPU player
-  // at all — see logCpuSearch() for what actually gets written into it.
-  dom.cpuLogBlock.hidden = !(isCpuMode && Game.showAdvanced);
   dom.shareLinkBtn.title = Game.mode === "online2p" ? "Share invite link" : "Share this setup";
 
   // Minimalist mode (no ?showAdvanced=true): the whole options panel
@@ -2221,7 +2179,6 @@ function beginSetupPreview() {
   cancelScheduledCpuMove();
   cancelEndedAutoRestart();
   cancelGameStartGrace();
-  dom.cpuLog.innerHTML = ""; // fresh game, fresh log — see logCpuSearch()
 
   Game.phase = "setup";
   Game.setupReady = false;

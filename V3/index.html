@@ -305,19 +305,6 @@
         <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
       </div>
 
-      <!-- CPU search log — ?showAdvanced=true only, and only for
-           vscomputer/computerself (see updateSetupVisibility() in
-           script.js). One line per CPU move (both colors in
-           computerself, whichever is CPU-controlled in vscomputer),
-           appended and auto-scrolled by logCpuSearch() in script.js —
-           the depth actually reached and how many candidate moves the
-           search expanded to get there (see aistrategies.js's
-           minimaxAlphaBetaID()), not shown to the player anywhere else. -->
-      <div class="setup-block cpu-log-block" id="cpuLogBlock" hidden>
-        <label class="setup-label">Computer search log</label>
-        <div id="cpuLog" class="cpu-log" aria-live="polite"></div>
-      </div>
-
       <div id="messageBox" class="message-box" aria-live="polite" hidden></div>
     </section>
 
