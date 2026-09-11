@@ -82,11 +82,38 @@ const FeatureConfig = {
    *
    * MUST be listed easiest first, hardest last: the picker renders them
    * in this exact order with no other cue to their relative difficulty.
+   *
+   * Tournament progression design (10 levels):
+   *   - Blocks: Aprendizaje (1-3), Táctica (4-6), Estructura (7-9),
+   *     Final (10). See notes at the bottom of this file.
+   *   - r climbs only three times (2 -> 3 -> 4); never together with a
+   *     big CPU jump.
+   *   - cpuDepth climbs in steps: 1,1,2,2,3,3,3,4,4,5.
+   *   - cpuTime uses a sawtooth so some levels feel "fast but sharp"
+   *     (high depth, low time) and others "slow but shallow".
+   *   - noEnclosure switches ON at level 7 as a deliberate rule-change
+   *     moment, once the player already knows the r=4 board.
+   *   - Level 10 uses the full CPU budget (30s / depth 5) and is the
+   *     only level that does so.
    */
   difficulty_levels: [
-    { label: "Easy",   r: 2, f: 6,  cpuTime: 5,  cpuDepth: 2 },
-    { label: "Medium", r: 3, f: 10, cpuTime: 15, cpuDepth: 3, noEnclosure: true },
-    { label: "Hard",   r: 4, f: 16 },
+    // --- Bloque Aprendizaje (1-3) ------------------------------------
+    { label: "N1 — Primer contacto",   r: 2, f: 3,  cpuTime: 1,  cpuDepth: 1 },
+    { label: "N2 — Fácil",             r: 2, f: 4,  cpuTime: 3,  cpuDepth: 1 },
+    { label: "N3 — Primer reto",       r: 3, f: 4,  cpuTime: 3,  cpuDepth: 2 },
+
+    // --- Bloque Táctica (4-6) ----------------------------------------
+    { label: "N4 — Táctica",           r: 3, f: 5,  cpuTime: 5,  cpuDepth: 2 },
+    { label: "N5 — IA rápida",         r: 3, f: 6,  cpuTime: 1,  cpuDepth: 3 },
+    { label: "N6 — Tablero grande",    r: 4, f: 5,  cpuTime: 8,  cpuDepth: 3 },
+
+    // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
+    { label: "N7 — Sin encierro",      r: 4, f: 6,  cpuTime: 8,  cpuDepth: 3, noEnclosure: true },
+    { label: "N8 — IA sólida",         r: 4, f: 7,  cpuTime: 12, cpuDepth: 4, noEnclosure: true },
+    { label: "N9 — Muro",              r: 4, f: 8,  cpuTime: 18, cpuDepth: 4, noEnclosure: true },
+
+    // --- Bloque Final (10) -------------------------------------------
+    { label: "N10 — Jefe final",       r: 4, f: 10, cpuTime: 30, cpuDepth: 5, noEnclosure: true },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh
@@ -134,3 +161,34 @@ const URL_PARAMS = [
   { param: "name", description: "Display name shown to the other player (online2p) or in the players box, up to 18 characters." },
   { param: "join", description: "A room code — opens directly into online2p and connects to that room." },
 ];
+
+/**
+ * Notas sobre la progresión del torneo (para referencia del diseñador)
+ * --------------------------------------------------------------------
+ * Bloques:
+ *   1-3  Aprendizaje : r=2-3, f=3-4, sin no-enclosure. Enseñan mecánicas.
+ *   4-6  Táctica     : r=3-4, f=5-6, sin no-enclosure. Sube profundidad.
+ *   7-9  Estructura  : r=4 fijo, f=6-8, no-enclosure ON. Cambio de reglas.
+ *   10   Final       : r=4, f=10, cpuTime=30, cpuDepth=5. Presupuesto total.
+ *
+ * Curva de cpuDepth : 1, 1, 2, 2, 3, 3, 3, 4, 4, 5   (escalonada)
+ * Curva de cpuTime  : 1, 3, 3, 5, 1, 8, 8, 12, 18, 30 (diente de sierra:
+ *                     el N5 baja a 1s para sentirse "rápido pero agudo",
+ *                     con depth 3 — un cambio de textura, no de nivel).
+ * Curva de r        : 2, 2, 3, 3, 3, 4, 4, 4, 4, 4   (3 saltos, nunca
+ *                     junto a un salto grande de CPU).
+ * noEnclosure       : OFF hasta N6, ON desde N7. Es un cambio binario de
+ *                     reglas, no un parámetro gradual: por eso se
+ *                     introduce solo, en un nivel donde el tablero (r=4)
+ *                     ya es familiar desde N6.
+ *
+ * Ajustes finos si hicieran falta:
+ *   - Si N10 con f=10 se hace eterno, bajar f a 8-9 (sigue siendo
+ *     claramente el más duro por cpuTime/cpuDepth).
+ *   - Si N7 (no-enclosure) resulta demasiado brusco, probar a activarlo
+ *     ya en N6 con r=3 y luego en N7 con r=4.
+ *   - Si depth=1 se siente demasiado tonto, subir cpuTime (no depth):
+ *     con 1 solo movimiento analizado, más tiempo solo mejora la
+ *     elección dentro de esa limitación, que es justo lo que se busca
+ *     en N1.
+ */
