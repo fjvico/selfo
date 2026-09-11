@@ -85,7 +85,7 @@ const FeatureConfig = {
    */
   difficulty_levels: [
     { label: "Easy",   r: 2, f: 6,  cpuTime: 5,  cpuDepth: 2 },
-    { label: "Medium", r: 3, f: 10, cpuTime: 15, cpuDepth: 3 },
+    { label: "Medium", r: 3, f: 10, cpuTime: 15, cpuDepth: 3, noEnclosure: true },
     { label: "Hard",   r: 4, f: 16 },
   ],
 
