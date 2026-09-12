@@ -2964,11 +2964,27 @@ function applyUrlConfig() {
   }
 
   const radius = parseInt(params.get("radius"), 10);
-  if (Number.isFinite(radius) && radius >= CONFIG.MIN_RADIUS && radius <= CONFIG.MAX_RADIUS) {
+  const radiusOverridden = Number.isFinite(radius) && radius >= CONFIG.MIN_RADIUS && radius <= CONFIG.MAX_RADIUS;
+  if (radiusOverridden) {
     dom.radiusRange.value = String(radius);
     dom.radiusValue.textContent = String(radius);
+    // Radius actually changed, so pieces' valid range changed with it —
+    // recompute bounds AND fall back to a mid-range guess for the value,
+    // exactly like dragging the radius slider by hand would (below,
+    // ?pieces= still gets the final say if it's also present).
+    refreshPieceRangeUI(radius);
+  } else {
+    // No ?radius= (the common case — most links don't set one): leave
+    // whatever pieces value is already in place — the current difficulty
+    // level's own f (see resetAllRangeInputs()), or a previous state —
+    // untouched. refreshPieceRangeUI() would reset it to a generic
+    // mid-range guess unconditionally, silently overwriting a level's
+    // deliberate choice even when nothing asked it to.
+    const { min, max } = pieceRangeForRadius(Number(dom.radiusRange.value));
+    dom.piecesRange.min = String(min);
+    dom.piecesRange.max = String(max);
+    dom.piecesValue.textContent = `${dom.piecesRange.value} (${min}-${max})`;
   }
-  refreshPieceRangeUI(Number(dom.radiusRange.value)); // recompute bounds for the (possibly overridden) radius
 
   const pieces = parseInt(params.get("pieces"), 10);
   if (Number.isFinite(pieces)) {
