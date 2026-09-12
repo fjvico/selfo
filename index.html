@@ -171,6 +171,11 @@
         <label class="setup-label" for="radiusRange">
           Board radius <span class="value-pill" id="radiusValue">2</span>
         </label>
+        <!-- min/max/value mirror config.js's GAME_PARAM_RANGES.radius —
+             only so the very first paint (before script.js runs) already
+             shows the right numbers instead of flashing to them.
+             applyGameParamRanges() in script.js is what actually makes
+             config.js authoritative if the two ever disagree. -->
         <input type="range" id="radiusRange" min="2" max="5" step="1" value="2" class="range-input" autocomplete="off" />
 
         <label class="setup-label" for="piecesRange">
@@ -361,11 +366,14 @@
           <label class="setup-label" for="cpuTimeRange">
             Max think time (s) <span class="value-pill" id="cpuTimeValue">30</span>
           </label>
+          <!-- min/max/value mirror config.js's GAME_PARAM_RANGES.cpuTime
+               — see the matching comment on #radiusRange above. -->
           <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
 
           <label class="setup-label" for="cpuDepthRange">
             Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
           </label>
+          <!-- mirrors GAME_PARAM_RANGES.cpuDepth — same as above. -->
           <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
         </fieldset>
       </div>

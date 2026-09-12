@@ -1,6 +1,39 @@
 "use strict";
 
 /**
+ * GAME_PARAM_RANGES
+ * -----------------
+ * Min/max/default for every numeric game parameter that actually has a
+ * fixed range — the single source of truth for them, read once at boot
+ * (see script.js's applyGameParamRanges(), called before anything else
+ * touches these controls) to set both CONFIG's own copies in script.js
+ * (MIN_RADIUS/MAX_RADIUS/DEFAULT_RADIUS, DEFAULT_CPU_TIME_SECONDS,
+ * DEFAULT_CPU_DEPTH — kept there too since most of script.js already
+ * reads CONFIG.* directly) and the matching <input type="range">
+ * elements' min/max/value attributes in index.html. Change a value here
+ * and it takes effect everywhere; there's no second copy to keep in sync
+ * by hand.
+ *
+ *   min      lowest value the player (or a ?radius=/?cpuTime=/?cpuDepth=
+ *            URL param, or a difficulty level's r/cpuTime/cpuDepth — see
+ *            FeatureConfig.difficulty_levels below) can set it to.
+ *            Anything lower is clamped up to this.
+ *   max      same, upper end.
+ *   default  the value a fresh session starts with, before the player
+ *            (or a difficulty level, or a URL param) changes it.
+ *
+ * "Pieces per player" is deliberately NOT here: unlike these three, it
+ * isn't an independent parameter with its own fixed range — it's derived
+ * from radius (see pieceRangeForRadius() in script.js), so its valid
+ * range changes depending on what radius is currently selected.
+ */
+const GAME_PARAM_RANGES = {
+  radius:   { min: 2, max: 5, default: 2 },     // board radius
+  cpuTime:  { min: 1, max: 30, default: 30 },   // computer's max think time, seconds
+  cpuDepth: { min: 1, max: 5, default: 5 },     // computer's search depth, plies
+};
+
+/**
  * FeatureConfig
  * -------------
  * Toggles for optional gameplay rules, read once before the rest of the
@@ -61,13 +94,16 @@ const FeatureConfig = {
    *                is applied, rather than rejected, so keep r/f matched
    *                to avoid a level quietly not doing what its position
    *                in the list implies.
-   *   cpuTime      OPTIONAL. Computer's max think time in seconds (1-30,
-   *                clamped). Omit to leave whatever cpuTime is already in
+   *   cpuTime      OPTIONAL. Computer's max think time in seconds — see
+   *                GAME_PARAM_RANGES.cpuTime above for the actual
+   *                min/max (clamped to it, not rejected, if out of
+   *                range). Omit to leave whatever cpuTime is already in
    *                effect (session default, a ?cpuTime= URL param, or a
    *                manual edit) untouched — this only overrides it when
    *                present.
-   *   cpuDepth     OPTIONAL. Computer's search depth (1-5, clamped).
-   *                Same "only overrides if present" behavior as cpuTime.
+   *   cpuDepth     OPTIONAL. Computer's search depth — see
+   *                GAME_PARAM_RANGES.cpuDepth above for min/max. Same
+   *                "only overrides if present" behavior as cpuTime.
    *   noEnclosure  OPTIONAL boolean. Unlike cpuTime/cpuDepth above, this
    *                one does NOT just "leave it as-is" when omitted — a
    *                level without it resets noEnclosure to the
@@ -140,8 +176,7 @@ const FeatureConfig = {
   // the time, since none of the levels above override it. Change this
   // one line to run the whole game on the older "minimaxAlphaBetaCloning"
   // engine instead, without touching every level.
-  // 'minimaxAlphaBetaID' is the other option (new engine).
-  DEFAULT_CPU_STRATEGY: "minimaxAlphaBetaCloning",
+  DEFAULT_CPU_STRATEGY: "minimaxAlphaBetaID",
 
   // computerself ("AI vs AI") only: an optional per-color override of
   // which engine each side uses, letting black and white run genuinely
@@ -159,7 +194,7 @@ const FeatureConfig = {
   // the current engine, i.e. this changes nothing until you edit it.
   computerself_strategies: {
     black: "minimaxAlphaBetaID",
-    white: "minimaxAlphaBetaCloning",
+    white: "minimaxAlphaBetaID",
   },
 };
 
@@ -187,6 +222,11 @@ const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3&cpuTime=1
  *
  * Listed in the order applyUrlConfig() reads them. Adding a new URL
  * parameter there should mean adding one entry here too.
+ *
+ * The radius/cpuTime/cpuDepth descriptions below spell their min/max out
+ * as plain text for the player, rather than interpolating
+ * GAME_PARAM_RANGES — if you change a range up top, update the matching
+ * number(s) here too so the help panel doesn't quote a stale range.
  */
 const URL_PARAMS = [
   { param: "showAdvanced", description: "true shows the full setup and options panels (board size, pieces, no-enclosure rule, CPU search settings, color choice) instead of the compact default view." },

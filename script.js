@@ -32,12 +32,17 @@
 // Configuration & rules (future-proofed)
 // ---------------------------------------------------------------------
 const CONFIG = {
-  MIN_RADIUS: 2,
-  MAX_RADIUS: 5,
-  DEFAULT_RADIUS: 2,
+  // Radius/CPU-time/CPU-depth min/max/default now live in config.js's
+  // GAME_PARAM_RANGES (the single source of truth — see its own doc
+  // comment) — read here just once, at load, so the rest of this file
+  // can keep using CONFIG.MIN_RADIUS/etc. exactly as before rather than
+  // touching every call site to read GAME_PARAM_RANGES directly.
+  MIN_RADIUS: GAME_PARAM_RANGES.radius.min,
+  MAX_RADIUS: GAME_PARAM_RANGES.radius.max,
+  DEFAULT_RADIUS: GAME_PARAM_RANGES.radius.default,
   CELL_SIZE: 30, // px, constant regardless of board radius
-  DEFAULT_CPU_TIME_SECONDS: 30,
-  DEFAULT_CPU_DEPTH: 5,
+  DEFAULT_CPU_TIME_SECONDS: GAME_PARAM_RANGES.cpuTime.default,
+  DEFAULT_CPU_DEPTH: GAME_PARAM_RANGES.cpuDepth.default,
   // Black moves first, so whenever the CPU is the one making that first
   // move — vscomputer with the human playing white, or computerself
   // (no human at all) — it's capped at this depth instead of the
@@ -334,6 +339,29 @@ const dom = {
   helpParamsList: document.getElementById("helpParamsList"),
   helpUrlExample: document.getElementById("helpUrlExample"),
 };
+
+/** Sets the radius/cpuTime/cpuDepth <input type="range">s' min/max/value
+ *  attributes straight from GAME_PARAM_RANGES (config.js) — the single
+ *  source of truth for those three, per its own doc comment. index.html
+ *  hardcodes matching literal attributes too, purely so the very first
+ *  paint (before this runs) already shows the right defaults instead of
+ *  flashing to them — this call is what makes config.js authoritative if
+ *  the two ever disagree (e.g. a config.js edit that wasn't mirrored into
+ *  the HTML). Run once at startup, before resetAllRangeInputs()/
+ *  applyUrlConfig() do their own (value-only, not range-only) setup. */
+function applyGameParamRanges() {
+  const { radius, cpuTime, cpuDepth } = GAME_PARAM_RANGES;
+  dom.radiusRange.min = String(radius.min);
+  dom.radiusRange.max = String(radius.max);
+  dom.radiusRange.value = String(radius.default);
+  dom.cpuTimeRange.min = String(cpuTime.min);
+  dom.cpuTimeRange.max = String(cpuTime.max);
+  dom.cpuTimeRange.value = String(cpuTime.default);
+  dom.cpuDepthRange.min = String(cpuDepth.min);
+  dom.cpuDepthRange.max = String(cpuDepth.max);
+  dom.cpuDepthRange.value = String(cpuDepth.default);
+}
+applyGameParamRanges();
 
 /** Sets #difficultyRange's min/max/step from FeatureConfig.
  *  difficulty_levels' length (config.js) — a continuous vertical slider
@@ -1978,12 +2006,12 @@ function applyDifficultyLevel(index) {
   dom.piecesValue.textContent = `${f} (${min}-${max})`;
 
   if (Number.isFinite(level.cpuTime)) {
-    const cpuTime = Math.min(30, Math.max(1, level.cpuTime));
+    const cpuTime = Math.min(GAME_PARAM_RANGES.cpuTime.max, Math.max(GAME_PARAM_RANGES.cpuTime.min, level.cpuTime));
     dom.cpuTimeRange.value = String(cpuTime);
     dom.cpuTimeValue.textContent = String(cpuTime);
   }
   if (Number.isFinite(level.cpuDepth)) {
-    const cpuDepth = Math.min(5, Math.max(1, level.cpuDepth));
+    const cpuDepth = Math.min(GAME_PARAM_RANGES.cpuDepth.max, Math.max(GAME_PARAM_RANGES.cpuDepth.min, level.cpuDepth));
     dom.cpuDepthRange.value = String(cpuDepth);
     dom.cpuDepthValue.textContent = String(cpuDepth);
   }
@@ -3082,12 +3110,12 @@ function resetAllRangeInputs() {
   // rule as picking the level by hand (see applyDifficultyLevel()).
   if (defaultLevel) {
     if (Number.isFinite(defaultLevel.cpuTime)) {
-      const cpuTime = Math.min(30, Math.max(1, defaultLevel.cpuTime));
+      const cpuTime = Math.min(GAME_PARAM_RANGES.cpuTime.max, Math.max(GAME_PARAM_RANGES.cpuTime.min, defaultLevel.cpuTime));
       dom.cpuTimeRange.value = String(cpuTime);
       dom.cpuTimeValue.textContent = String(cpuTime);
     }
     if (Number.isFinite(defaultLevel.cpuDepth)) {
-      const cpuDepth = Math.min(5, Math.max(1, defaultLevel.cpuDepth));
+      const cpuDepth = Math.min(GAME_PARAM_RANGES.cpuDepth.max, Math.max(GAME_PARAM_RANGES.cpuDepth.min, defaultLevel.cpuDepth));
       dom.cpuDepthRange.value = String(cpuDepth);
       dom.cpuDepthValue.textContent = String(cpuDepth);
     }

@@ -263,7 +263,7 @@ body {
 .compact-players[hidden] { display: none; }
 .compact-side {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   flex-shrink: 0;
 }
@@ -286,6 +286,12 @@ body {
   border: 1px solid var(--metal-line);
   box-sizing: border-box;
   transition: border-color 0.2s, box-shadow 0.2s;
+  /* .compact-side aligns to flex-start (not center) so the icon lines up
+     by its own height, not the taller .compact-icon-col box that also
+     reserves space for the "you" marker underneath it (see below) — this
+     margin re-centers the swatch against just the 22px-tall icon itself:
+     (22 - 18) / 2 = 2px. */
+  margin-top: 2px;
 }
 .compact-mode-icon {
   /* fixed height, auto width — person and tower glyphs have different

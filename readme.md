@@ -16,9 +16,36 @@ plugs into. It's not a player-facing document.
 
 ## `config.js`
 
-`config.js` exports four top-level `const`s. All of them are read once, early,
+`config.js` exports five top-level `const`s. All of them are read once, early,
 and nothing else in the app is supposed to define game rules, difficulty
-tiers, or URL-parameter docs outside of this file.
+tiers, parameter ranges, or URL-parameter docs outside of this file.
+
+### `GAME_PARAM_RANGES`
+
+```js
+{ min, max, default }
+```
+
+per numeric parameter: currently `radius`, `cpuTime`, `cpuDepth`. The
+single source of truth for each one's slider bounds and starting value —
+`script.js`'s `CONFIG.MIN_RADIUS`/`MAX_RADIUS`/`DEFAULT_RADIUS`/
+`DEFAULT_CPU_TIME_SECONDS`/`DEFAULT_CPU_DEPTH` are all just copies of
+these, read once at load (see the `CONFIG` object's own comment), and
+`applyGameParamRanges()` sets the matching `<input type="range">`
+elements' `min`/`max`/`value` attributes from the same values. Change a
+number here and both follow — no second copy to keep in sync by hand.
+
+`index.html` also hardcodes matching literal attributes on those same
+three inputs, purely so the very first paint (before any JS runs) already
+shows correct values instead of flashing to them once `script.js` catches
+up — see the FOUC-prevention notes elsewhere in this file/the codebase.
+If you change a range here, update those literals too, or the page will
+briefly show the *old* range before `applyGameParamRanges()` corrects it.
+
+**"Pieces per player" is deliberately not here.** Unlike radius/cpuTime/
+cpuDepth, it isn't an independent parameter with a fixed range — its
+valid range depends on whatever radius is currently selected (see
+`pieceRangeForRadius()` in `script.js`).
 
 ### `FeatureConfig.no_enclosure`
 
@@ -141,31 +168,35 @@ dev/power-user tool for building preconfigured links, not something an
 everyday player is meant to stumble onto. Keep it that way when touching
 this area — don't add a discoverable button for it.
 
-## `CONFIG` vs `FeatureConfig`
+## `CONFIG` vs `FeatureConfig`/`GAME_PARAM_RANGES`
 
 Two different objects, two different files, on purpose:
 
-- **`FeatureConfig`** (`config.js`) — the deployer-facing knobs: which
-  optional rules exist and their defaults, the difficulty presets, and the
-  URL-parameter docs. This is the file meant to be edited without needing to
-  read the rest of the app.
+- **`config.js`** (`FeatureConfig`, `GAME_PARAM_RANGES`, `URL_PARAMS`,
+  `HELP_URL_EXAMPLE`) — the deployer-facing knobs: which optional rules
+  exist and their defaults, every numeric parameter's range/default, the
+  difficulty presets, and the URL-parameter docs. This is the file meant
+  to be edited without needing to read the rest of the app.
 - **`CONFIG`** (top of `script.js`) — engine/UI constants that aren't
-  meant to vary per-deployment in the same way: board radius bounds
-  (`MIN_RADIUS`/`MAX_RADIUS`), `CELL_SIZE`, CPU defaults
-  (`DEFAULT_CPU_TIME_SECONDS`, `DEFAULT_CPU_DEPTH`, `CPU_FIRST_MOVE_DEPTH`),
-  touch/mouse interaction timing, and `DEFAULT_MODE`. You *can* edit these,
-  but they're closer to "engine tuning" than "which rules does this
-  deployment offer" — if in doubt about which file a new constant belongs
-  in, ask whether a non-technical deployer would plausibly want to change it
-  without reading `script.js`; if yes, it probably belongs in
-  `FeatureConfig` instead.
+  meant to vary per-deployment in the same way: `CELL_SIZE`,
+  `CPU_FIRST_MOVE_DEPTH`, touch/mouse interaction timing, timing for the
+  end-of-game flash/pause/fade, and `DEFAULT_MODE`. `MIN_RADIUS`/
+  `MAX_RADIUS`/`DEFAULT_RADIUS`/`DEFAULT_CPU_TIME_SECONDS`/
+  `DEFAULT_CPU_DEPTH` still live on this object too, for every existing
+  call site's sake, but are only ever *copies* — see `GAME_PARAM_RANGES`
+  above for where their actual values come from. For anything else on
+  `CONFIG`: you *can* edit these, but they're closer to "engine tuning"
+  than "which rules/ranges does this deployment offer" — if in doubt
+  about which file a new constant belongs in, ask whether a
+  non-technical deployer would plausibly want to change it without
+  reading `script.js`; if yes, it probably belongs in `config.js` instead.
 
-`FeatureConfig.difficulty_levels` entries reference `CONFIG.MIN_RADIUS`/
-`MAX_RADIUS` implicitly (their `r` values must fit inside that range) —
-there's no runtime check tying the two files together beyond what
-`pieceRangeForRadius()`/`buildBoard()` naturally enforce, so a `config.js`
-edit that assumes different bounds than the current `CONFIG` needs a manual
-double-check.
+`FeatureConfig.difficulty_levels` entries' `r`/`cpuTime`/`cpuDepth` values
+must fit inside `GAME_PARAM_RANGES.radius`/`cpuTime`/`cpuDepth` — there's
+no runtime check tying the two together beyond the clamping already
+described in `difficulty_levels`' own doc comment, so a level built
+against a wider range than `GAME_PARAM_RANGES` currently allows will just
+have its out-of-range values silently clamped, not rejected.
 
 ## Adding things
 
