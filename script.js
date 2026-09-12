@@ -1363,6 +1363,7 @@ function onCpuWorkerMessage(e) {
   const { requestId, ok, move, error, nodesEvaluated, depthReached } = e.data || {};
   if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return; // stale reply
   const color = cpuPendingRequest.color;
+  const strategyName = cpuPendingRequest.strategyName;
   cpuPendingRequest = null;
 
   if (!ok) {
@@ -1370,7 +1371,7 @@ function onCpuWorkerMessage(e) {
     showMessage("The computer player hit an error \u2014 check the console.");
     return;
   }
-  applyCpuResult(color, move, { nodesEvaluated, depthReached });
+  applyCpuResult(color, move, { nodesEvaluated, depthReached, strategyName });
 }
 
 function onCpuWorkerError(err) {
@@ -1402,8 +1403,8 @@ function runCpuSearchLocally(req) {
     if (Game.phase !== "playing" || Game.turn !== req.color) return;
     cpuPendingRequest = null;
     try {
-      const result = AiStrategies.pickMove(req.state, req.options);
-      applyCpuResult(req.color, result.move, { nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached });
+      const result = AiStrategies.pickMove(req.state, req.options, req.strategyName);
+      applyCpuResult(req.color, result.move, { nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached, strategyName: req.strategyName });
     } catch (err) {
       console.error("CPU local search failed:", err);
       showMessage("The computer player hit an error \u2014 check the console.");
@@ -1413,10 +1414,12 @@ function runCpuSearchLocally(req) {
 
 /** Shared by both the Worker and local-fallback paths once a move (or
  *  lack thereof) has actually been decided. `stats` — { nodesEvaluated,
- *  depthReached }, straight from AiStrategies.minimaxAlphaBetaID()'s
- *  return value (see aistrategies.js) — is only ever used to append a
+ *  depthReached, strategyName }: the first two straight from whichever
+ *  AiStrategies strategy ran (see aistrategies.js), strategyName added
+ *  by the caller (resolveCpuStrategy()) since the strategy itself
+ *  doesn't know its own registered name. Only ever used to append a
  *  line to the ?showAdvanced=true CPU search log (logCpuSearch() below);
- *  it plays no role in the move itself. */
+ *  plays no role in the move itself. */
 function applyCpuResult(color, move, stats) {
   if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
   logCpuSearch(color, stats);
@@ -1438,7 +1441,12 @@ function applyCpuResult(color, move, stats) {
  *  strategy that doesn't report nodesEvaluated/depthReached — see the
  *  Return shape comment in aistrategies.js). Trims old entries past a
  *  cap so the log can't grow unbounded over a very long game, and keeps
- *  the view scrolled to the newest line, like a live log tail. */
+ *  the view scrolled to the newest line, like a live log tail.
+ *
+ *  Includes stats.strategyName when present — mainly useful in
+ *  computerself with FeatureConfig.computerself_strategies (config.js)
+ *  set to different engines per color, so the two are easy to tell apart
+ *  at a glance in the log instead of needing to remember which is which. */
 function logCpuSearch(color, stats) {
   if (!Game.showAdvanced) return;
   if (!stats || !Number.isFinite(stats.nodesEvaluated) || !Number.isFinite(stats.depthReached)) return;
@@ -1449,7 +1457,8 @@ function logCpuSearch(color, stats) {
   swatch.className = "cpu-log-swatch swatch-" + color;
   const text = document.createElement("span");
   text.className = "cpu-log-text";
-  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated`;
+  const suffix = stats.strategyName ? ` (${stats.strategyName})` : "";
+  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated${suffix}`;
   line.append(swatch, text);
   dom.cpuLog.appendChild(line);
 
@@ -1516,9 +1525,10 @@ function scheduleCpuMove() {
     const maxDepth = isCpuOpeningMoveAsBlack ? CONFIG.CPU_FIRST_MOVE_DEPTH : Number(dom.cpuDepthRange.value);
     const maxTimeSeconds = Number(dom.cpuTimeRange.value);
     const state = { cells: Game.cells, neighborKeys: Game.neighborKeys, color, enclosureAllowed: !Game.noEnclosure };
+    const strategyName = resolveCpuStrategy(color);
 
     cpuRequestId += 1;
-    const req = { requestId: cpuRequestId, color, state, options: { maxDepth, maxTimeSeconds } };
+    const req = { requestId: cpuRequestId, color, state, options: { maxDepth, maxTimeSeconds }, strategyName };
     cpuPendingRequest = req;
 
     const worker = ensureCpuWorker();
@@ -1527,7 +1537,7 @@ function scheduleCpuMove() {
       return;
     }
     try {
-      worker.postMessage({ requestId: req.requestId, state: req.state, options: req.options });
+      worker.postMessage({ requestId: req.requestId, state: req.state, options: req.options, strategyName: req.strategyName });
     } catch (err) {
       console.warn("Failed to dispatch to CPU worker, falling back to main thread:", err);
       cpuWorkerUnavailable = true;
@@ -1876,6 +1886,34 @@ function levelMatchesCurrentState(level) {
   const expectedNoEnclosure = typeof level.noEnclosure === "boolean" ? level.noEnclosure : FeatureConfig.no_enclosure[1];
   if (Game.noEnclosure !== expectedNoEnclosure) return false;
   return true;
+}
+
+/** Which AiStrategies.strategies[...] name (see aistrategies.js) a CPU
+ *  move of `color` should search with right now. Resolution order:
+ *    1. computerself mode only: a defined per-color entry in
+ *       FeatureConfig.computerself_strategies (config.js) — lets black
+ *       and white run different engines against each other in the same
+ *       game, specifically to compare them (e.g. the old cloning-based
+ *       search vs. the current make/unmake one). Not consulted in
+ *       vscomputer, where there's only one CPU to configure anyway.
+ *    2. The currently-applied difficulty level's own cpuStrategy, if it
+ *       defines one — see lastAppliedDifficultyIndex above and
+ *       FeatureConfig.difficulty_levels' doc comment in config.js.
+ *    3. FeatureConfig.DEFAULT_CPU_STRATEGY.
+ *  Never returns something AiStrategies doesn't recognize as long as
+ *  config.js's own values are valid strategy names — this doesn't
+ *  validate against AiStrategies.strategies itself, so a typo there
+ *  surfaces as pickMove()'s own "Unknown AI strategy" error instead. */
+function resolveCpuStrategy(color) {
+  if (Game.mode === "computerself") {
+    const override = FeatureConfig.computerself_strategies && FeatureConfig.computerself_strategies[color];
+    if (override) return override;
+  }
+  const level = lastAppliedDifficultyIndex !== null
+    ? (FeatureConfig.difficulty_levels || [])[lastAppliedDifficultyIndex]
+    : null;
+  if (level && level.cpuStrategy) return level.cpuStrategy;
+  return FeatureConfig.DEFAULT_CPU_STRATEGY || "minimaxAlphaBetaID";
 }
 
 /** Moves #difficultyRange's thumb to whichever level currently matches

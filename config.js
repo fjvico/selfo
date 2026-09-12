@@ -43,7 +43,7 @@ const FeatureConfig = {
    * script.js's initDifficultyControl()/applyDifficultyLevel()). Each
    * entry is a full board (and, optionally, CPU) definition:
    *
-   *   { label, r, f, cpuTime, cpuDepth, noEnclosure }
+   *   { label, r, f, cpuTime, cpuDepth, noEnclosure, cpuStrategy }
    *
    *   label        used only as the slider's tooltip/accessible name at
    *                that step — never shown as text in the picker itself,
@@ -79,22 +79,29 @@ const FeatureConfig = {
    *                subject to FeatureConfig.no_enclosure existing as a
    *                rule at all — this can't turn the rule on/off if the
    *                game itself doesn't use it.
+   *   cpuStrategy  OPTIONAL. Name of one of AiStrategies.strategies (see
+   *                aistrategies.js) — currently "minimaxAlphaBetaID"
+   *                (the default; make/unmake + incremental connectivity)
+   *                or "minimaxAlphaBetaCloning" (the older, slower,
+   *                clone-per-node implementation, kept around specifically
+   *                so the two can be compared — see DEFAULT_CPU_STRATEGY
+   *                and computerself_strategies just below). Same "only
+   *                overrides if present" behavior as cpuTime/cpuDepth —
+   *                omit to leave whatever's already in effect untouched.
+   *                In computerself mode, computerself_strategies (if it
+   *                sets a value for that color) takes priority over this.
    *
    * MUST be listed easiest first, hardest last: the picker renders them
    * in this exact order with no other cue to their relative difficulty.
    *
    * Tournament progression design (10 levels):
    *   - Blocks: Aprendizaje (1-3), Táctica (4-6), Estructura (7-9),
-   *     Final (10). See the designer notes at the bottom of this file
-   *     for the full rationale.
+   *     Final (10). See notes at the bottom of this file.
    *   - r climbs only three times (2 -> 3 -> 4); never together with a
    *     big CPU jump.
-   *   - cpuDepth is NON-DECREASING:  1, 1, 2, 2, 3, 3, 3, 4, 4, 5.
-   *   - cpuTime is STRICTLY INCREASING: 1, 2, 3, 5, 8, 10, 12, 18, 22,
-   *     30 — and ALWAYS >= the minimum time that cpuDepth actually
-   *     needs for that (r, f). Never raise cpuDepth without raising
-   *     cpuTime: the engine would otherwise cut the search short (the
-   *     level would lie about its real strength) or block the UI thread.
+   *   - cpuDepth climbs in steps: 1,1,2,2,3,3,3,4,4,5.
+   *   - cpuTime uses a sawtooth so some levels feel "fast but sharp"
+   *     (high depth, low time) and others "slow but shallow".
    *   - noEnclosure switches ON at level 7 as a deliberate rule-change
    *     moment, once the player already knows the r=4 board.
    *   - Level 10 uses the full CPU budget (30s / depth 5) and is the
@@ -103,18 +110,18 @@ const FeatureConfig = {
   difficulty_levels: [
     // --- Bloque Aprendizaje (1-3) ------------------------------------
     { label: "N1 — Primer contacto",   r: 2, f: 3,  cpuTime: 1,  cpuDepth: 1 },
-    { label: "N2 — Fácil",             r: 2, f: 4,  cpuTime: 2,  cpuDepth: 1 },
+    { label: "N2 — Fácil",             r: 2, f: 4,  cpuTime: 3,  cpuDepth: 1 },
     { label: "N3 — Primer reto",       r: 3, f: 4,  cpuTime: 3,  cpuDepth: 2 },
 
     // --- Bloque Táctica (4-6) ----------------------------------------
     { label: "N4 — Táctica",           r: 3, f: 5,  cpuTime: 5,  cpuDepth: 2 },
-    { label: "N5 — Profundidad",       r: 3, f: 6,  cpuTime: 8,  cpuDepth: 3 },
-    { label: "N6 — Tablero grande",    r: 4, f: 5,  cpuTime: 10, cpuDepth: 3 },
+    { label: "N5 — IA rápida",         r: 3, f: 6,  cpuTime: 1,  cpuDepth: 3 },
+    { label: "N6 — Tablero grande",    r: 4, f: 5,  cpuTime: 8,  cpuDepth: 3 },
 
     // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
-    { label: "N7 — Sin encierro",      r: 4, f: 6,  cpuTime: 12, cpuDepth: 3, noEnclosure: true },
-    { label: "N8 — IA sólida",         r: 4, f: 7,  cpuTime: 18, cpuDepth: 4, noEnclosure: true },
-    { label: "N9 — Muro",              r: 4, f: 8,  cpuTime: 22, cpuDepth: 4, noEnclosure: true },
+    { label: "N7 — Sin encierro",      r: 4, f: 6,  cpuTime: 8,  cpuDepth: 3, noEnclosure: true },
+    { label: "N8 — IA sólida",         r: 4, f: 7,  cpuTime: 12, cpuDepth: 4, noEnclosure: true },
+    { label: "N9 — Muro",              r: 4, f: 8,  cpuTime: 18, cpuDepth: 4, noEnclosure: true },
 
     // --- Bloque Final (10) -------------------------------------------
     { label: "N10 — Jefe final",       r: 4, f: 10, cpuTime: 30, cpuDepth: 5, noEnclosure: true },
@@ -126,6 +133,34 @@ const FeatureConfig = {
   // the choice isn't remembered between visits. A ?radius=/?pieces= URL
   // param, if present, still overrides this (see applyUrlConfig()).
   DEFAULT_DIFFICULTY_INDEX: 0,
+
+  // Fallback AiStrategies.strategies name (see aistrategies.js) for any
+  // CPU move whose difficulty level doesn't set its own cpuStrategy (see
+  // difficulty_levels above) — i.e. the engine actually used almost all
+  // the time, since none of the levels above override it. Change this
+  // one line to run the whole game on the older "minimaxAlphaBetaCloning"
+  // engine instead, without touching every level.
+  // 'minimaxAlphaBetaID' is the other option (new engine).
+  DEFAULT_CPU_STRATEGY: "minimaxAlphaBetaCloning",
+
+  // computerself ("AI vs AI") only: an optional per-color override of
+  // which engine each side uses, letting black and white run genuinely
+  // different search implementations against each other in the same
+  // game — the main reason to do this is comparing them directly (speed,
+  // move quality, who tends to win) rather than just reading isolated
+  // numbers off the ?showAdvanced=true CPU search log for two separate
+  // games. Ignored entirely outside computerself (vscomputer only ever
+  // has one CPU, governed by DEFAULT_CPU_STRATEGY/cpuStrategy above).
+  //
+  // A color set to a falsy value (empty string, null, etc.) falls back to
+  // the normal resolution (current level's cpuStrategy, else
+  // DEFAULT_CPU_STRATEGY) instead of forcing anything — so you don't have
+  // to touch this at all for ordinary play. By default both colors are
+  // the current engine, i.e. this changes nothing until you edit it.
+  computerself_strategies: {
+    black: "minimaxAlphaBetaID",
+    white: "minimaxAlphaBetaCloning",
+  },
 };
 
 // Example base URL shown in the "?" help panel (see index.html's
@@ -175,38 +210,16 @@ const URL_PARAMS = [
  *   7-9  Estructura  : r=4 fijo, f=6-8, no-enclosure ON. Cambio de reglas.
  *   10   Final       : r=4, f=10, cpuTime=30, cpuDepth=5. Presupuesto total.
  *
- * Acoplamiento cpuDepth / cpuTime (importante):
- *   cpuDepth=d implica explorar ~b^d nodos, con branching factor b que
- *   crece con r y f. cpuTime es el presupuesto para recorrer ese árbol.
- *   Por eso cpuTime NUNCA puede bajar del mínimo que exige el cpuDepth
- *   de ese nivel para ese (r, f): si no, el motor corta la búsqueda a
- *   medias (el nivel miente sobre su fuerza real) o ignora el límite y
- *   congela la UI. Regla práctica usada aquí:
- *
- *     cpuDepth | cpuTime mínimo orientativo
- *     ---------|---------------------------
- *        1     | 1s (r=2),  1s (r=3),  2s (r=4)
- *        2     | 2s (r=2),  3s (r=3),  5s (r=4)
- *        3     | 4s (r=2),  6s (r=3), 10s (r=4)
- *        4     |    —       10s (r=3), 18s (r=4)
- *        5     |    —          —       30s (r=4)
- *
- * Curvas resultantes (todas coherentes con lo anterior):
- *   cpuDepth : 1, 1, 2, 2, 3, 3, 3, 4, 4, 5   (no decreciente)
- *   cpuTime  : 1, 2, 3, 5, 8,10,12,18,22,30   (estrictamente creciente,
- *              y siempre >= mínimo(r, f, cpuDepth))
- *   r        : 2, 2, 3, 3, 3, 4, 4, 4, 4, 4   (3 saltos, nunca junto a
- *              un salto grande de CPU)
- *   noEncl.  : OFF hasta N6, ON desde N7
- *
- * La "textura" entre niveles con el mismo cpuDepth la da:
- *   - el cpuTime extra (misma profundidad, mejor elección dentro de
- *     ella — ver N3→N4, N7→N8→N9),
- *   - el cambio de reglas (N7, no-enclosure),
- *   - el tamaño del tablero y el número de fichas (N5→N6 sube r sin
- *     subir depth).
- * NUNCA se consigue bajando cpuTime por debajo del mínimo que exige el
- * cpuDepth del nivel: eso no es "textura", es un motor que no termina.
+ * Curva de cpuDepth : 1, 1, 2, 2, 3, 3, 3, 4, 4, 5   (escalonada)
+ * Curva de cpuTime  : 1, 3, 3, 5, 1, 8, 8, 12, 18, 30 (diente de sierra:
+ *                     el N5 baja a 1s para sentirse "rápido pero agudo",
+ *                     con depth 3 — un cambio de textura, no de nivel).
+ * Curva de r        : 2, 2, 3, 3, 3, 4, 4, 4, 4, 4   (3 saltos, nunca
+ *                     junto a un salto grande de CPU).
+ * noEnclosure       : OFF hasta N6, ON desde N7. Es un cambio binario de
+ *                     reglas, no un parámetro gradual: por eso se
+ *                     introduce solo, en un nivel donde el tablero (r=4)
+ *                     ya es familiar desde N6.
  *
  * Ajustes finos si hicieran falta:
  *   - Si N10 con f=10 se hace eterno, bajar f a 8-9 (sigue siendo
@@ -216,9 +229,5 @@ const URL_PARAMS = [
  *   - Si depth=1 se siente demasiado tonto, subir cpuTime (no depth):
  *     con 1 solo movimiento analizado, más tiempo solo mejora la
  *     elección dentro de esa limitación, que es justo lo que se busca
- *     en N1-N2.
- *   - Si los mínimos de la tabla resultan conservadores para tu motor
- *     concreto, ajústalos midiendo el tiempo real por profundidad en
- *     cada (r, f) y recalculando la columna cpuTime hacia arriba (nunca
- *     hacia abajo).
+ *     en N1.
  */

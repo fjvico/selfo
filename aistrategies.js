@@ -389,6 +389,114 @@ const AiStrategies = (() => {
 
   strategies.minimaxAlphaBetaID = minimaxAlphaBetaID;
 
+  // -----------------------------------------------------------------------
+  // Second, slower strategy: the pre-optimization implementation, kept
+  // deliberately alongside the current one (not deleted) so the two can be
+  // pitted against each other on demand — see FeatureConfig.
+  // computerself_strategies / DEFAULT_CPU_STRATEGY / difficulty_levels'
+  // cpuStrategy field (all in config.js) and resolveCpuStrategy() in
+  // script.js for how a game picks which of the two actually runs.
+  //
+  // Identical algorithm and evaluation to minimaxAlphaBetaID above — same
+  // helpers (getLegalMoves/orderMoves/evaluatePosition/SCORE/etc.), same
+  // iterative deepening driver shape, same return shape — differing only
+  // in how it walks the tree:
+  //   - clones the whole board per node (applyMove()) instead of
+  //     make/unmake in place (makeMove()/undo()).
+  //   - re-checks isGroupFullyConnected() for BOTH colors at every node,
+  //     instead of caching one boolean per color and only recomputing the
+  //     side that just moved (connState).
+  // See README.md's "CPU search performance" section for the full
+  // writeup and benchmark notes from when minimaxAlphaBetaID replaced
+  // this as the default.
+  // -----------------------------------------------------------------------
+  function minimaxCloning(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed, counter) {
+    if (nowMs() > deadline) throw new SearchTimeoutError();
+
+    const opponentOfRoot = otherColor(rootColor);
+    if (isGroupFullyConnected(cells, neighborKeys, rootColor)) return SCORE.WIN + depth;
+    if (isGroupFullyConnected(cells, neighborKeys, opponentOfRoot)) return -(SCORE.WIN + depth);
+
+    if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
+
+    const legalMoves = getLegalMoves(cells, neighborKeys, moverColor, enclosureAllowed);
+    if (legalMoves.length === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
+
+    const ordered = orderMoves(legalMoves, cells, neighborKeys, moverColor);
+    const maximizing = moverColor === rootColor;
+    let value = maximizing ? -Infinity : Infinity;
+
+    for (const move of ordered) {
+      counter.nodes++;
+      const child = applyMove(cells, move.from, move.to);
+      const childValue = minimaxCloning(child, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter);
+
+      if (maximizing) {
+        if (childValue > value) value = childValue;
+        if (value > alpha) alpha = value;
+      } else {
+        if (childValue < value) value = childValue;
+        if (value < beta) beta = value;
+      }
+      if (alpha >= beta) break;
+    }
+    return value;
+  }
+
+  function searchAtDepthCloning(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter) {
+    const opponentColor = otherColor(rootColor);
+    const rootMoves = orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor);
+
+    let bestMove = null;
+    let bestScore = -Infinity;
+    let alpha = -Infinity;
+    const beta = Infinity;
+
+    for (const move of rootMoves) {
+      counter.nodes++;
+      const child = applyMove(cells, move.from, move.to);
+      const score = minimaxCloning(child, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+      if (bestScore > alpha) alpha = bestScore;
+    }
+    return { move: bestMove, score: bestScore };
+  }
+
+  function minimaxAlphaBetaCloning(state, options = {}) {
+    const { cells, neighborKeys, color, enclosureAllowed } = state;
+    const maxDepth = Math.max(1, Math.min(5, options.maxDepth ?? 2));
+    const maxTimeMs = Math.max(200, (options.maxTimeSeconds ?? 5) * 1000);
+    const deadline = nowMs() + maxTimeMs;
+
+    const counter = { nodes: 0 };
+    let best = { move: null, score: -Infinity };
+    let depthReached = 0;
+
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      let result;
+      try {
+        result = searchAtDepthCloning(cells, neighborKeys, color, depth, deadline, enclosureAllowed, counter);
+      } catch (err) {
+        if (err instanceof SearchTimeoutError) break;
+        throw err;
+      }
+      if (result.move) { best = result; depthReached = depth; }
+      if (Math.abs(best.score) >= SCORE.WIN) break;
+      if (nowMs() > deadline) break;
+    }
+
+    if (!best.move) {
+      const fallback = getLegalMoves(cells, neighborKeys, state.color, enclosureAllowed)[0] || null;
+      best = { move: fallback, score: 0 };
+    }
+    return { move: best.move, score: best.score, nodesEvaluated: counter.nodes, depthReached };
+  }
+
+  strategies.minimaxAlphaBetaCloning = minimaxAlphaBetaCloning;
+
   // Name of the strategy used when none is explicitly requested.
   const activeStrategy = "minimaxAlphaBetaID";
 
@@ -429,15 +537,19 @@ const AiStrategies = (() => {
 //
 // Message protocol (plain postMessage — Map/Array/Object are all
 // structured-cloneable, no transferables needed):
-//   in  -> { requestId, state: { cells, neighborKeys, color, enclosureAllowed }, options }
+//   in  -> { requestId, state: { cells, neighborKeys, color, enclosureAllowed }, options, strategyName }
 //   out -> { requestId, ok: true,  move, score, nodesEvaluated, depthReached }
 //        | { requestId, ok: false, error }
+// strategyName is optional — omitting it (or passing undefined) uses
+// AiStrategies.activeStrategy, same as calling pickMove() with only two
+// arguments. See config.js's DEFAULT_CPU_STRATEGY/computerself_strategies/
+// difficulty_levels' cpuStrategy for how script.js decides what to send.
 // =========================================================================
 if (typeof importScripts === "function") {
   self.onmessage = function (e) {
-    const { requestId, state, options } = e.data || {};
+    const { requestId, state, options, strategyName } = e.data || {};
     try {
-      const result = AiStrategies.pickMove(state, options);
+      const result = AiStrategies.pickMove(state, options, strategyName);
       self.postMessage({
         requestId,
         ok: true,

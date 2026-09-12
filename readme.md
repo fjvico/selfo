@@ -53,7 +53,7 @@ The presets behind the vertical "Difficulty" slider in the top bar (between
 the mode selector and Share). Each entry:
 
 ```js
-{ label, r, f, cpuTime, cpuDepth, noEnclosure }
+{ label, r, f, cpuTime, cpuDepth, noEnclosure, cpuStrategy }
 ```
 
 | Key | Required | Meaning |
@@ -64,6 +64,7 @@ the mode selector and Share). Each entry:
 | `cpuTime` | no | Computer's max think time in seconds, clamped to 1–30. |
 | `cpuDepth` | no | Computer's search depth, clamped to 1–5. |
 | `noEnclosure` | no | Boolean. Unlike `cpuTime`/`cpuDepth`, omitting this **resets** it to the `no_enclosure` default rather than leaving it as-is — see below. Still subject to `no_enclosure` above existing as a rule at all — this can't turn it on if the `show_in_ui` chain means the rule isn't in play. |
+| `cpuStrategy` | no | Name of an `AiStrategies.strategies` entry (`aistrategies.js`) — see [CPU search performance](#cpu-search-performance-aistrategiesjs) below. Same override-if-present behavior as `cpuTime`/`cpuDepth`. |
 
 **`cpuTime`/`cpuDepth` are override-if-present, not override-always.**
 Omitting one of them leaves whatever was already in effect (session
@@ -223,6 +224,36 @@ boards): identical moves, scores, and node counts at every depth tested,
 and the board is provably back to its exact original state after any
 search, including ones that were interrupted mid-depth by the time
 budget.
+
+### Switching engines / comparing them head-to-head
+
+The pre-optimization algorithm wasn't deleted — it's registered
+side-by-side with the current one as a second `AiStrategies.strategies`
+entry, `minimaxAlphaBetaCloning` (the current, default one is
+`minimaxAlphaBetaID`). `pickMove(state, options, strategyName)` already
+took an optional third argument for exactly this; nothing new needed on
+that side.
+
+Three `config.js` knobs control which one actually runs, resolved in this
+order by `resolveCpuStrategy()` in `script.js`:
+
+1. **`FeatureConfig.computerself_strategies`** — computerself ("AI vs AI")
+   only, an optional per-color override (`{ black, white }`). This is the
+   one built specifically for comparing the two engines: set one color to
+   `"minimaxAlphaBetaID"` and the other to `"minimaxAlphaBetaCloning"` and
+   watch them play each other, with the `?showAdvanced=true` CPU log
+   showing each move's engine name alongside its depth/node count so the
+   two are easy to tell apart live. Both default to the current engine, so
+   this changes nothing until edited.
+2. **A difficulty level's own `cpuStrategy`** (see `difficulty_levels`
+   above) — same override-if-present behavior as `cpuTime`/`cpuDepth`.
+3. **`FeatureConfig.DEFAULT_CPU_STRATEGY`** — the fallback, and in
+   practice what almost every game actually uses, since none of the
+   shipped levels override it.
+
+`computerself_strategies` wins over a level's `cpuStrategy` when both
+would apply (i.e. in computerself with both set) — it's the more specific,
+more deliberately-a-comparison setting of the two.
 
 ### Not done (ranked roughly by expected impact)
 
