@@ -191,9 +191,9 @@ round-trip through "Copy link" / the share menu, also add it to
 
 `minimaxAlphaBetaID()` is a fairly standard alpha-beta minimax with
 iterative deepening (see its own doc comment for the algorithm itself).
-Two optimizations are already in place; several more are identified but
-not yet done. Both the "done" and "not done" lists exist so a future pass
-doesn't have to re-derive them from scratch.
+Four optimizations are already in place; two more are identified but
+deliberately not attempted yet (see "Not done" for why). Both lists exist
+so a future pass doesn't have to re-derive them from scratch.
 
 ### Done
 
@@ -217,22 +217,53 @@ doesn't have to re-derive them from scratch.
   `connState[color]` instead of re-scanning. Still an O(n) BFS per move
   (not O(1) incremental — see "Not done" below), just one of them instead
   of two.
+- **Transposition table.** A `Map` keyed by an incrementally-maintained
+  Zobrist hash (see `zobristFor()`/`computeHash()`/`hashState` in
+  `makeMove()`) of `{ depth, score, move, flag }`, standard fail-soft
+  alpha-beta semantics (`TT_EXACT`/`TT_LOWER`/`TT_UPPER`). Two effects:
+  a deep-enough cached entry can resolve or tighten a node immediately,
+  and — even when it can't — that position's previously-best move gets
+  tried first (see the next point). Deliberately scoped fresh to one
+  `minimaxAlphaBetaID()` call (a new `Map` every time, not a module-level
+  one reused across separate CPU moves): the board, the no-enclosure rule,
+  and even which color is thinking can all differ between moves, and a
+  stale cross-call entry being subtly wrong is a worse failure mode than
+  rebuilding the table once per move. It *is* shared across all of one
+  call's iterative-deepening depths, which is exactly where most of the
+  value is — a shallow depth's results inform the next depth immediately.
+- **Move ordering seeded from the transposition table** (`putMoveFirst()`)
+  rather than only the static `allyContactAfterMove` heuristic — a
+  position's previously-best move (from a shallower depth, or from
+  reaching the same position by a different move order) is tried first,
+  which is normally the single biggest lever on how much alpha-beta gets
+  to prune. Folded into the TT work above rather than a separate
+  "remember the root's last-best-move" mechanism, since the TT already
+  captures this more generally (every node, not just the root).
 
-Both changes were verified against the pre-optimization algorithm
-(reconstructed standalone and run side-by-side on identical synthetic
-boards): identical moves, scores, and node counts at every depth tested,
-and the board is provably back to its exact original state after any
-search, including ones that were interrupted mid-depth by the time
-budget.
+All four were verified against the pre-optimization algorithm
+(reconstructed/kept standalone — see `minimaxAlphaBetaCloning` — and run
+side-by-side on identical synthetic boards across several board sizes,
+piece layouts, depths, and both colors): **identical scores** at every
+depth tested (the chosen *move* can legitimately differ when several tie
+on score, since move ordering itself changed — that's expected, not a
+bug), and the board is provably back to its exact original state after
+any search, including ones repeatedly interrupted mid-depth by the time
+budget. On that same test sweep, the current engine ran in under half the
+time and visited noticeably fewer nodes than the pre-optimization one at
+identical depths — the exact improvement will vary a lot by board/position
+in real play, but the direction and rough magnitude held consistently
+across every test board tried.
 
 ### Switching engines / comparing them head-to-head
 
 The pre-optimization algorithm wasn't deleted — it's registered
 side-by-side with the current one as a second `AiStrategies.strategies`
 entry, `minimaxAlphaBetaCloning` (the current, default one is
-`minimaxAlphaBetaID`). `pickMove(state, options, strategyName)` already
-took an optional third argument for exactly this; nothing new needed on
-that side.
+`minimaxAlphaBetaID`, and only it has the four optimizations above —
+`minimaxAlphaBetaCloning` is kept exactly as it originally was, on
+purpose, as an unmoving baseline to compare against). `pickMove(state,
+options, strategyName)` already took an optional third argument for
+exactly this; nothing new needed on that side.
 
 Three `config.js` knobs control which one actually runs, resolved in this
 order by `resolveCpuStrategy()` in `script.js`:
@@ -255,30 +286,26 @@ order by `resolveCpuStrategy()` in `script.js`:
 would apply (i.e. in computerself with both set) — it's the more specific,
 more deliberately-a-comparison setting of the two.
 
-### Not done (ranked roughly by expected impact)
+### Not done
 
-- **Transposition table.** No caching at all right now — the exact same
-  position reached via a different move order is re-evaluated from
-  scratch, and each iterative-deepening depth restarts the whole tree
-  with zero memory of the previous depth's work. A hash-keyed cache
-  (Zobrist hashing is the standard approach) of position → (depth,
-  score, best move) would cut a large fraction of the redundant work,
-  especially since transpositions are common in a piece-sliding game
-  like this one.
-- **Move ordering seeded from the previous depth's best line**, rather
-  than only the static `allyContactAfterMove` heuristic (see
-  `orderMoves()`). Trying iterative deepening's previous depth's
-  best-move-so-far first at the root (and ideally down the principal
-  variation) tightens the alpha-beta window much faster.
 - **Bitboard representation.** `cells` is a `Map<string, {q,r,color}>` —
   for `CONFIG.MAX_RADIUS` (5, 91 cells) that still fits in a 128-bit (two
   64-bit) bitmask per color. Move generation, adjacency checks, and even
   connectivity could all become bitwise ops instead of Map lookups/hash
-  traversal — a much bigger rewrite than the two done above, but the
-  highest ceiling of any option here.
+  traversal. Far and away the highest ceiling of any option left, but
+  also a much bigger, more invasive rewrite than everything done so far —
+  every helper in this file would need a bitboard-aware version — and one
+  this file's own maintainer should verify against the *real*
+  `moverules.js`/`boardinit.js`/`hexgeometry.js` adjacency logic rather
+  than a synthetic stand-in, since a subtle indexing bug here would be
+  easy to miss without the real hex-grid generator to test against.
 - **Parallelize the root across Workers.** Only one `Worker` is ever used
   (see `ensureCpuWorker()` in `script.js`); splitting the root moves
   across several workers (one subtree each) and merging results would use
   more of a multi-core machine, at the cost of alpha-beta pruning being
   less effective across workers than within a single sequential search
   (each worker doesn't see the others' alpha/beta bounds as they update).
+  This one touches `script.js`'s worker lifecycle management as much as
+  the search itself (spinning up/tearing down a pool instead of one
+  worker, merging/cancelling in-flight requests across all of them), so
+  it's as much an architecture change there as an `aistrategies.js` one.

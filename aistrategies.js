@@ -97,6 +97,52 @@ const AiStrategies = (() => {
     return copy;
   }
 
+  // -----------------------------------------------------------------------
+  // Zobrist hashing, for the transposition table (see `tt` in
+  // minimax()/searchAtDepth()/minimaxAlphaBetaID() below). One random
+  // 31-bit int per (cell key, color) pair, generated lazily the first time
+  // a given cell key is ever seen — board radius (hence which keys exist)
+  // can differ between games in the same page session, so this can't be
+  // precomputed up front for "the board". The table itself has no
+  // dependency on any particular board's *contents*, only its *keys*, so
+  // it's safe to keep (and reuse) at module scope across every search this
+  // page ever runs, unlike `tt` itself which is fresh per pickMove() call
+  // — see minimaxAlphaBetaID()'s doc comment for why.
+  //
+  // A single 31-bit hash (rather than a wider/dual hash) is a deliberate
+  // simplification: this game's state space (at most a few dozen pieces
+  // across CONFIG.MAX_RADIUS's ~91 cells — see script.js) is minuscule
+  // next to 2^31 possible hashes, so the odds of two genuinely different
+  // positions colliding within any one search are negligible in practice,
+  // and a collision here only risks reusing a slightly-wrong cached bound
+  // (a correctness/strength nit, not a crash).
+  // -----------------------------------------------------------------------
+  const zobristTable = new Map(); // cell key -> { black: number, white: number }
+  function zobristFor(key) {
+    let entry = zobristTable.get(key);
+    if (!entry) {
+      entry = {
+        black: (Math.random() * 0x7fffffff) | 0,
+        white: (Math.random() * 0x7fffffff) | 0,
+      };
+      zobristTable.set(key, entry);
+    }
+    return entry;
+  }
+
+  /** Zobrist hash of the *current* contents of `cells` — XOR of one random
+   *  number per occupied cell (see zobristFor() above). Computed once, up
+   *  front, per minimaxAlphaBetaID() call; every make/unmake incrementally
+   *  updates it from there (see makeMove() below) rather than recomputing
+   *  it from scratch at every node. */
+  function computeHash(cells) {
+    let hash = 0;
+    for (const [k, cell] of cells) {
+      if (cell.color) hash ^= zobristFor(k)[cell.color];
+    }
+    return hash;
+  }
+
   /** Returns a *new* board with the move applied (does not mutate input).
    *  Kept as the stable, easy-to-reason-about public API (see the
    *  `strategies`/`pickMove` export below) — a strategy that doesn't
@@ -117,9 +163,9 @@ const AiStrategies = (() => {
    * path (minimax/searchAtDepth below) — mutates `cells` directly instead
    * of cloning a new board per node (see applyMove() above for the
    * clone-based alternative kept for other callers). Returns an `undo()`
-   * closure that restores both the board *and* `connState` (see below) to
-   * exactly how they were before this call; callers MUST invoke it
-   * exactly once, in a `finally` block, so the board is correctly
+   * closure that restores the board, `connState`, and `hashState` (see
+   * below) to exactly how they were before this call; callers MUST invoke
+   * it exactly once, in a `finally` block, so everything is correctly
    * restored even when a SearchTimeoutError unwinds the recursion
    * mid-search (see minimax()'s deadline check) — otherwise the next
    * sibling move explored, or the next iterative-deepening depth, would
@@ -132,17 +178,27 @@ const AiStrategies = (() => {
    * recomputed here (still an O(n) scan — see isGroupFullyConnected — but
    * exactly one of the two BFS calls minimax() used to always do
    * unconditionally at every node, not both).
+   *
+   * `hashState` — { value: number }, the current position's Zobrist hash
+   * (see computeHash() above) — is the transposition-table piece: moving
+   * a piece just XORs out its old (key, color) contribution and XORs in
+   * the new one, incrementally, rather than rehashing the whole board.
+   * XOR being its own inverse is exactly what makes the undo side trivial.
    */
-  function makeMove(cells, neighborKeys, from, to, connState) {
+  function makeMove(cells, neighborKeys, from, to, connState, hashState) {
     const color = cells.get(from).color;
     const prevConn = connState[color];
+    const fromZ = zobristFor(from)[color];
+    const toZ = zobristFor(to)[color];
     cells.get(from).color = null;
     cells.get(to).color = color;
     connState[color] = isGroupFullyConnected(cells, neighborKeys, color);
+    hashState.value ^= fromZ ^ toZ;
     return function undoMove() {
       cells.get(to).color = null;
       cells.get(from).color = color;
       connState[color] = prevConn;
+      hashState.value ^= fromZ ^ toZ; // XOR is its own inverse
     };
   }
 
@@ -235,6 +291,25 @@ const AiStrategies = (() => {
       .map((x) => x.m);
   }
 
+  /** Moves `ttMove` (this position's best move from a previous, shallower
+   *  iterative-deepening depth — see the transposition table, `tt`, in
+   *  minimax()/searchAtDepth() below) to the front of an already-ordered
+   *  move list, if it's in there at all. Trying the previously-best move
+   *  first is the single biggest lever for how much of the tree alpha-beta
+   *  gets to prune, since it tends to establish a strong bound immediately
+   *  instead of after examining every other candidate first. Returns the
+   *  same array unchanged if `ttMove` is missing or already first — never
+   *  mutates the input array either way. */
+  function putMoveFirst(moves, ttMove) {
+    if (!ttMove) return moves;
+    const idx = moves.findIndex((m) => m.from === ttMove.from && m.to === ttMove.to);
+    if (idx <= 0) return moves;
+    const reordered = moves.slice();
+    const [m] = reordered.splice(idx, 1);
+    reordered.unshift(m);
+    return reordered;
+  }
+
   // ---------------------------------------------------------------------
   // Minimax with alpha-beta pruning (single fixed-depth search).
   // `rootColor` never changes across the recursion: it's whose
@@ -250,14 +325,29 @@ const AiStrategies = (() => {
   // which only ever displays this behind ?showAdvanced=true.
   //
   // PERFORMANCE: this walks the tree via make/unmake (see makeMove()
-  // above) instead of cloning a new board per node, and reads
+  // above) instead of cloning a new board per node, reads
   // connState[color] instead of re-running isGroupFullyConnected() for
-  // both colors at every single node — see makeMove()'s comment for why
-  // only the mover's color ever needs recomputing. `cells` is mutated
-  // and restored in place across the whole call; nothing here is safe to
-  // call concurrently against the same `cells`/`connState` pair.
+  // both colors at every single node (see makeMove()'s comment for why
+  // only the mover's color ever needs recomputing), and consults a
+  // transposition table (`tt`, keyed by hashState.value — see
+  // makeMove()/computeHash() above) both to short-circuit a node outright
+  // when a deep-enough cached result already settles it, and — even when
+  // it doesn't — to try that position's previously-best move first (see
+  // putMoveFirst()), which is normally the single biggest lever on how
+  // much alpha-beta gets to prune. `cells` is mutated and restored in
+  // place across the whole call; nothing here is safe to call
+  // concurrently against the same `cells`/`connState`/`hashState` triple.
+  //
+  // Standard fail-soft alpha-beta + TT: `flagOf(value, alphaOrig, beta)`
+  // records whether the returned value is exact, or only a bound (because
+  // this node cut off early against the *caller's* window rather than
+  // fully resolving) — see TT_EXACT/TT_LOWER/TT_UPPER just below.
   // ---------------------------------------------------------------------
-  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed, counter, connState) {
+  const TT_EXACT = 0; // value is this node's true minimax value
+  const TT_LOWER = 1; // value is a lower bound (search cut off on a fail-high / beta cutoff)
+  const TT_UPPER = 2; // value is an upper bound (nothing beat alpha)
+
+  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed, counter, connState, hashState, tt) {
     if (nowMs() > deadline) throw new SearchTimeoutError();
 
     const opponentOfRoot = otherColor(rootColor);
@@ -267,42 +357,70 @@ const AiStrategies = (() => {
 
     if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
+    const alphaOrig = alpha;
+    const ttKey = hashState.value;
+    const ttEntry = tt.get(ttKey);
+    let ttMove = null;
+    if (ttEntry) {
+      ttMove = ttEntry.move;
+      if (ttEntry.depth >= depth) {
+        if (ttEntry.flag === TT_EXACT) return ttEntry.score;
+        if (ttEntry.flag === TT_LOWER && ttEntry.score > alpha) alpha = ttEntry.score;
+        else if (ttEntry.flag === TT_UPPER && ttEntry.score < beta) beta = ttEntry.score;
+        if (alpha >= beta) return ttEntry.score;
+      }
+    }
+
     const legalMoves = getLegalMoves(cells, neighborKeys, moverColor, enclosureAllowed);
     if (legalMoves.length === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
-    const ordered = orderMoves(legalMoves, cells, neighborKeys, moverColor);
+    const ordered = putMoveFirst(orderMoves(legalMoves, cells, neighborKeys, moverColor), ttMove);
     const maximizing = moverColor === rootColor;
     let value = maximizing ? -Infinity : Infinity;
+    let bestMoveHere = null;
 
     for (const move of ordered) {
       counter.nodes++;
-      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState);
+      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, hashState);
       let childValue;
       try {
-        childValue = minimax(cells, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState);
+        childValue = minimax(cells, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState, hashState, tt);
       } finally {
         undo(); // always restore, even if the line above threw SearchTimeoutError
       }
 
       if (maximizing) {
-        if (childValue > value) value = childValue;
+        if (childValue > value) { value = childValue; bestMoveHere = move; }
         if (value > alpha) alpha = value;
       } else {
-        if (childValue < value) value = childValue;
+        if (childValue < value) { value = childValue; bestMoveHere = move; }
         if (value < beta) beta = value;
       }
       if (alpha >= beta) break; // alpha-beta cutoff: rest of this branch can't change the outcome
     }
+
+    // A SearchTimeoutError thrown above skips this store entirely (the
+    // function exits via the exception, never reaching here) — exactly
+    // right, since `value` would only reflect the moves tried so far,
+    // not a legitimate bound for the full node.
+    const flag = value <= alphaOrig ? TT_UPPER : value >= beta ? TT_LOWER : TT_EXACT;
+    tt.set(ttKey, { depth, score: value, move: bestMoveHere, flag });
+
     return value;
   }
 
   /** One full-width search at a fixed depth from the root, returning the
    *  best move found (root is always the maximizing side). `counter`/
-   *  `connState` — see minimax() above; same make/unmake-in-`finally`
-   *  discipline applies here at the root level too. */
-  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState) {
+   *  `connState`/`hashState`/`tt` — see minimax() above; same
+   *  make/unmake-in-`finally` discipline applies here at the root level
+   *  too. The root search always uses a full (-Infinity, Infinity) window,
+   *  so its own result is always an exact value — stored as TT_EXACT. */
+  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState, hashState, tt) {
     const opponentColor = otherColor(rootColor);
-    const rootMoves = orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor);
+    const ttKey = hashState.value;
+    const ttEntry = tt.get(ttKey);
+    const ttMove = ttEntry ? ttEntry.move : null;
+    const rootMoves = putMoveFirst(orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor), ttMove);
 
     let bestMove = null;
     let bestScore = -Infinity;
@@ -311,10 +429,10 @@ const AiStrategies = (() => {
 
     for (const move of rootMoves) {
       counter.nodes++;
-      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState);
+      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, hashState);
       let score;
       try {
-        score = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState);
+        score = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState, hashState, tt);
       } finally {
         undo();
       }
@@ -324,6 +442,7 @@ const AiStrategies = (() => {
       }
       if (bestScore > alpha) alpha = bestScore;
     }
+    tt.set(ttKey, { depth, score: bestScore, move: bestMove, flag: TT_EXACT });
     return { move: bestMove, score: bestScore };
   }
 
@@ -338,18 +457,30 @@ const AiStrategies = (() => {
    * Returns { move, score, nodesEvaluated, depthReached } — the latter
    * two purely for display (see the file-header comment and script.js's
    * ?showAdvanced=true CPU search log): nodesEvaluated is the total
-   * candidate moves expanded across *every* depth tried this call (a
-   * fresh search each depth, no move/transposition caching between
-   * them), and depthReached is the last depth that actually completed
-   * before the time budget ran out (which can be less than
-   * options.maxDepth on a tight budget, or on a big/complex board).
+   * candidate moves expanded across *every* depth tried this call, and
+   * depthReached is the last depth that actually completed before the
+   * time budget ran out (which can be less than options.maxDepth on a
+   * tight budget, or on a big/complex board).
    *
-   * connState (see makeMove()) is computed once here, from the actual
-   * root position, and then threaded through every depth's search —
-   * each depth's own make/unmake calls fully unwind back to this same
-   * root state (via the `finally` blocks in minimax()/searchAtDepth())
-   * before the next depth starts, so recomputing it per depth would be
-   * redundant.
+   * connState (see makeMove()) and hashState (see computeHash()) are
+   * computed once here, from the actual root position, and then threaded
+   * through every depth's search — each depth's own make/unmake calls
+   * fully unwind back to this same root state (via the `finally` blocks
+   * in minimax()/searchAtDepth()) before the next depth starts, so
+   * recomputing either would be redundant.
+   *
+   * `tt` (the transposition table) is likewise created fresh here and
+   * shared across every depth this call tries — unlike connState/
+   * hashState it's deliberately *not* reset between depths, since reusing
+   * a shallower depth's results (as a cutoff, or at minimum as move
+   * ordering — see minimax()) is the entire point of iterative deepening
+   * plus a TT together. It's also deliberately *not* persisted beyond
+   * this one call (a fresh Map every time minimaxAlphaBetaID() runs, not
+   * a module-level one reused across separate CPU moves): the board, the
+   * no-enclosure rule, and even which color is thinking can all differ
+   * from one call to the next, and a stale cross-call entry being wrong
+   * in a way that's actually visible is a much worse failure mode than
+   * the modest extra work of rebuilding it once per move.
    */
   function minimaxAlphaBetaID(state, options = {}) {
     const { cells, neighborKeys, color, enclosureAllowed } = state;
@@ -362,13 +493,15 @@ const AiStrategies = (() => {
       black: isGroupFullyConnected(cells, neighborKeys, "black"),
       white: isGroupFullyConnected(cells, neighborKeys, "white"),
     };
+    const hashState = { value: computeHash(cells) };
+    const tt = new Map();
     let best = { move: null, score: -Infinity };
     let depthReached = 0;
 
     for (let depth = 1; depth <= maxDepth; depth++) {
       let result;
       try {
-        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed, counter, connState);
+        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed, counter, connState, hashState, tt);
       } catch (err) {
         if (err instanceof SearchTimeoutError) break; // keep the previous depth's result
         throw err;
