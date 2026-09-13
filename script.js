@@ -359,6 +359,17 @@ function formatCpuDepthLabel(value) {
   return value === 0 ? "Auto" : String(value);
 }
 
+/** Sets the --cell-edge CSS custom property from config.js's
+ *  BOARD_COLORS.cellEdge — see that object's own doc comment. index.html
+ *  (well, style.css's :root) hardcodes a matching literal value too,
+ *  purely so the very first paint already shows the right color instead
+ *  of flashing to it; this call is what makes config.js authoritative if
+ *  the two ever disagree. Run once at startup. */
+function applyBoardColors() {
+  document.documentElement.style.setProperty("--cell-edge", BOARD_COLORS.cellEdge);
+}
+applyBoardColors();
+
 function applyGameParamRanges() {
   const { radius, cpuTime, cpuDepth } = GAME_PARAM_RANGES;
   dom.radiusRange.min = String(radius.min);
@@ -595,14 +606,24 @@ function pieceRangeForRadius(radius) {
  *
  * `enclosureAllowed` is the inverse of the "No enclosure" setup toggle
  * (see FeatureConfig.no_enclosure in config.js — callers pass
- * `!Game.noEnclosure`). When enclosure is NOT allowed, a random-but-valid layout on a small, densely-packed board
- * can still leave black (who always moves first) with zero legal moves —
- * every empty cell it could step into would trap some white piece. Such
- * a layout is unplayable, so the whole placement is retried (both colors,
- * fresh random scatter) until one leaves both colors with at least one
- * legal move, or MAX_LAYOUT_ATTEMPTS is reached — at which point the last
- * attempt is used anyway rather than never finishing setup. The layout
- * is re-randomized every game regardless.
+ * `!Game.noEnclosure`). When enclosure is NOT allowed, a random-but-valid
+ * layout on a small, densely-packed board can fail in two different ways
+ * that both have to be checked separately:
+ *   - a color can end up with *zero* legal moves at all (every empty cell
+ *     it could step into would trap some piece) — checked with
+ *     MoveRules.hasAnyLegalMove.
+ *   - a color can still have *some* legal moves available through its
+ *     other pieces while one specific piece is already sitting enclosed
+ *     right from the initial scatter — checked separately with
+ *     MoveRules.hasEnclosedPiece, since hasAnyLegalMove being true says
+ *     nothing about any *individual* piece's situation. Skipping this
+ *     check was a real bug: "No enclosure" is supposed to guarantee no
+ *     piece is ever trapped, and an initial layout could quietly violate
+ *     that from move one.
+ * Either failure makes the whole placement (both colors, fresh random
+ * scatter) retried until one clears both checks, or MAX_LAYOUT_ATTEMPTS is
+ * reached — at which point the last attempt is used anyway rather than
+ * never finishing setup. The layout is re-randomized every game regardless.
  */
 function buildBoard(radius, piecesPerColor, enclosureAllowed) {
   const MAX_LAYOUT_ATTEMPTS = 25;
@@ -623,8 +644,11 @@ function buildBoard(radius, piecesPerColor, enclosureAllowed) {
 
     result = { cells, neighborKeys };
     if (enclosureAllowed) break; // nothing to validate against
-    if (MoveRules.hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
-        MoveRules.hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed)) break;
+    const bothColorsCanMove = MoveRules.hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
+      MoveRules.hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed);
+    const noPieceAlreadyEnclosed = !MoveRules.hasEnclosedPiece(cells, neighborKeys, "black") &&
+      !MoveRules.hasEnclosedPiece(cells, neighborKeys, "white");
+    if (bothColorsCanMove && noPieceAlreadyEnclosed) break;
   }
   return result;
 }

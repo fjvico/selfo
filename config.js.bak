@@ -1,25 +1,6 @@
 "use strict";
 
 /**
- * BOARD_COLORS
- * ------------
- * Board-appearance colors meant to be hand-tuned without touching
- * style.css — applied once at boot to the matching CSS custom properties
- * (see applyBoardColors() in script.js) rather than being read directly
- * by the CSS itself, so this stays the one place to adjust them.
- *
- *   cellEdge   color of the hexagonal grid lines between cells (the cell
- *              polygons' stroke) — style.css's --cell-edge variable.
- *              Deliberately close to --cell-fill's gray by default so the
- *              grid barely registers; raise the contrast here (a lighter
- *              or darker value, or a different hue entirely) to make the
- *              cell edges more visible.
- */
-const BOARD_COLORS = {
-  cellEdge: "#929292",
-};
-
-/**
  * GAME_PARAM_RANGES
  * -----------------
  * Min/max/default for every numeric game parameter that actually has a

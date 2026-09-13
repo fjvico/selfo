@@ -16,9 +16,19 @@ plugs into. It's not a player-facing document.
 
 ## `config.js`
 
-`config.js` exports five top-level `const`s. All of them are read once, early,
+`config.js` exports six top-level `const`s. All of them are read once, early,
 and nothing else in the app is supposed to define game rules, difficulty
-tiers, parameter ranges, or URL-parameter docs outside of this file.
+tiers, parameter ranges, board colors, or URL-parameter docs outside of
+this file.
+
+### `BOARD_COLORS`
+
+Currently just `cellEdge` — the hex grid line color between cells,
+applied to style.css's `--cell-edge` custom property by
+`applyBoardColors()` in `script.js`. style.css's `:root` hardcodes a
+matching literal value too, purely so the very first paint already shows
+the right color before that call runs — update both if you change it, or
+the page will briefly flash the old color.
 
 ### `GAME_PARAM_RANGES`
 
