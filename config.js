@@ -173,22 +173,22 @@ const FeatureConfig = {
    */
   difficulty_levels: [
     // --- Bloque Aprendizaje (1-3) ------------------------------------
-    { label: "N1 — Primer contacto",   r: 2, f: 3,  cpuTime: 1 },
-    { label: "N2 — Fácil",             r: 2, f: 4,  cpuTime: 3 },
-    { label: "N3 — Primer reto",       r: 3, f: 4,  cpuTime: 3 },
+    { label: "N1 — Primer contacto",   r: 2, f:  3, cpuTime:  1 },
+    { label: "N2 — Fácil",             r: 2, f:  4, cpuTime:  1 },
+    { label: "N3 — Primer reto",       r: 2, f:  5, cpuTime:  3 },
 
     // --- Bloque Táctica (4-6) ----------------------------------------
-    { label: "N4 — Táctica",           r: 3, f: 5,  cpuTime: 5 },
-    { label: "N5 — IA rápida",         r: 3, f: 6,  cpuTime: 1 },
-    { label: "N6 — Tablero grande",    r: 4, f: 5,  cpuTime: 8 },
+    { label: "N4 — Táctica",           r: 3, f:  7, cpuTime:  5 },
+    { label: "N5 — IA rápida",         r: 3, f:  9, cpuTime:  5 },
+    { label: "N6 — Tablero grande",    r: 3, f: 11, cpuTime:  5 },
 
     // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
-    { label: "N7 — Sin encierro",      r: 4, f: 6,  cpuTime: 8,  noEnclosure: true },
-    { label: "N8 — IA sólida",         r: 4, f: 7,  cpuTime: 12, noEnclosure: true },
-    { label: "N9 — Muro",              r: 4, f: 8,  cpuTime: 18, noEnclosure: true },
+    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, noEnclosure: true },
+    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, noEnclosure: true },
+    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, noEnclosure: true },
 
     // --- Bloque Final (10) -------------------------------------------
-    { label: "N10 — Jefe final",       r: 4, f: 10, cpuTime: 30, noEnclosure: true },
+    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, noEnclosure: true },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh
