@@ -89,7 +89,7 @@ the mode selector and Share). Each entry:
 | `r` | yes | Board radius. Must be within `CONFIG.MIN_RADIUS`–`CONFIG.MAX_RADIUS` (`script.js`; currently 2–5). |
 | `f` | yes | Pieces per color. Should fit `pieceRangeForRadius(r)` (`script.js`) for that same `r` — an out-of-range value is **silently clamped**, not rejected, when the level is applied. Keep `r`/`f` matched on purpose so a level doesn't quietly do something other than what its position in the list implies. |
 | `cpuTime` | no | Computer's max think time in seconds, clamped to 1–30. |
-| `cpuDepth` | no | Computer's search depth, clamped to 1–5. |
+| `cpuDepth` | no | Computer's fixed ply cap. 0 (default) means no cap — see [CPU search performance](#cpudepth-is-time-governed-by-default-not-a-second-dial) below for why. 1–5 sets an explicit cap. |
 | `noEnclosure` | no | Boolean. Unlike `cpuTime`/`cpuDepth`, omitting this **resets** it to the `no_enclosure` default rather than leaving it as-is — see below. Still subject to `no_enclosure` above existing as a rule at all — this can't turn it on if the `show_in_ui` chain means the rule isn't in play. |
 | `cpuStrategy` | no | Name of an `AiStrategies.strategies` entry (`aistrategies.js`) — see [CPU search performance](#cpu-search-performance-aistrategiesjs) below. Same override-if-present behavior as `cpuTime`/`cpuDepth`. |
 
@@ -284,6 +284,68 @@ time and visited noticeably fewer nodes than the pre-optimization one at
 identical depths — the exact improvement will vary a lot by board/position
 in real play, but the direction and rough magnitude held consistently
 across every test board tried.
+
+### `cpuDepth` is time-governed by default, not a second dial
+
+Response time is what a player actually feels turn to turn, so `cpuTime`
+is the parameter that has to stay low/predictable — `cpuDepth` fighting
+for its own separate ply budget on top of that just adds a way to
+*accidentally* make the CPU slower (or, capped too low, weaker) than the
+time budget alone would. So `GAME_PARAM_RANGES.cpuDepth`'s default (and
+every shipped `difficulty_levels` entry) leaves it at `0`, a sentinel
+meaning "no fixed ply cap — let `cpuTime` alone decide how deep the
+search goes" (shown as "Auto" in the UI, not literally zero plies). An
+explicit `1`-`5` still works as a hard cap, for anyone who specifically
+wants a fixed, reproducible depth regardless of time available (e.g.
+benchmarking, or comparing the two engines at an identical depth via
+`computerself_strategies` below).
+
+Two things had to change in `aistrategies.js` to make "no cap" actually
+safe rather than literally unbounded:
+
+- **`options.maxDepth` of `0`/`undefined`** now resolves to
+  `NO_DEPTH_CAP_LIMIT` (40 plies) internally, not `Infinity`. Testing a
+  genuinely uncapped loop surfaced a real edge case: a position where
+  connectivity keeps flipping in and out let iterative deepening
+  "complete" depth after depth almost instantly, with the nominal depth
+  climbing into the hundreds of thousands within the time budget — and
+  since a forced win's score is `SCORE.WIN + depth` (a small tie-break
+  bonus for a faster mate), that distorted the score's scale completely.
+  40 is already far beyond anything this game's *real* move generation
+  cost lets a real board reach inside any sane time budget — a generous
+  finite ceiling standing in for "unreachable in practice", not a literal
+  infinite one, which also sidesteps risking a call-stack overflow on a
+  pathological position (a real, if unlikely, risk with true unbounded
+  recursion, especially inside a Worker).
+- **The "good enough, stop and just play it" early exit**
+  (`SCORE.GOOD_ENOUGH`, currently `450`) — otherwise a time-governed
+  search with no depth cap would always spend the *entire* `cpuTime`
+  budget every single move, even once the position is already clearly
+  decided, which is exactly the sluggish feel a low response time is
+  meant to avoid. Checked in two places: after each iterative-deepening
+  depth completes (`minimaxAlphaBetaID()`, same spot the forced-win check
+  already lived), and — more aggressively — inside `searchAtDepth()`
+  itself, which stops comparing the *remaining* root moves the moment one
+  of them already clears the bar, rather than finishing the full-width
+  comparison first. Both mean the chosen move is provably good, not
+  necessarily provably *the best* among every option at that depth — the
+  right trade for keeping response time low. A genuine forced win always
+  clears this same, lower bar first, so it didn't need a separate check.
+  Deliberately **not** added to `minimaxAlphaBetaCloning` — it's kept as
+  an unmoving, full-comparison-every-depth baseline (see "Switching
+  engines" below), so it still only stops on a proven win/loss or the
+  time budget, exactly as it always has. That baseline *did* still need
+  the `maxDepth` sentinel fix above, though — without it, leaving
+  `cpuDepth` at its new "Auto" default while running the old engine (via
+  `computerself_strategies`) would have silently clamped it to a
+  depth-1-only search, a real bug rather than an intentional difference
+  between the two.
+
+`SCORE.GOOD_ENOUGH`'s value is a rough estimate (see its own comment in
+`aistrategies.js` for the scoring math it's based on), not something
+tuned against real play yet — revisit it if real games show the CPU
+committing to weak moves too eagerly, or still visibly grinding through
+the full time budget on already-decided positions.
 
 ### Switching engines / comparing them head-to-head
 

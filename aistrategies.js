@@ -24,8 +24,11 @@
  *
  * Options shape (all optional, strategies may ignore fields they don't use):
  *   {
- *     maxDepth:      number, // hard ply limit (future UI: 1-5)
- *     maxTimeSeconds: number  // wall-clock budget (future UI: think time)
+ *     maxDepth:       number, // ply cap — 0/undefined = no cap (time-governed
+ *                             // only; see minimaxAlphaBetaID()'s doc comment),
+ *                             // 1-5 = an explicit fixed cap (see
+ *                             // GAME_PARAM_RANGES.cpuDepth in config.js)
+ *     maxTimeSeconds: number  // wall-clock budget (UI: think time)
  *   }
  *
  * Return shape:
@@ -246,11 +249,55 @@ const AiStrategies = (() => {
     return { largestGroup, allyAdjacencyPairs };
   }
 
+  /** Effective depth cap used when maxDepth is left at 0/unspecified (see
+   *  minimaxAlphaBetaID()'s doc comment) — deliberately a large *finite*
+   *  number, not Infinity. Two independent reasons:
+   *    - Testing an literally-uncapped loop surfaced a real edge case: a
+   *      position where connectivity keeps flipping in and out lets
+   *      iterative deepening "complete" depth after depth almost
+   *      instantly, with the nominal depth climbing into the hundreds of
+   *      thousands within the time budget — and since a forced win's
+   *      score is SCORE.WIN + depth (see minimax()), that distorted the
+   *      score's scale completely (a tie-break bonus meant to be
+   *      single-digit blowing up alongside it).
+   *    - Recursion depth is real call-stack depth in JS — a truly
+   *      unbounded search could risk a stack overflow on a genuinely
+   *      low-branching, slow-to-resolve position, particularly inside a
+   *      Worker, which isn't guaranteed the same stack size as the main
+   *      thread.
+   *  40 plies is already far beyond anything the time budget realistically
+   *  lets a real board reach (this game's actual move generation/
+   *  evaluation cost, unlike a synthetic benchmark, makes even depth
+   *  10-15 slow on a non-trivial board) — "unreachable in practice" per
+   *  GAME_PARAM_RANGES.cpuDepth's doc comment in config.js, just as a
+   *  generous finite ceiling instead of true Infinity. */
+  const NO_DEPTH_CAP_LIMIT = 40;
+
   // Weights for the static evaluation (tunable without touching the search).
   const SCORE = {
     WIN: 10000,
     GROUP_SIZE_WEIGHT: 100,
     ADJACENCY_WEIGHT: 5,
+    // "Good enough, stop searching and just play it" threshold — see
+    // minimaxAlphaBetaID()/searchAtDepth()'s early-exit checks below.
+    // Exists specifically for cpuDepth left at "Auto" (see
+    // GAME_PARAM_RANGES.cpuDepth in config.js): without it, a
+    // time-governed search with no depth cap would always spend the
+    // *entire* cpuTime budget every single move, even once the position
+    // is already clearly decided — which is exactly the slow, sluggish
+    // feel a low/predictable response time is meant to avoid. A forced
+    // win (score >= SCORE.WIN) always already clears this threshold,
+    // since it's set well below WIN — this is the *softer*,
+    // "confidently ahead, not just technically winning" bar.
+    // A rough sense of scale: colorScore() is (largest connected group)
+    // * GROUP_SIZE_WEIGHT (100) + (adjacent-ally pairs) * ADJACENCY_WEIGHT
+    // (5), and evaluatePosition() is that minus the opponent's own score
+    // — so this threshold corresponds to roughly a 4-piece larger
+    // connected group than the opponent's, with some cohesion bonus on
+    // top. Tune this constant directly if actual play shows it stopping
+    // too eagerly (weak moves accepted) or not eagerly enough (still
+    // burning the full time budget on already-decided positions).
+    GOOD_ENOUGH: 450,
   };
 
   /** Static value of a color's position: group-size + adjacency-cohesion,
@@ -414,7 +461,17 @@ const AiStrategies = (() => {
    *  `connState`/`hashState`/`tt` — see minimax() above; same
    *  make/unmake-in-`finally` discipline applies here at the root level
    *  too. The root search always uses a full (-Infinity, Infinity) window,
-   *  so its own result is always an exact value — stored as TT_EXACT. */
+   *  so its own result is always an exact value — stored as TT_EXACT.
+   *
+   *  Stops checking the *remaining* root moves early, without finishing
+   *  this depth's full-width comparison, the moment one root move's
+   *  fully-searched score already clears SCORE.GOOD_ENOUGH (see its own
+   *  comment) — the chosen move is provably good, even if not
+   *  provably *the best* among every root option, which is the right
+   *  trade for keeping response time low (see minimaxAlphaBetaID()'s doc
+   *  comment on why depth is normally left uncapped). A genuine forced
+   *  win always clears this same bar first, so no separate check is
+   *  needed for that case specifically. */
   function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState, hashState, tt) {
     const opponentColor = otherColor(rootColor);
     const ttKey = hashState.value;
@@ -441,26 +498,52 @@ const AiStrategies = (() => {
         bestMove = move;
       }
       if (bestScore > alpha) alpha = bestScore;
+      if (bestScore >= SCORE.GOOD_ENOUGH) break; // good enough — see doc comment above
     }
     tt.set(ttKey, { depth, score: bestScore, move: bestMove, flag: TT_EXACT });
     return { move: bestMove, score: bestScore };
   }
 
   /**
-   * Iterative deepening driver: searches depth 1, 2, 3... up to
-   * options.maxDepth, keeping the best move found at each *completed*
+   * Iterative deepening driver: searches depth 1, 2, 3... until one of
+   * three things stops it — options.maxDepth is reached (if it's set to
+   * an explicit cap at all: see below), the time budget runs out, or the
+   * position is already good enough that further search wouldn't change
+   * what gets played — keeping the best move found at each *completed*
    * depth. If the time budget runs out mid-search at some depth, that
    * depth's (incomplete, unreliable) result is discarded and the last
-   * fully-completed depth's move is returned instead. Stops early if a
-   * forced win/loss is already found, since deeper search can't change it.
+   * fully-completed depth's move is returned instead.
+   *
+   * options.maxDepth of 0 or undefined means NO fixed ply cap — the loop
+   * only stops on time or on a good-enough/won position (see below), not
+   * on a depth ceiling (see GAME_PARAM_RANGES.cpuDepth's doc comment in
+   * config.js for why this is the default: response time is the thing a
+   * player actually feels turn to turn, so cpuTime alone should govern
+   * search strength for a predictable, low-latency feel — a separate
+   * depth dial fighting against that same time budget just adds a way to
+   * *accidentally* make the CPU slower or weaker than the time budget
+   * alone would). Passing an explicit 1-5 still works as a hard cap, for
+   * anyone who wants a fixed, reproducible search depth regardless of
+   * how much time is available (e.g. benchmarking, or comparing two
+   * AiStrategies implementations at an identical depth).
+   *
+   * Two conditions end the search early, before either the depth cap (if
+   * any) or the time budget is actually exhausted:
+   *   - a forced win/loss (score magnitude >= SCORE.WIN) — deeper search
+   *     literally cannot change a proven outcome.
+   *   - SCORE.GOOD_ENOUGH (see its own comment) — not a proven win, but
+   *     confidently ahead. Continuing to search (whether deeper, or
+   *     through the rest of the current depth's root moves — see
+   *     searchAtDepth()) would mostly just spend time budget confirming
+   *     what's already a clearly fine choice, which runs directly against
+   *     the low-response-time goal above.
    *
    * Returns { move, score, nodesEvaluated, depthReached } — the latter
    * two purely for display (see the file-header comment and script.js's
    * ?showAdvanced=true CPU search log): nodesEvaluated is the total
    * candidate moves expanded across *every* depth tried this call, and
    * depthReached is the last depth that actually completed before the
-   * time budget ran out (which can be less than options.maxDepth on a
-   * tight budget, or on a big/complex board).
+   * search stopped for any of the reasons above.
    *
    * connState (see makeMove()) and hashState (see computeHash()) are
    * computed once here, from the actual root position, and then threaded
@@ -484,7 +567,9 @@ const AiStrategies = (() => {
    */
   function minimaxAlphaBetaID(state, options = {}) {
     const { cells, neighborKeys, color, enclosureAllowed } = state;
-    const maxDepth = Math.max(1, Math.min(5, options.maxDepth ?? 2));
+    const requestedDepth = options.maxDepth;
+    const hasDepthCap = Number.isFinite(requestedDepth) && requestedDepth > 0;
+    const maxDepth = hasDepthCap ? Math.max(1, Math.min(5, requestedDepth)) : NO_DEPTH_CAP_LIMIT;
     const maxTimeMs = Math.max(200, (options.maxTimeSeconds ?? 5) * 1000);
     const deadline = nowMs() + maxTimeMs;
 
@@ -507,7 +592,7 @@ const AiStrategies = (() => {
         throw err;
       }
       if (result.move) { best = result; depthReached = depth; }
-      if (Math.abs(best.score) >= SCORE.WIN) break; // forced win/loss found, deeper search won't help
+      if (best.score >= SCORE.GOOD_ENOUGH) break; // forced win, or just confidently ahead — see doc comment above
       if (nowMs() > deadline) break;
     }
 
@@ -600,7 +685,20 @@ const AiStrategies = (() => {
 
   function minimaxAlphaBetaCloning(state, options = {}) {
     const { cells, neighborKeys, color, enclosureAllowed } = state;
-    const maxDepth = Math.max(1, Math.min(5, options.maxDepth ?? 2));
+    // Same maxDepth=0/undefined-means-uncapped convention as
+    // minimaxAlphaBetaID() (see its doc comment) — needed here too so
+    // this engine behaves sanely when selected via
+    // FeatureConfig.computerself_strategies while cpuDepth is left at
+    // its "Auto" default (see GAME_PARAM_RANGES.cpuDepth in config.js);
+    // without this, 0 would previously clamp straight to a depth-1-only
+    // search. This engine intentionally does NOT get the good-enough
+    // early stop from minimaxAlphaBetaID()/searchAtDepth() though — it's
+    // kept as an unmoving pre-optimization baseline (see README.md), so
+    // it always finishes each depth completely and only stops on a
+    // proven win/loss or the time budget, same as it always has.
+    const requestedDepth = options.maxDepth;
+    const hasDepthCap = Number.isFinite(requestedDepth) && requestedDepth > 0;
+    const maxDepth = hasDepthCap ? Math.max(1, Math.min(5, requestedDepth)) : NO_DEPTH_CAP_LIMIT;
     const maxTimeMs = Math.max(200, (options.maxTimeSeconds ?? 5) * 1000);
     const deadline = nowMs() + maxTimeMs;
 

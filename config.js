@@ -26,11 +26,28 @@
  * isn't an independent parameter with its own fixed range — it's derived
  * from radius (see pieceRangeForRadius() in script.js), so its valid
  * range changes depending on what radius is currently selected.
+ *
+ * cpuDepth's default (0) is a sentinel, not a real ply count — it means
+ * "no fixed depth cap; let cpuTime alone decide how deep the search
+ * goes" (shown as "Auto" in the UI — see formatCpuDepthLabel() in
+ * script.js), rather than "search 0 plies". Response time is what a
+ * player actually feels turn to turn, so cpuTime is the parameter that
+ * should reliably stay low/predictable; cpuDepth existing at all past
+ * this is for advanced/testing use — pinning a specific, reproducible
+ * ply cap (e.g. to compare two search implementations at an identical
+ * depth — see FeatureConfig.computerself_strategies below) rather than
+ * "however deep it gets in the time available", which will vary with
+ * the device, board size, and position. See
+ * AiStrategies.minimaxAlphaBetaID()'s own doc comment (aistrategies.js)
+ * for exactly how the 0 sentinel is handled, and for the separate
+ * "stop early once a good-enough move is found" behavior that exists
+ * specifically so time-only (cpuDepth left at Auto) search doesn't just
+ * burn the entire cpuTime budget once the position is already decided.
  */
 const GAME_PARAM_RANGES = {
   radius:   { min: 2, max: 5, default: 2 },     // board radius
   cpuTime:  { min: 1, max: 30, default: 30 },   // computer's max think time, seconds
-  cpuDepth: { min: 1, max: 5, default: 5 },     // computer's search depth, plies
+  cpuDepth: { min: 0, max: 5, default: 0 },     // computer's search depth cap, plies — 0 = no cap (see above)
 };
 
 /**
@@ -101,9 +118,15 @@ const FeatureConfig = {
    *                effect (session default, a ?cpuTime= URL param, or a
    *                manual edit) untouched — this only overrides it when
    *                present.
-   *   cpuDepth     OPTIONAL. Computer's search depth — see
-   *                GAME_PARAM_RANGES.cpuDepth above for min/max. Same
-   *                "only overrides if present" behavior as cpuTime.
+   *   cpuDepth     OPTIONAL, and none of the levels below actually set
+   *                it (they rely on cpuTime + AiStrategies'
+   *                good-enough-move early stop instead — see
+   *                GAME_PARAM_RANGES' own doc comment above for why).
+   *                Still supported for a level that specifically wants a
+   *                fixed, reproducible ply cap instead of a time-governed
+   *                one — see GAME_PARAM_RANGES.cpuDepth for min/max/the
+   *                0 = "no cap" sentinel. Same "only overrides if
+   *                present" behavior as cpuTime.
    *   noEnclosure  OPTIONAL boolean. Unlike cpuTime/cpuDepth above, this
    *                one does NOT just "leave it as-is" when omitted — a
    *                level without it resets noEnclosure to the
@@ -134,33 +157,38 @@ const FeatureConfig = {
    *   - Blocks: Aprendizaje (1-3), Táctica (4-6), Estructura (7-9),
    *     Final (10). See notes at the bottom of this file.
    *   - r climbs only three times (2 -> 3 -> 4); never together with a
-   *     big CPU jump.
-   *   - cpuDepth climbs in steps: 1,1,2,2,3,3,3,4,4,5.
+   *     big cpuTime jump.
+   *   - cpuDepth is intentionally left unset on every level (see
+   *     GAME_PARAM_RANGES.cpuDepth's doc comment above) — depth is
+   *     time-governed throughout the whole progression, not a separate
+   *     dial. cpuTime alone carries the search-strength curve.
    *   - cpuTime uses a sawtooth so some levels feel "fast but sharp"
-   *     (high depth, low time) and others "slow but shallow".
+   *     (little time, but the good-enough-move early stop still lets it
+   *     commit the moment it finds something solid) and others "slow but
+   *     thorough" (more time to burn before that early stop kicks in).
    *   - noEnclosure switches ON at level 7 as a deliberate rule-change
    *     moment, once the player already knows the r=4 board.
-   *   - Level 10 uses the full CPU budget (30s / depth 5) and is the
-   *     only level that does so.
+   *   - Level 10 uses the full cpuTime budget (30s) and is the only
+   *     level that does so.
    */
   difficulty_levels: [
     // --- Bloque Aprendizaje (1-3) ------------------------------------
-    { label: "N1 — Primer contacto",   r: 2, f: 3,  cpuTime: 1,  cpuDepth: 1 },
-    { label: "N2 — Fácil",             r: 2, f: 4,  cpuTime: 3,  cpuDepth: 1 },
-    { label: "N3 — Primer reto",       r: 3, f: 4,  cpuTime: 3,  cpuDepth: 2 },
+    { label: "N1 — Primer contacto",   r: 2, f: 3,  cpuTime: 1 },
+    { label: "N2 — Fácil",             r: 2, f: 4,  cpuTime: 3 },
+    { label: "N3 — Primer reto",       r: 3, f: 4,  cpuTime: 3 },
 
     // --- Bloque Táctica (4-6) ----------------------------------------
-    { label: "N4 — Táctica",           r: 3, f: 5,  cpuTime: 5,  cpuDepth: 2 },
-    { label: "N5 — IA rápida",         r: 3, f: 6,  cpuTime: 1,  cpuDepth: 3 },
-    { label: "N6 — Tablero grande",    r: 4, f: 5,  cpuTime: 8,  cpuDepth: 3 },
+    { label: "N4 — Táctica",           r: 3, f: 5,  cpuTime: 5 },
+    { label: "N5 — IA rápida",         r: 3, f: 6,  cpuTime: 1 },
+    { label: "N6 — Tablero grande",    r: 4, f: 5,  cpuTime: 8 },
 
     // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
-    { label: "N7 — Sin encierro",      r: 4, f: 6,  cpuTime: 8,  cpuDepth: 3, noEnclosure: true },
-    { label: "N8 — IA sólida",         r: 4, f: 7,  cpuTime: 12, cpuDepth: 4, noEnclosure: true },
-    { label: "N9 — Muro",              r: 4, f: 8,  cpuTime: 18, cpuDepth: 4, noEnclosure: true },
+    { label: "N7 — Sin encierro",      r: 4, f: 6,  cpuTime: 8,  noEnclosure: true },
+    { label: "N8 — IA sólida",         r: 4, f: 7,  cpuTime: 12, noEnclosure: true },
+    { label: "N9 — Muro",              r: 4, f: 8,  cpuTime: 18, noEnclosure: true },
 
     // --- Bloque Final (10) -------------------------------------------
-    { label: "N10 — Jefe final",       r: 4, f: 10, cpuTime: 30, cpuDepth: 5, noEnclosure: true },
+    { label: "N10 — Jefe final",       r: 4, f: 10, cpuTime: 30, noEnclosure: true },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh
@@ -236,7 +264,7 @@ const URL_PARAMS = [
   { param: "noEnclosure", description: "true or false — whether trapping an opponent's piece is blocked. Only takes effect if the \"No enclosure\" control itself isn't locked out of the UI." },
   { param: "color", description: "black or white — which color the human player controls in vscomputer mode." },
   { param: "cpuTime", description: "Computer's max think time per move, in seconds (1-30)." },
-  { param: "cpuDepth", description: "Computer's search depth — how many moves ahead it evaluates (1-5)." },
+  { param: "cpuDepth", description: "Computer's fixed search-depth cap, in plies (0-5). 0 (the default) means no cap — think time alone decides how deep it searches." },
   { param: "name", description: "Display name shown to the other player (online2p) or in the players box, up to 18 characters." },
   { param: "join", description: "A room code — opens directly into online2p and connects to that room." },
 ];
@@ -246,16 +274,27 @@ const URL_PARAMS = [
  * --------------------------------------------------------------------
  * Bloques:
  *   1-3  Aprendizaje : r=2-3, f=3-4, sin no-enclosure. Enseñan mecánicas.
- *   4-6  Táctica     : r=3-4, f=5-6, sin no-enclosure. Sube profundidad.
+ *   4-6  Táctica     : r=3-4, f=5-6, sin no-enclosure. Sube cpuTime.
  *   7-9  Estructura  : r=4 fijo, f=6-8, no-enclosure ON. Cambio de reglas.
- *   10   Final       : r=4, f=10, cpuTime=30, cpuDepth=5. Presupuesto total.
+ *   10   Final       : r=4, f=10, cpuTime=30 (presupuesto completo).
  *
- * Curva de cpuDepth : 1, 1, 2, 2, 3, 3, 3, 4, 4, 5   (escalonada)
+ * cpuDepth: deliberadamente SIN especificar en ningún nivel — queda en
+ *   0 ("Auto"), así que la profundidad la decide en cada turno el propio
+ *   tiempo disponible (cpuTime) más el corte anticipado al encontrar una
+ *   jugada ya suficientemente buena (ver el comentario de
+ *   AiStrategies.minimaxAlphaBetaID() en aistrategies.js). Esto es a
+ *   propósito: el tiempo de respuesta es lo que el jugador nota partida
+ *   a partida, así que es la única palanca de dificultad relacionada con
+ *   "cuánto piensa" — no hay una curva de profundidad que mantener en
+ *   paralelo a la de tiempo.
  * Curva de cpuTime  : 1, 3, 3, 5, 1, 8, 8, 12, 18, 30 (diente de sierra:
- *                     el N5 baja a 1s para sentirse "rápido pero agudo",
- *                     con depth 3 — un cambio de textura, no de nivel).
+ *                     el N5 baja a 1s para sentirse "rápido" un momento,
+ *                     un cambio de textura, no un retroceso real de
+ *                     nivel — con el corte por buena-jugada, 1s ya
+ *                     alcanza para jugar razonablemente en un tablero
+ *                     pequeño como el de N5).
  * Curva de r        : 2, 2, 3, 3, 3, 4, 4, 4, 4, 4   (3 saltos, nunca
- *                     junto a un salto grande de CPU).
+ *                     junto a un salto grande de cpuTime).
  * noEnclosure       : OFF hasta N6, ON desde N7. Es un cambio binario de
  *                     reglas, no un parámetro gradual: por eso se
  *                     introduce solo, en un nivel donde el tablero (r=4)
@@ -263,11 +302,16 @@ const URL_PARAMS = [
  *
  * Ajustes finos si hicieran falta:
  *   - Si N10 con f=10 se hace eterno, bajar f a 8-9 (sigue siendo
- *     claramente el más duro por cpuTime/cpuDepth).
+ *     claramente el más duro por cpuTime y por tablero/piezas).
  *   - Si N7 (no-enclosure) resulta demasiado brusco, probar a activarlo
  *     ya en N6 con r=3 y luego en N7 con r=4.
- *   - Si depth=1 se siente demasiado tonto, subir cpuTime (no depth):
- *     con 1 solo movimiento analizado, más tiempo solo mejora la
- *     elección dentro de esa limitación, que es justo lo que se busca
- *     en N1.
+ *   - Si algún nivel se siente demasiado errático con tan poco cpuTime
+ *     (p.ej. N1/N5), es la primera palanca a subir — con cpuDepth en
+ *     "Auto" no hay una segunda palanca de profundidad que compense por
+ *     separado.
+ *   - Si se quiere un nivel con dificultad reproducible exactamente
+ *     igual en cualquier dispositivo (p.ej. para comparar motores, ver
+ *     FeatureConfig.computerself_strategies), es el caso de uso pensado
+ *     para fijar cpuDepth explícitamente en ese nivel en concreto, en
+ *     vez de dejarlo en "Auto".
  */

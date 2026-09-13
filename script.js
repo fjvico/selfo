@@ -349,6 +349,16 @@ const dom = {
  *  the two ever disagree (e.g. a config.js edit that wasn't mirrored into
  *  the HTML). Run once at startup, before resetAllRangeInputs()/
  *  applyUrlConfig() do their own (value-only, not range-only) setup. */
+/** "Moves evaluated ahead" reads as "Auto" at GAME_PARAM_RANGES.cpuDepth's
+ *  sentinel value 0 (0 is defined, everywhere this control's value is
+ *  used, as "no fixed ply cap — let cpuTime alone decide how deep the
+ *  search goes", not literally "search 0 plies" — see
+ *  AiStrategies.minimaxAlphaBetaID()'s own doc comment in
+ *  aistrategies.js), and as the plain number for any explicit 1-5 cap. */
+function formatCpuDepthLabel(value) {
+  return value === 0 ? "Auto" : String(value);
+}
+
 function applyGameParamRanges() {
   const { radius, cpuTime, cpuDepth } = GAME_PARAM_RANGES;
   dom.radiusRange.min = String(radius.min);
@@ -360,6 +370,7 @@ function applyGameParamRanges() {
   dom.cpuDepthRange.min = String(cpuDepth.min);
   dom.cpuDepthRange.max = String(cpuDepth.max);
   dom.cpuDepthRange.value = String(cpuDepth.default);
+  dom.cpuDepthValue.textContent = formatCpuDepthLabel(cpuDepth.default);
 }
 applyGameParamRanges();
 
@@ -2013,7 +2024,7 @@ function applyDifficultyLevel(index) {
   if (Number.isFinite(level.cpuDepth)) {
     const cpuDepth = Math.min(GAME_PARAM_RANGES.cpuDepth.max, Math.max(GAME_PARAM_RANGES.cpuDepth.min, level.cpuDepth));
     dom.cpuDepthRange.value = String(cpuDepth);
-    dom.cpuDepthValue.textContent = String(cpuDepth);
+    dom.cpuDepthValue.textContent = formatCpuDepthLabel(cpuDepth);
   }
   // Unlike cpuTime/cpuDepth just above, noEnclosure resets to the
   // FeatureConfig default when a level doesn't specify it, rather than
@@ -2115,8 +2126,8 @@ dom.cpuTimeRange.addEventListener("input", () => {
   syncDifficultyMenuSelection(); // a manual edit here can un-match the previously-picked level
 });
 dom.cpuDepthRange.addEventListener("input", () => {
-  dom.cpuDepthValue.textContent = dom.cpuDepthRange.value;
-  syncDifficultyMenuSelection(); // same as cpuTimeRange above
+  dom.cpuDepthValue.textContent = formatCpuDepthLabel(Number(dom.cpuDepthRange.value));
+  syncDifficultyMenuSelection(); // a manual edit here can un-match the previously-picked level
 });
 
 dom.modeButtons.forEach((btn) => {
@@ -3008,15 +3019,15 @@ function applyUrlConfig() {
   if (color === "black" || color === "white") Game.humanColor = color;
 
   const cpuTime = parseInt(params.get("cpuTime"), 10);
-  if (Number.isFinite(cpuTime) && cpuTime >= 1 && cpuTime <= 30) {
+  if (Number.isFinite(cpuTime) && cpuTime >= GAME_PARAM_RANGES.cpuTime.min && cpuTime <= GAME_PARAM_RANGES.cpuTime.max) {
     dom.cpuTimeRange.value = String(cpuTime);
     dom.cpuTimeValue.textContent = String(cpuTime);
   }
 
   const cpuDepth = parseInt(params.get("cpuDepth"), 10);
-  if (Number.isFinite(cpuDepth) && cpuDepth >= 1 && cpuDepth <= 5) {
+  if (Number.isFinite(cpuDepth) && cpuDepth >= GAME_PARAM_RANGES.cpuDepth.min && cpuDepth <= GAME_PARAM_RANGES.cpuDepth.max) {
     dom.cpuDepthRange.value = String(cpuDepth);
-    dom.cpuDepthValue.textContent = String(cpuDepth);
+    dom.cpuDepthValue.textContent = formatCpuDepthLabel(cpuDepth);
   }
 
   const name = (params.get("name") || "").trim().slice(0, 18);
@@ -3118,7 +3129,7 @@ function resetAllRangeInputs() {
   dom.cpuTimeRange.value = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
   dom.cpuTimeValue.textContent = String(CONFIG.DEFAULT_CPU_TIME_SECONDS);
   dom.cpuDepthRange.value = String(CONFIG.DEFAULT_CPU_DEPTH);
-  dom.cpuDepthValue.textContent = String(CONFIG.DEFAULT_CPU_DEPTH);
+  dom.cpuDepthValue.textContent = formatCpuDepthLabel(CONFIG.DEFAULT_CPU_DEPTH);
 
   // The default level's own optional cpuTime/cpuDepth/noEnclosure (see
   // FeatureConfig.difficulty_levels above), applied last so they can
@@ -3133,7 +3144,7 @@ function resetAllRangeInputs() {
     if (Number.isFinite(defaultLevel.cpuDepth)) {
       const cpuDepth = Math.min(GAME_PARAM_RANGES.cpuDepth.max, Math.max(GAME_PARAM_RANGES.cpuDepth.min, defaultLevel.cpuDepth));
       dom.cpuDepthRange.value = String(cpuDepth);
-      dom.cpuDepthValue.textContent = String(cpuDepth);
+      dom.cpuDepthValue.textContent = formatCpuDepthLabel(cpuDepth);
     }
     if (typeof defaultLevel.noEnclosure === "boolean") {
       Game.noEnclosure = defaultLevel.noEnclosure;

@@ -371,10 +371,16 @@
           <input type="range" id="cpuTimeRange" min="1" max="30" step="1" value="30" class="range-input" autocomplete="off" />
 
           <label class="setup-label" for="cpuDepthRange">
-            Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">5</span>
+            Moves evaluated ahead <span class="value-pill" id="cpuDepthValue">Auto</span>
           </label>
-          <!-- mirrors GAME_PARAM_RANGES.cpuDepth — same as above. -->
-          <input type="range" id="cpuDepthRange" min="1" max="5" step="1" value="5" class="range-input" autocomplete="off" />
+          <!-- mirrors GAME_PARAM_RANGES.cpuDepth — same as above. 0 is a
+               sentinel meaning "no fixed ply cap, let think time alone
+               decide how deep the search goes" (shown as "Auto" — see
+               formatCpuDepthLabel() in script.js), not literally zero
+               plies; 1-5 are explicit fixed caps. See
+               AiStrategies.minimaxAlphaBetaID()'s doc comment in
+               aistrategies.js for why time-only search is the default. -->
+          <input type="range" id="cpuDepthRange" min="0" max="5" step="1" value="0" class="range-input" autocomplete="off" />
         </fieldset>
       </div>
     </div>
