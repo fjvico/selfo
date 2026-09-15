@@ -247,29 +247,45 @@ icons and never picks either manually. Instead:
 - Difficulty starts at `FeatureConfig.DEFAULT_DIFFICULTY_INDEX` (as
   always) and from there is driven entirely by results, not a slider.
 - A horizontal bar under the board (`#challengeBar`, built/positioned by
-  `renderChallengeBar()`) shows progress: `2 * CHALLENGE_WINS_REQUIRED`
-  segments, a marker starting dead center. Each decisive game nudges the
-  marker one segment toward whichever side won — computer right, human
-  left — via `applyChallengeOutcome(winnerColor)`, called from `endGame()`
-  (never `endGameDraw()` — a draw doesn't move it either way). Which side
+  `renderChallengeBar()`) shows progress: `2 * challengeWinsForLevel(
+  Game.challengeLevelIndex)` segments (that level's own `challengeWins`
+  from `difficulty_levels`, falling back to `CHALLENGE_WINS_REQUIRED` —
+  see both fields' doc comments in `config.js` — so different levels can
+  have shorter or longer ladders), a marker starting dead center. Each
+  decisive game nudges the marker one segment toward whichever side
+  won — computer right, human left — via
+  `applyChallengeOutcome(winnerColor)`, called from `endGame()` (never
+  `endGameDraw()` — a draw doesn't move it either way). Which side
   actually won is read from `Game.players[winnerColor].isLocal`, not
   `Game.humanColor`, since only the former tracks a pie-rule swap
   mid-game.
 - Reaching the right end drops one `difficulty_levels` index (or just
-  resets in place at index 0 — nothing lower to drop to). Reaching the
-  left end raises one index — *unless* already at the last (hardest)
-  index, in which case the whole ladder is complete:
-  `playChallengeCompleteCelebration()` runs a brief, wordless particle
-  burst (`.celebration-piece` in `style.css`, randomized per-particle via
-  inline custom properties so it never looks identical twice), then
-  resets back to index 0 and starts fresh.
+  resets in place at index 0 — nothing lower to drop to), with a small
+  "leveled down" accent (`playLevelChangeAnimation("down")`: a few muted,
+  slow, mostly-downward-drifting particles — see `.challenge-fx-piece.sad`
+  in `style.css`). Reaching the left end raises one index with the
+  equivalent "leveled up" accent (`playLevelChangeAnimation("up")`: a
+  quicker, brighter, outward-radiating burst) — *unless* already at the
+  last (hardest) index, in which case the whole ladder is complete:
+  `playChallengeCompleteCelebration()` runs its own separate, bigger,
+  full-screen wordless particle burst (`.celebration-piece` in
+  `style.css`, randomized per-particle via inline custom properties so it
+  never looks identical twice) instead of the small accent, then resets
+  back to index 0 and starts fresh. Both accents reuse the same
+  `.celebration-piece`/`celebration-piece-burst` keyframe as the big one,
+  just anchored at `#challengeMarkerFx` (kept positioned to match the
+  marker by `renderChallengeBar()`, not nested inside `#challengeMarker`
+  itself so its own `rotate()` doesn't rotate the burst directions too)
+  with much smaller/quicker parameters instead of full-screen ones.
 
 **The actual level switch is deliberately deferred**, not applied the
 instant a threshold is crossed: `applyChallengeOutcome()` only updates
-`Game.challengeMarkerPos`/`Game.challengeLevelIndex` and re-renders the
-bar, stashing the *pending* index change in the module-level
-`pendingChallengeLevelIndex` (or setting `pendingChallengeCelebration`
-for the ladder-complete case). Those are only consumed later — inside
+`Game.challengeMarkerPos`/`Game.challengeLevelIndex`, re-renders the bar,
+and plays the small up/down accent immediately (so it overlaps the
+just-finished game's own win/loss flash, rather than waiting) — the
+*index* change itself is stashed in the module-level
+`pendingChallengeLevelIndex` (or `pendingChallengeCelebration` is set, for
+the ladder-complete case). Those are only consumed later — inside
 `fadeToBlackThenRestart()`'s screen-is-fully-black moment, or
 `scheduleEndedAutoRestart()`'s timer for the celebration case — so the
 just-finished game's own win/loss flash and pause still play out first,

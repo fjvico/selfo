@@ -123,7 +123,7 @@ const Game = {
   // over from the easiest level, same as difficulty already does.
   classicMode: false, // ?classicMode=true — see applyUrlConfig(); reveals the mode/difficulty icons and disables this whole ladder
   challengeLevelIndex: 0, // index into FeatureConfig.difficulty_levels (config.js)
-  challengeMarkerPos: CHALLENGE_WINS_REQUIRED, // 0..2*CHALLENGE_WINS_REQUIRED, starts centered — see renderChallengeBar()
+  challengeMarkerPos: CHALLENGE_WINS_REQUIRED, // corrected in boot() to challengeWinsForLevel(0), once level 0 is actually known
 };
 
 // ---------------------------------------------------------------------
@@ -339,6 +339,7 @@ const dom = {
   challengeBar: document.getElementById("challengeBar"),
   challengeSegments: document.getElementById("challengeSegments"),
   challengeMarker: document.getElementById("challengeMarker"),
+  challengeMarkerFx: document.getElementById("challengeMarkerFx"),
   celebrationOverlay: document.getElementById("celebrationOverlay"),
   celebrationBurst: document.getElementById("celebrationBurst"),
 
@@ -1295,14 +1296,27 @@ function cancelBoardFade() {
 // difficulty_levels step in that direction.
 // =======================================================================
 
-/** Builds #challengeSegments' 2*CHALLENGE_WINS_REQUIRED (config.js)
- *  divider elements — once; the count is fixed for the whole session, so
- *  rebuilding on every call would just be wasted DOM churn — and
- *  positions #challengeMarker from Game.challengeMarkerPos. Safe to call
- *  anytime the bar might be visible; a no-op on the segment count once
- *  they already exist. */
+/** Wins required to move a level at difficulty_levels[index] — that
+ *  level's own challengeWins if it sets one, else the
+ *  CHALLENGE_WINS_REQUIRED fallback (config.js — see both fields' doc
+ *  comments there). Out-of-range index (shouldn't normally happen) falls
+ *  back the same way. */
+function challengeWinsForLevel(index) {
+  const level = (FeatureConfig.difficulty_levels || [])[index];
+  const wins = level && level.challengeWins;
+  return Number.isFinite(wins) && wins > 0 ? wins : CHALLENGE_WINS_REQUIRED;
+}
+
+/** Builds #challengeSegments' divider elements for the *current* level's
+ *  own challenge size (2 * challengeWinsForLevel(Game.challengeLevelIndex)
+ *  — levels can differ, see difficulty_levels' challengeWins field) and
+ *  positions #challengeMarker (and #challengeMarkerFx, kept in lockstep so
+ *  playLevelChangeAnimation() always bursts from wherever the marker
+ *  actually is) from Game.challengeMarkerPos. Safe to call anytime the bar
+ *  might be visible; only actually rebuilds the segments when the count
+ *  needs to change (moving to a level with a different challengeWins). */
 function renderChallengeBar() {
-  const totalSegments = CHALLENGE_WINS_REQUIRED * 2;
+  const totalSegments = challengeWinsForLevel(Game.challengeLevelIndex) * 2;
   if (dom.challengeSegments.childElementCount !== totalSegments) {
     dom.challengeSegments.innerHTML = "";
     for (let i = 0; i < totalSegments; i++) {
@@ -1311,8 +1325,9 @@ function renderChallengeBar() {
       dom.challengeSegments.appendChild(segment);
     }
   }
-  const pct = (Game.challengeMarkerPos / totalSegments) * 100;
-  dom.challengeMarker.style.left = `${pct}%`;
+  const pct = `${(Game.challengeMarkerPos / totalSegments) * 100}%`;
+  dom.challengeMarker.style.left = pct;
+  dom.challengeMarkerFx.style.left = pct;
 }
 
 /** Advances (or resets) the challenge ladder after a game ends with an
@@ -1327,30 +1342,38 @@ function renderChallengeBar() {
  *  swap mid-game (see swapColors()), humanColor itself doesn't update.
  *
  *  A computer win nudges Game.challengeMarkerPos one segment toward the
- *  right end; a human win, one segment left. Reaching an end changes
- *  which difficulty_levels index is current (see
+ *  right end (of the *current* level's own bar — see
+ *  challengeWinsForLevel()); a human win, one segment left. Reaching an
+ *  end changes which difficulty_levels index is current (see
  *  pendingChallengeLevelIndex — the actual switch is deferred to the next
  *  game's fade-in, not applied here) and resets the marker back to center
- *  for that level's own fresh ladder:
+ *  for the *new* level's own bar size, which can differ from the one just
+ *  finished:
  *    - right end (net computer wins) -> one level down, or just reset in
- *      place if already at the easiest level (nothing lower to drop to).
- *    - left end (net human wins) -> one level up, or — already at the
- *      hardest level — the whole ladder is complete: see
- *      pendingChallengeCelebration / playChallengeCompleteCelebration().
+ *      place if already at the easiest level (nothing lower to drop to) —
+ *      either way, plays the "leveled down" accent (see
+ *      playLevelChangeAnimation()).
+ *    - left end (net human wins) -> one level up, with the "leveled up"
+ *      accent — or, already at the hardest level, the whole ladder is
+ *      complete: see pendingChallengeCelebration /
+ *      playChallengeCompleteCelebration(), which has its own separate,
+ *      bigger celebration instead of this smaller accent.
  *  Any other (non-terminal) result just re-renders the bar at its new
- *  position; endGame()'s own scheduleEndedAutoRestart() already handles
- *  starting the next game on its normal short delay, same as always. */
+ *  position, no accent; endGame()'s own scheduleEndedAutoRestart() already
+ *  handles starting the next game on its normal short delay either way. */
 function applyChallengeOutcome(winnerColor) {
   if (Game.classicMode || Game.mode !== "vscomputer" || !winnerColor) return;
 
   const humanWon = !!(Game.players[winnerColor] && Game.players[winnerColor].isLocal);
   Game.challengeMarkerPos += humanWon ? -1 : 1;
 
-  const totalSegments = CHALLENGE_WINS_REQUIRED * 2;
+  const totalSegments = challengeWinsForLevel(Game.challengeLevelIndex) * 2;
   if (Game.challengeMarkerPos >= totalSegments) {
     pendingChallengeLevelIndex = Math.max(0, Game.challengeLevelIndex - 1);
     Game.challengeLevelIndex = pendingChallengeLevelIndex;
-    Game.challengeMarkerPos = CHALLENGE_WINS_REQUIRED;
+    Game.challengeMarkerPos = challengeWinsForLevel(pendingChallengeLevelIndex);
+    renderChallengeBar();
+    playLevelChangeAnimation("down");
   } else if (Game.challengeMarkerPos <= 0) {
     const levels = FeatureConfig.difficulty_levels || [];
     if (Game.challengeLevelIndex >= levels.length - 1) {
@@ -1360,9 +1383,58 @@ function applyChallengeOutcome(winnerColor) {
     }
     pendingChallengeLevelIndex = Game.challengeLevelIndex + 1;
     Game.challengeLevelIndex = pendingChallengeLevelIndex;
-    Game.challengeMarkerPos = CHALLENGE_WINS_REQUIRED;
+    Game.challengeMarkerPos = challengeWinsForLevel(pendingChallengeLevelIndex);
+    renderChallengeBar();
+    playLevelChangeAnimation("up");
+  } else {
+    renderChallengeBar();
   }
-  renderChallengeBar();
+}
+
+/** Small, wordless "leveled up"/"leveled down" accent — a short burst of
+ *  particles from #challengeMarkerFx (positioned by renderChallengeBar()
+ *  to track the marker), separate from playChallengeCompleteCelebration()'s
+ *  bigger, full-screen one for finishing the whole ladder. `direction` is
+ *  "up" or "down":
+ *    "up"   — small accent-colored burst radiating outward in every
+ *             direction, quick, matching the winner-halo/bounce
+ *             aesthetic used elsewhere for a good result.
+ *    "down" — muted-gray particles (see .challenge-fx-piece.sad in
+ *             style.css) drifting mostly downward rather than radiating
+ *             outward, slower and with barely any rotation — reads as
+ *             deflating rather than celebratory without needing a
+ *             separate keyframe animation (same celebration-piece-burst
+ *             keyframe, very different --celebration-dx/dy/rot ranges).
+ *  Self-cleans its own particles after they finish; safe to call again
+ *  (e.g. another game ending) before that happens — it just clears
+ *  whatever was left and starts fresh. */
+function playLevelChangeAnimation(direction) {
+  const container = dom.challengeMarkerFx;
+  if (!container) return;
+  container.innerHTML = "";
+
+  const isUp = direction === "up";
+  const count = isUp ? 10 : 8;
+  for (let i = 0; i < count; i++) {
+    const piece = document.createElement("div");
+    piece.className = "celebration-piece challenge-fx-piece" + (isUp ? "" : " sad");
+    if (isUp) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 16 + Math.random() * 22;
+      piece.style.setProperty("--celebration-dx", `${Math.cos(angle) * distance}px`);
+      piece.style.setProperty("--celebration-dy", `${Math.sin(angle) * distance}px`);
+      piece.style.setProperty("--celebration-rot", `${Math.round(Math.random() * 480 - 240)}deg`);
+      piece.style.animationDuration = `${(0.55 + Math.random() * 0.3).toFixed(2)}s`;
+    } else {
+      piece.style.setProperty("--celebration-dx", `${Math.round(Math.random() * 16 - 8)}px`);
+      piece.style.setProperty("--celebration-dy", `${Math.round(18 + Math.random() * 22)}px`);
+      piece.style.setProperty("--celebration-rot", `${Math.round(Math.random() * 30 - 15)}deg`);
+      piece.style.animationDuration = `${(0.85 + Math.random() * 0.4).toFixed(2)}s`;
+    }
+    piece.style.animationDelay = `${(Math.random() * 0.15).toFixed(2)}s`;
+    container.appendChild(piece);
+  }
+  setTimeout(() => { container.innerHTML = ""; }, isUp ? 1000 : 1400);
 }
 
 /** Beating the hardest level's ladder: a brief, wordless particle burst
@@ -1398,7 +1470,7 @@ function playChallengeCompleteCelebration() {
     dom.celebrationOverlay.hidden = true;
     dom.celebrationBurst.innerHTML = "";
     Game.challengeLevelIndex = 0;
-    Game.challengeMarkerPos = CHALLENGE_WINS_REQUIRED;
+    Game.challengeMarkerPos = challengeWinsForLevel(0);
     applyDifficultyLevel(0); // calls beginSetupPreview() itself — fresh game at the easiest level
     renderChallengeBar();
   }, DURATION_MS);
@@ -3295,6 +3367,7 @@ function boot() {
   }
   syncModeButtonsSelection();
   beginSetupPreview();
+  Game.challengeMarkerPos = challengeWinsForLevel(Game.challengeLevelIndex); // level 0's own challengeWins, if it overrides the fallback
   renderChallengeBar();
 
   let hideOnboarding = false;

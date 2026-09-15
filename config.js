@@ -24,13 +24,20 @@ const BOARD_COLORS = {
  * ------------------------
  * The default experience (no ?classicMode=true — see URL_PARAMS below) is
  * a minimalist win/loss "ladder" against the computer instead of manually
- * picking a mode/difficulty: this many net wins over the computer moves
- * the player up one difficulty_levels entry, and symmetrically, this many
- * net losses moves them down one. See applyChallengeOutcome() in
- * script.js for the full mechanics (the progress bar under the board is
- * literally 2x this many segments, the marker starts in the middle, and
+ * picking a mode/difficulty: net wins over the computer move the player
+ * up one difficulty_levels entry, and symmetrically, net losses move them
+ * down one. See applyChallengeOutcome() in script.js for the full
+ * mechanics (the progress bar under the board is literally 2x the
+ * required count in segments, the marker starts in the middle, and
  * beating the hardest level with a full net-win streak ends the ladder in
  * a celebration before restarting from the easiest level).
+ *
+ * This is the FALLBACK count, used by any difficulty_levels entry that
+ * doesn't set its own challengeWins (see that field's doc comment further
+ * down) — in practice, the count every level actually uses unless you
+ * specifically want one level's ladder segment to be longer or shorter
+ * than the rest (e.g. a short 1-win formality on the easiest level, or a
+ * deliberately long grind right before the final one).
  */
 const CHALLENGE_WINS_REQUIRED = 3;
 
@@ -127,7 +134,7 @@ const FeatureConfig = {
    * script.js's initDifficultyControl()/applyDifficultyLevel()). Each
    * entry is a full board (and, optionally, CPU) definition:
    *
-   *   { label, r, f, cpuTime, cpuDepth, noEnclosure, cpuStrategy }
+   *   { label, r, f, cpuTime, cpuDepth, noEnclosure, cpuStrategy, challengeWins }
    *
    *   label        used only as the slider's tooltip/accessible name at
    *                that step — never shown as text in the picker itself,
@@ -183,6 +190,17 @@ const FeatureConfig = {
    *                omit to leave whatever's already in effect untouched.
    *                In computerself mode, computerself_strategies (if it
    *                sets a value for that color) takes priority over this.
+   *   challengeWins OPTIONAL. Only meaningful in the default minimalist
+   *                win/loss "challenge ladder" (no ?classicMode=true — see
+   *                CHALLENGE_WINS_REQUIRED above and
+   *                applyChallengeOutcome() in script.js): net wins over
+   *                the computer needed at *this specific level* before
+   *                moving up (or, symmetrically, net losses before moving
+   *                down) — overriding CHALLENGE_WINS_REQUIRED just for
+   *                this one level's stretch of the ladder. Same "only
+   *                overrides if present" behavior as cpuTime/cpuDepth/
+   *                cpuStrategy. Changes that level's progress bar segment
+   *                count too (2x this), not just the threshold.
    *
    * MUST be listed easiest first, hardest last: the picker renders them
    * in this exact order with no other cue to their relative difficulty.

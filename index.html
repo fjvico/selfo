@@ -289,18 +289,27 @@
       <!-- Win/loss "challenge ladder" bar — the default minimalist
            experience's difficulty progression, replacing the manual mode/
            difficulty icons (see the topbar comment near #modeMenuWrap).
-           2 x CHALLENGE_WINS_REQUIRED (config.js) segments; the marker
-           starts centered and steps toward whichever side just won a
-           game. Reaching an end triggers a level change — see
-           applyChallengeOutcome() in script.js, which is also what
-           builds the segments and positions the marker; nothing here is
-           hardcoded to a specific challenge size. Hidden outside the
-           default minimalist mode (?classicMode=true) and whenever the
-           mode isn't vscomputer. -->
+           2 x that level's challengeWins (config.js, falls back to
+           CHALLENGE_WINS_REQUIRED) segments; the marker starts centered
+           and steps toward whichever side just won a game. Reaching an
+           end triggers a level change — see applyChallengeOutcome() in
+           script.js, which is also what builds the segments and
+           positions the marker; nothing here is hardcoded to a specific
+           challenge size. Hidden outside the default minimalist mode
+           (?classicMode=true) and whenever the mode isn't vscomputer. -->
       <div id="challengeBar" class="challenge-bar" hidden aria-hidden="true">
         <div class="challenge-track">
           <div id="challengeSegments" class="challenge-segments"></div>
           <div id="challengeMarker" class="challenge-marker"></div>
+          <!-- Small, no-text "leveled up"/"leveled down" accent — separate
+               from #celebrationOverlay's full-screen one for beating the
+               whole ladder. Positioned by script.js to match the
+               marker's own left offset right before each burst, since it
+               deliberately isn't nested inside #challengeMarker (that
+               element's own rotate() transform would rotate these
+               particles' burst directions along with it). See
+               playLevelChangeAnimation() in script.js. -->
+          <div id="challengeMarkerFx" class="challenge-marker-fx" aria-hidden="true"></div>
         </div>
       </div>
     </section>

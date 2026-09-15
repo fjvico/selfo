@@ -434,6 +434,22 @@ body {
   border-radius: 2px;
   transition: left 0.4s ease;
 }
+/* Small "leveled up"/"leveled down" accent, separate from
+   .celebration-overlay's full-screen one for beating the whole ladder —
+   see playLevelChangeAnimation() in script.js, which positions this to
+   match the marker's own `left` and spawns .challenge-fx-piece children
+   into it (styled further down, after .celebration-piece, whose base
+   rules those overrides need to win against). Not nested inside
+   .challenge-marker itself so its rotate() transform doesn't rotate the
+   burst directions along with it. */
+.challenge-marker-fx {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
 
 /* Challenge-complete celebration (beating the hardest level) — a burst of
    accent-colored particles, no text, no icon shapes tied to any game
@@ -461,6 +477,24 @@ body {
   animation-name: celebration-piece-burst;
   animation-timing-function: ease-out;
   animation-fill-mode: forwards;
+}
+/* Smaller variant used for the in-bar level-up/down accents (see
+   .challenge-marker-fx above and playLevelChangeAnimation() in
+   script.js) — comes after .celebration-piece on purpose, so these
+   width/height overrides win the cascade against it. */
+.challenge-fx-piece {
+  width: 4px;
+  height: 4px;
+}
+/* "Leveled down" variant: muted/dim instead of accent-glowing.
+   playLevelChangeAnimation() also biases these particles' motion toward
+   drifting downward rather than radiating outward — the combination is
+   what reads as deflating/sad rather than celebratory, reusing
+   celebration-piece-burst's same keyframe with very different
+   --celebration-dx/dy/rot values rather than a whole second animation. */
+.challenge-fx-piece.sad {
+  background: var(--metal-mid);
+  box-shadow: none;
 }
 @keyframes celebration-piece-burst {
   0% { opacity: 0; transform: translate(-50%, -50%) rotate(0deg) scale(0.4); }
