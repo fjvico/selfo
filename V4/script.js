@@ -116,14 +116,6 @@ const Game = {
   isHost: false,
   peer: null,
   conn: null,
-
-  // Minimalist win/loss "challenge ladder" (the default experience — see
-  // classicMode just below and applyChallengeOutcome()). Session-only,
-  // not persisted across reloads — every fresh visit starts the ladder
-  // over from the easiest level, same as difficulty already does.
-  classicMode: false, // ?classicMode=true — see applyUrlConfig(); reveals the mode/difficulty icons and disables this whole ladder
-  challengeLevelIndex: 0, // index into FeatureConfig.difficulty_levels (config.js)
-  challengeMarkerPos: CHALLENGE_WINS_REQUIRED, // 0..2*CHALLENGE_WINS_REQUIRED, starts centered — see renderChallengeBar()
 };
 
 // ---------------------------------------------------------------------
@@ -295,7 +287,6 @@ const dom = {
   modeSelectBlock: document.getElementById("modeSelectBlock"),
   modeMenuToggle: document.getElementById("modeMenuToggle"),
   modeMenu: document.getElementById("modeMenu"),
-  modeMenuWrap: document.getElementById("modeMenuWrap"),
   modeButtons: Array.from(document.querySelectorAll(".mode-btn[data-mode]")),
 
   difficultyMenuToggle: document.getElementById("difficultyMenuToggle"),
@@ -335,12 +326,6 @@ const dom = {
 
   boardFlash: document.getElementById("boardFlash"),
   boardFadeOverlay: document.getElementById("boardFadeOverlay"),
-
-  challengeBar: document.getElementById("challengeBar"),
-  challengeSegments: document.getElementById("challengeSegments"),
-  challengeMarker: document.getElementById("challengeMarker"),
-  celebrationOverlay: document.getElementById("celebrationOverlay"),
-  celebrationBurst: document.getElementById("celebrationBurst"),
 
   onboardingOverlay: document.getElementById("onboardingOverlay"),
   onboardingDontShow: document.getElementById("onboardingDontShow"),
@@ -1151,7 +1136,6 @@ function endGame(winnerColor, reason) {
   Game.endReason = reason;
   Game.lastMove = null; // the finished board doesn't need the last-move trail highlighted anymore
   Game.enclosedCells = null; // only a mutual-enclosure draw ever tints cells — see endGameDraw
-  applyChallengeOutcome(winnerColor); // no-op outside the default minimalist mode — see its own doc comment
   updateSetupVisibility();
   renderBoard();
   updateButtonsForPhase();
@@ -1206,32 +1190,11 @@ function endGameDraw(reason = "draw") {
  *  setup controls stay live during this pause) automatically appears. */
 let endedAutoRestartTimer = null;
 
-/** Set by applyChallengeOutcome() when a win/loss just crossed the
- *  challenge ladder's threshold — the *actual* difficulty_levels index
- *  change is deliberately deferred to here (fadeToBlackThenRestart(),
- *  right as the next game is about to begin) rather than applied
- *  immediately in endGame(), so the normal end-of-game flash/pause still
- *  plays first at the level just finished, instead of the UI jumping
- *  straight to the new level's board under the old one's win flash. */
-let pendingChallengeLevelIndex = null;
-
-/** Same deferral reasoning as pendingChallengeLevelIndex above, for the
- *  rarer case of finishing the whole ladder (beating the hardest level) —
- *  set by applyChallengeOutcome(), consumed by scheduleEndedAutoRestart()
- *  below, which runs playChallengeCompleteCelebration() instead of the
- *  normal fadeToBlackThenRestart() when this is true. */
-let pendingChallengeCelebration = false;
-
 function scheduleEndedAutoRestart() {
   cancelEndedAutoRestart();
   endedAutoRestartTimer = setTimeout(() => {
     endedAutoRestartTimer = null;
     if (Game.phase !== "ended") return; // state moved on already (mode switch, etc.)
-    if (pendingChallengeCelebration) {
-      pendingChallengeCelebration = false;
-      playChallengeCompleteCelebration();
-      return;
-    }
     fadeToBlackThenRestart();
   }, CONFIG.ENDED_PAUSE_MS);
 }
@@ -1261,17 +1224,7 @@ function fadeToBlackThenRestart() {
   overlay.addEventListener("transitionend", function onFadedIn() {
     overlay.removeEventListener("transitionend", onFadedIn);
     if (token !== boardFadeToken) return; // cancelled/superseded while fading out
-    if (pendingChallengeLevelIndex !== null) {
-      // Screen is fully black right now — the right moment to actually
-      // switch difficulty_levels entry (see pendingChallengeLevelIndex's
-      // own comment above for why this was deferred this far).
-      // applyDifficultyLevel() calls beginSetupPreview() itself.
-      const index = pendingChallengeLevelIndex;
-      pendingChallengeLevelIndex = null;
-      applyDifficultyLevel(index);
-    } else {
-      beginSetupPreview();
-    }
+    beginSetupPreview();
     void overlay.offsetWidth; // force reflow so removing .active retriggers the fade-out transition
     overlay.classList.remove("active");
   }, { once: true });
@@ -1284,124 +1237,6 @@ function fadeToBlackThenRestart() {
 function cancelBoardFade() {
   boardFadeToken++;
   dom.boardFadeOverlay?.classList.remove("active");
-}
-
-// =======================================================================
-// Minimalist win/loss "challenge ladder" (the default experience — see
-// Game.classicMode / applyUrlConfig(), and CHALLENGE_WINS_REQUIRED in
-// config.js). Replaces manually picking a mode/difficulty: every decisive
-// game against the computer nudges a marker toward whichever side just
-// won, and reaching either end of the bar moves the player a
-// difficulty_levels step in that direction.
-// =======================================================================
-
-/** Builds #challengeSegments' 2*CHALLENGE_WINS_REQUIRED (config.js)
- *  divider elements — once; the count is fixed for the whole session, so
- *  rebuilding on every call would just be wasted DOM churn — and
- *  positions #challengeMarker from Game.challengeMarkerPos. Safe to call
- *  anytime the bar might be visible; a no-op on the segment count once
- *  they already exist. */
-function renderChallengeBar() {
-  const totalSegments = CHALLENGE_WINS_REQUIRED * 2;
-  if (dom.challengeSegments.childElementCount !== totalSegments) {
-    dom.challengeSegments.innerHTML = "";
-    for (let i = 0; i < totalSegments; i++) {
-      const segment = document.createElement("div");
-      segment.className = "challenge-segment";
-      dom.challengeSegments.appendChild(segment);
-    }
-  }
-  const pct = (Game.challengeMarkerPos / totalSegments) * 100;
-  dom.challengeMarker.style.left = `${pct}%`;
-}
-
-/** Advances (or resets) the challenge ladder after a game ends with an
- *  actual winner — called from endGame() (never endGameDraw(): a draw
- *  moves the marker neither way, per the ladder's own "gana el
- *  ordenador"/"gana el humano" rule). No-op outside the default
- *  minimalist mode or outside vscomputer, where the ladder doesn't apply
- *  at all.
- *
- *  Which side "won" is read from Game.players[winnerColor].isLocal, not
- *  Game.humanColor — isLocal is what actually tracks a pie-rule color
- *  swap mid-game (see swapColors()), humanColor itself doesn't update.
- *
- *  A computer win nudges Game.challengeMarkerPos one segment toward the
- *  right end; a human win, one segment left. Reaching an end changes
- *  which difficulty_levels index is current (see
- *  pendingChallengeLevelIndex — the actual switch is deferred to the next
- *  game's fade-in, not applied here) and resets the marker back to center
- *  for that level's own fresh ladder:
- *    - right end (net computer wins) -> one level down, or just reset in
- *      place if already at the easiest level (nothing lower to drop to).
- *    - left end (net human wins) -> one level up, or — already at the
- *      hardest level — the whole ladder is complete: see
- *      pendingChallengeCelebration / playChallengeCompleteCelebration().
- *  Any other (non-terminal) result just re-renders the bar at its new
- *  position; endGame()'s own scheduleEndedAutoRestart() already handles
- *  starting the next game on its normal short delay, same as always. */
-function applyChallengeOutcome(winnerColor) {
-  if (Game.classicMode || Game.mode !== "vscomputer" || !winnerColor) return;
-
-  const humanWon = !!(Game.players[winnerColor] && Game.players[winnerColor].isLocal);
-  Game.challengeMarkerPos += humanWon ? -1 : 1;
-
-  const totalSegments = CHALLENGE_WINS_REQUIRED * 2;
-  if (Game.challengeMarkerPos >= totalSegments) {
-    pendingChallengeLevelIndex = Math.max(0, Game.challengeLevelIndex - 1);
-    Game.challengeLevelIndex = pendingChallengeLevelIndex;
-    Game.challengeMarkerPos = CHALLENGE_WINS_REQUIRED;
-  } else if (Game.challengeMarkerPos <= 0) {
-    const levels = FeatureConfig.difficulty_levels || [];
-    if (Game.challengeLevelIndex >= levels.length - 1) {
-      pendingChallengeCelebration = true;
-      renderChallengeBar(); // shows the marker having reached the far end before the celebration takes over and resets it
-      return;
-    }
-    pendingChallengeLevelIndex = Game.challengeLevelIndex + 1;
-    Game.challengeLevelIndex = pendingChallengeLevelIndex;
-    Game.challengeMarkerPos = CHALLENGE_WINS_REQUIRED;
-  }
-  renderChallengeBar();
-}
-
-/** Beating the hardest level's ladder: a brief, wordless particle burst
- *  (see .celebration-piece in style.css — every piece gets a randomized
- *  angle/distance/rotation/timing via inline CSS custom properties, so
- *  the burst never looks identical twice) instead of any congratulatory
- *  text, matching the rest of this minimalist mode. Once it finishes, the
- *  whole ladder restarts from the easiest level — this is also where
- *  Game.challengeLevelIndex actually gets reset back to 0 (mirroring how
- *  a normal level change is deferred to fadeToBlackThenRestart() — see
- *  pendingChallengeLevelIndex — this is that same deferred-until-the-
- *  next-game moment for the "finished the whole ladder" case). */
-function playChallengeCompleteCelebration() {
-  const PIECE_COUNT = 28;
-  const DURATION_MS = 2200;
-
-  dom.celebrationBurst.innerHTML = "";
-  for (let i = 0; i < PIECE_COUNT; i++) {
-    const piece = document.createElement("div");
-    piece.className = "celebration-piece";
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 90 + Math.random() * 170;
-    piece.style.setProperty("--celebration-dx", `${Math.cos(angle) * distance}px`);
-    piece.style.setProperty("--celebration-dy", `${Math.sin(angle) * distance}px`);
-    piece.style.setProperty("--celebration-rot", `${Math.round(Math.random() * 720 - 360)}deg`);
-    piece.style.animationDuration = `${(0.9 + Math.random() * 0.6).toFixed(2)}s`;
-    piece.style.animationDelay = `${(Math.random() * 0.35).toFixed(2)}s`;
-    dom.celebrationBurst.appendChild(piece);
-  }
-
-  dom.celebrationOverlay.hidden = false;
-  setTimeout(() => {
-    dom.celebrationOverlay.hidden = true;
-    dom.celebrationBurst.innerHTML = "";
-    Game.challengeLevelIndex = 0;
-    Game.challengeMarkerPos = CHALLENGE_WINS_REQUIRED;
-    applyDifficultyLevel(0); // calls beginSetupPreview() itself — fresh game at the easiest level
-    renderChallengeBar();
-  }, DURATION_MS);
 }
 
 /** Brief, non-blocking glow across the board to mark that the game just
@@ -1828,15 +1663,6 @@ function updateSetupVisibility() {
   // stand-in.
   dom.panelOptions.hidden = !Game.showAdvanced;
   dom.layout.classList.toggle("no-options-panel", !Game.showAdvanced);
-
-  // The challenge ladder only exists (and only means anything) in the
-  // default minimalist mode against the computer — see
-  // applyChallengeOutcome(). Kept in sync with dom.modeMenuWrap/
-  // dom.difficultyMenuWrap's own Game.classicMode-only hidden state (set
-  // in applyUrlConfig(), not repeated here since it never changes mid
-  // session) by additionally requiring vscomputer specifically, in case
-  // ?classicMode isn't set but some other mode still ends up selected.
-  dom.challengeBar.hidden = Game.classicMode || Game.mode !== "vscomputer";
 
   // a guest doesn't control the host's board — visible (fixed position),
   // just inert
@@ -3167,16 +2993,6 @@ function applyUrlConfig() {
   // control to actually appear.
   dom.noEnclosureBlock.hidden = !showAdvanced || !FeatureConfig.no_enclosure[0];
 
-  // Default experience: the minimalist win/loss challenge ladder against
-  // the computer (see applyChallengeOutcome()) — no mode/difficulty
-  // icons, mode locked to vscomputer (enforced after this whole function
-  // runs, in boot(), so it wins over any ?mode= above), Share only hands
-  // out a bare link (see buildSetupUrl()). ?classicMode=true restores the
-  // old fully manual UI and turns the ladder off.
-  Game.classicMode = params.get("classicMode") === "true";
-  dom.modeMenuWrap.hidden = !Game.classicMode;
-  dom.difficultyMenuWrap.hidden = !Game.classicMode;
-
   const mode = params.get("mode");
   if (["local2p", "online2p", "vscomputer", "computerself"].includes(mode)) {
     Game.mode = mode;
@@ -3259,13 +3075,6 @@ function applyUrlConfig() {
  *  "Copy link" outside online2p (which instead copies a room-join link;
  *  see its click handler). */
 function buildSetupUrl() {
-  if (!Game.classicMode) {
-    // Minimalist mode: no query string at all — the ladder always starts
-    // from the same place (easiest level, vscomputer) for whoever opens
-    // it, so there's nothing meaningful to encode. See
-    // applyChallengeOutcome() for how the ladder itself progresses.
-    return "https://selfo.games";
-  }
   const url = new URL(location.href);
   url.search = "";
   url.searchParams.set("mode", Game.mode);
@@ -3287,15 +3096,8 @@ function boot() {
   resetAllRangeInputs();
   Game.mode = CONFIG.DEFAULT_MODE;
   const joinCode = applyUrlConfig(); // may override mode/radius/pieces/color/cpu params/name from the URL
-  if (!Game.classicMode) {
-    // The challenge ladder only makes sense against a computer — force
-    // it regardless of any ?mode= above, since there's no UI to pick a
-    // different one anyway (see dom.modeMenuWrap being hidden just above).
-    Game.mode = "vscomputer";
-  }
   syncModeButtonsSelection();
   beginSetupPreview();
-  renderChallengeBar();
 
   let hideOnboarding = false;
   try { hideOnboarding = localStorage.getItem(ONBOARDING_KEY) === "1"; } catch (e) { /* ignore */ }

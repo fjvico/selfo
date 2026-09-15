@@ -16,17 +16,10 @@ plugs into. It's not a player-facing document.
 
 ## `config.js`
 
-`config.js` exports seven top-level `const`s. All of them are read once,
-early, and nothing else in the app is supposed to define game rules,
-difficulty tiers, parameter ranges, board colors, or URL-parameter docs
-outside of this file.
-
-### `CHALLENGE_WINS_REQUIRED`
-
-A single number — net wins over the computer needed to move up one
-`difficulty_levels` entry in the default minimalist "challenge ladder"
-(see its own section below), and symmetrically, net losses to move down
-one. The progress bar under the board is literally `2 * this` segments.
+`config.js` exports six top-level `const`s. All of them are read once, early,
+and nothing else in the app is supposed to define game rules, difficulty
+tiers, parameter ranges, board colors, or URL-parameter docs outside of
+this file.
 
 ### `BOARD_COLORS`
 
@@ -234,57 +227,6 @@ that fit each other (see the table above), and only the `cpuTime`/
 description }` to `URL_PARAMS` in the same change. If the parameter should
 round-trip through "Copy link" / the share menu, also add it to
 `buildSetupUrl()` in `script.js`.
-
-## The default minimalist mode: win/loss "challenge ladder"
-
-Without `?classicMode=true`, the player never sees the mode/difficulty
-icons and never picks either manually. Instead:
-
-- Mode is locked to `vscomputer` for the whole session (`boot()` forces
-  `Game.mode = "vscomputer"` right after `applyUrlConfig()` runs,
-  overriding even an explicit `?mode=`) — there's no UI to change it, and
-  the ladder only makes sense against a computer anyway.
-- Difficulty starts at `FeatureConfig.DEFAULT_DIFFICULTY_INDEX` (as
-  always) and from there is driven entirely by results, not a slider.
-- A horizontal bar under the board (`#challengeBar`, built/positioned by
-  `renderChallengeBar()`) shows progress: `2 * CHALLENGE_WINS_REQUIRED`
-  segments, a marker starting dead center. Each decisive game nudges the
-  marker one segment toward whichever side won — computer right, human
-  left — via `applyChallengeOutcome(winnerColor)`, called from `endGame()`
-  (never `endGameDraw()` — a draw doesn't move it either way). Which side
-  actually won is read from `Game.players[winnerColor].isLocal`, not
-  `Game.humanColor`, since only the former tracks a pie-rule swap
-  mid-game.
-- Reaching the right end drops one `difficulty_levels` index (or just
-  resets in place at index 0 — nothing lower to drop to). Reaching the
-  left end raises one index — *unless* already at the last (hardest)
-  index, in which case the whole ladder is complete:
-  `playChallengeCompleteCelebration()` runs a brief, wordless particle
-  burst (`.celebration-piece` in `style.css`, randomized per-particle via
-  inline custom properties so it never looks identical twice), then
-  resets back to index 0 and starts fresh.
-
-**The actual level switch is deliberately deferred**, not applied the
-instant a threshold is crossed: `applyChallengeOutcome()` only updates
-`Game.challengeMarkerPos`/`Game.challengeLevelIndex` and re-renders the
-bar, stashing the *pending* index change in the module-level
-`pendingChallengeLevelIndex` (or setting `pendingChallengeCelebration`
-for the ladder-complete case). Those are only consumed later — inside
-`fadeToBlackThenRestart()`'s screen-is-fully-black moment, or
-`scheduleEndedAutoRestart()`'s timer for the celebration case — so the
-just-finished game's own win/loss flash and pause still play out first,
-rather than the UI jumping straight to the new level's board underneath
-that flash.
-
-Session-only: the ladder's progress isn't persisted anywhere, so a page
-reload starts it over from index 0, same as difficulty already did
-before this existed.
-
-Share behavior also changes: `buildSetupUrl()` returns a bare
-`"https://selfo.games"` with no query string at all when
-`!Game.classicMode`, since the ladder always starts from the same place
-regardless of who opens the link — there's nothing meaningful left to
-encode.
 
 ## CPU search performance (`aistrategies.js`)
 

@@ -41,15 +41,8 @@
         </svg>
       </a>
     </div>
-    <!-- Mode + difficulty icons start hidden — the default experience is
-         the minimalist win/loss challenge ladder (see #challengeBar
-         below and script.js's applyChallengeOutcome()), which picks the
-         mode (always vscomputer) and difficulty (via wins/losses, not a
-         manual picker) for the player. ?classicMode=true (see
-         applyUrlConfig()) reveals both again and turns the ladder off,
-         restoring the old manually-driven UI. -->
     <div class="game-id-wrap">
-        <div class="mode-menu-wrap" id="modeMenuWrap" hidden>
+        <div class="mode-menu-wrap">
           <button id="modeMenuToggle" class="chip-btn icon-btn icon-halo" title="Mode" aria-label="Mode" aria-haspopup="true" aria-expanded="false">
             <svg class="icon-wire" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
               <rect x="3" y="3" width="7" height="7"/>
@@ -73,7 +66,7 @@
             </button>
           </div>
         </div>
-        <div class="mode-menu-wrap difficulty-menu-wrap" id="difficultyMenuWrap" hidden>
+        <div class="mode-menu-wrap difficulty-menu-wrap" id="difficultyMenuWrap">
           <button id="difficultyMenuToggle" class="chip-btn icon-btn icon-halo" title="Difficulty" aria-label="Difficulty" aria-haspopup="true" aria-expanded="false">
             <svg class="icon-wire difficulty-toggle-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
               <path d="M4 19a8 8 0 0 1 16 0"/>
@@ -285,24 +278,6 @@
           <span id="compactSwatchRight" class="compact-swatch"></span>
         </div>
       </div>
-
-      <!-- Win/loss "challenge ladder" bar — the default minimalist
-           experience's difficulty progression, replacing the manual mode/
-           difficulty icons (see the topbar comment near #modeMenuWrap).
-           2 x CHALLENGE_WINS_REQUIRED (config.js) segments; the marker
-           starts centered and steps toward whichever side just won a
-           game. Reaching an end triggers a level change — see
-           applyChallengeOutcome() in script.js, which is also what
-           builds the segments and positions the marker; nothing here is
-           hardcoded to a specific challenge size. Hidden outside the
-           default minimalist mode (?classicMode=true) and whenever the
-           mode isn't vscomputer. -->
-      <div id="challengeBar" class="challenge-bar" hidden aria-hidden="true">
-        <div class="challenge-track">
-          <div id="challengeSegments" class="challenge-segments"></div>
-          <div id="challengeMarker" class="challenge-marker"></div>
-        </div>
-      </div>
     </section>
 
     <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
@@ -409,17 +384,6 @@
         </fieldset>
       </div>
     </div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- CHALLENGE-COMPLETE CELEBRATION (beating the hardest level)     -->
-  <!-- No text on purpose, matching the rest of this minimalist mode  -->
-  <!-- — see applyChallengeOutcome()/playChallengeCompleteCelebration() -->
-  <!-- in script.js, which generates the burst's particles and clears -->
-  <!-- this overlay again once the celebration finishes.              -->
-  <!-- ============================================================ -->
-  <div id="celebrationOverlay" class="overlay celebration-overlay" hidden aria-hidden="true">
-    <div id="celebrationBurst" class="celebration-burst"></div>
   </div>
 
   <!-- ============================================================ -->

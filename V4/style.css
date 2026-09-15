@@ -387,93 +387,6 @@ body {
   }
   80% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 4px var(--accent-glow)); }
 }
-
-/* Win/loss "challenge ladder" bar — see the HTML comment on #challengeBar
-   and applyChallengeOutcome()/renderChallengeBar() in script.js, which
-   build the segments and position the marker; nothing about the segment
-   count is hardcoded here. A plain divided track (segments alternate
-   subtle shading purely to make individual steps countable at a glance,
-   not to distinguish "sides") with a small diamond marker that slides
-   along it — deliberately understated compared to the winner-halo/bounce
-   above, since this is a persistent, always-visible progress indicator,
-   not a one-off celebration. */
-.challenge-bar {
-  flex: 0 0 auto;
-  width: 100%;
-  max-width: 260px;
-  margin: 0 auto;
-  padding: 0 8px;
-}
-.challenge-bar[hidden] { display: none; }
-.challenge-track {
-  position: relative;
-  display: flex;
-  height: 8px;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid var(--metal-line);
-  background: #14171a;
-}
-.challenge-segment {
-  flex: 1 1 0;
-  height: 100%;
-  border-right: 1px solid var(--metal-line);
-}
-.challenge-segment:last-child { border-right: none; }
-.challenge-segment:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
-.challenge-marker {
-  position: absolute;
-  top: 50%;
-  left: 0%;
-  width: 10px;
-  height: 10px;
-  margin-left: -5px;
-  transform: translateY(-50%) rotate(45deg);
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-  border-radius: 2px;
-  transition: left 0.4s ease;
-}
-
-/* Challenge-complete celebration (beating the hardest level) — a burst of
-   accent-colored particles, no text, no icon shapes tied to any game
-   meaning (see applyChallengeOutcome()/playChallengeCompleteCelebration()
-   in script.js, which generates .celebration-piece elements here with
-   randomized angle/distance/delay so the burst never looks identical
-   twice). Sits on the shared .overlay backdrop but without a card —
-   the particles themselves are the whole content. */
-.celebration-overlay { background: rgba(4, 6, 8, 0.55); }
-.celebration-burst {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-.celebration-piece {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-  opacity: 0;
-  animation-name: celebration-piece-burst;
-  animation-timing-function: ease-out;
-  animation-fill-mode: forwards;
-}
-@keyframes celebration-piece-burst {
-  0% { opacity: 0; transform: translate(-50%, -50%) rotate(0deg) scale(0.4); }
-  12% { opacity: 1; }
-  100% {
-    opacity: 0;
-    transform:
-      translate(calc(-50% + var(--celebration-dx)), calc(-50% + var(--celebration-dy)))
-      rotate(var(--celebration-rot))
-      scale(1);
-  }
-}
-
 .compact-swap-btn {
   display: inline-flex;
   align-items: center;
@@ -793,7 +706,6 @@ body {
    as before — this only changes the container layout, .mode-btn itself
    is untouched since .color-btn below shares that same base class). */
 .mode-menu-wrap { position: relative; display: inline-block; }
-.mode-menu-wrap[hidden] { display: none; }
 .mode-menu {
   position: absolute;
   top: calc(100% + 8px);

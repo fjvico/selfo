@@ -16,8 +16,23 @@
  *              cell edges more visible.
  */
 const BOARD_COLORS = {
-  cellEdge: "#929292",
+  cellEdge: "#7b7b7b",
 };
+
+/**
+ * CHALLENGE_WINS_REQUIRED
+ * ------------------------
+ * The default experience (no ?classicMode=true — see URL_PARAMS below) is
+ * a minimalist win/loss "ladder" against the computer instead of manually
+ * picking a mode/difficulty: this many net wins over the computer moves
+ * the player up one difficulty_levels entry, and symmetrically, this many
+ * net losses moves them down one. See applyChallengeOutcome() in
+ * script.js for the full mechanics (the progress bar under the board is
+ * literally 2x this many segments, the marker starts in the middle, and
+ * beating the hardest level with a full net-win streak ends the ladder in
+ * a celebration before restarting from the easiest level).
+ */
+const CHALLENGE_WINS_REQUIRED = 3;
 
 /**
  * GAME_PARAM_RANGES
@@ -175,20 +190,21 @@ const FeatureConfig = {
    * Tournament progression design (10 levels):
    *   - Blocks: Aprendizaje (1-3), Táctica (4-6), Estructura (7-9),
    *     Final (10). See notes at the bottom of this file.
-   *   - r climbs only three times (2 -> 3 -> 4); never together with a
-   *     big cpuTime jump.
+   *   - r climbs four times (2 -> 3 -> 4 -> 5), each jump paired with a
+   *     bigger f rather than a bigger cpuTime at the same moment.
    *   - cpuDepth is intentionally left unset on every level (see
    *     GAME_PARAM_RANGES.cpuDepth's doc comment above) — depth is
    *     time-governed throughout the whole progression, not a separate
-   *     dial. cpuTime alone carries the search-strength curve.
-   *   - cpuTime uses a sawtooth so some levels feel "fast but sharp"
-   *     (little time, but the good-enough-move early stop still lets it
-   *     commit the moment it finds something solid) and others "slow but
-   *     thorough" (more time to burn before that early stop kicks in).
+   *     dial. cpuTime + f (more pieces to coordinate) carry the
+   *     difficulty curve between them.
+   *   - cpuTime mostly holds at a flat 5s through the middle of the
+   *     curve (N4-N9) — f and, at N7, noEnclosure are what actually make
+   *     those levels harder, not a growing think-time budget every step.
    *   - noEnclosure switches ON at level 7 as a deliberate rule-change
    *     moment, once the player already knows the r=4 board.
-   *   - Level 10 uses the full cpuTime budget (30s) and is the only
-   *     level that does so.
+   *   - Level 10 jumps to r=5 with by far the most pieces (f=30) and the
+   *     longest think time (10s) of any level, though still well short
+   *     of GAME_PARAM_RANGES.cpuTime's own max (30s).
    */
   difficulty_levels: [
     // --- Bloque Aprendizaje (1-3) ------------------------------------
@@ -277,6 +293,7 @@ const HELP_URL_EXAMPLE = "https://selfo.games?mode=vscomputer&radius=3&cpuTime=1
  */
 const URL_PARAMS = [
   { param: "showAdvanced", description: "true shows the full setup and options panels (board size, pieces, no-enclosure rule, CPU search settings, color choice) instead of the compact default view." },
+  { param: "classicMode", description: "true restores the mode and difficulty icons plus manual control over both, and shares full setup links — instead of the default minimalist win/loss challenge ladder against the computer." },
   { param: "mode", description: "Game mode: local2p (pass and play), online2p (remote, needs join), vscomputer, or computerself." },
   { param: "radius", description: "Board radius, from 2 (smallest) to 5 (largest)." },
   { param: "pieces", description: "Pieces per color. Out-of-range values are clamped to whatever the chosen radius allows." },
@@ -292,10 +309,12 @@ const URL_PARAMS = [
  * Notas sobre la progresión del torneo (para referencia del diseñador)
  * --------------------------------------------------------------------
  * Bloques:
- *   1-3  Aprendizaje : r=2-3, f=3-4, sin no-enclosure. Enseñan mecánicas.
- *   4-6  Táctica     : r=3-4, f=5-6, sin no-enclosure. Sube cpuTime.
- *   7-9  Estructura  : r=4 fijo, f=6-8, no-enclosure ON. Cambio de reglas.
- *   10   Final       : r=4, f=10, cpuTime=30 (presupuesto completo).
+ *   1-3  Aprendizaje : r=2, f=3-5, sin no-enclosure. Enseñan mecánicas.
+ *   4-6  Táctica     : r=3, f=7-11, sin no-enclosure. Sube f, cpuTime=5
+ *                      fijo desde aquí.
+ *   7-9  Estructura  : r=4, f=10-14, no-enclosure ON. Cambio de reglas.
+ *   10   Final       : r=5, f=30, cpuTime=10 (tablero y plantilla mucho
+ *                      mayores que en cualquier nivel anterior).
  *
  * cpuDepth: deliberadamente SIN especificar en ningún nivel — queda en
  *   0 ("Auto"), así que la profundidad la decide en cada turno el propio
@@ -306,26 +325,33 @@ const URL_PARAMS = [
  *   a partida, así que es la única palanca de dificultad relacionada con
  *   "cuánto piensa" — no hay una curva de profundidad que mantener en
  *   paralelo a la de tiempo.
- * Curva de cpuTime  : 1, 3, 3, 5, 1, 8, 8, 12, 18, 30 (diente de sierra:
- *                     el N5 baja a 1s para sentirse "rápido" un momento,
- *                     un cambio de textura, no un retroceso real de
- *                     nivel — con el corte por buena-jugada, 1s ya
- *                     alcanza para jugar razonablemente en un tablero
- *                     pequeño como el de N5).
- * Curva de r        : 2, 2, 3, 3, 3, 4, 4, 4, 4, 4   (3 saltos, nunca
- *                     junto a un salto grande de cpuTime).
+ * Curva de cpuTime  : 1, 1, 3, 5, 5, 5, 5, 5, 5, 10 (sube rápido en el
+ *                     bloque de aprendizaje y luego se queda plana en 5s
+ *                     durante todo Táctica+Estructura — ahí la dificultad
+ *                     la aporta f, no más tiempo de la CPU — y solo vuelve
+ *                     a subir en el nivel final).
+ * Curva de r        : 2, 2, 2, 3, 3, 3, 4, 4, 4, 5   (4 saltos: el de N10
+ *                     a r=5 es nuevo respecto al diseño anterior).
+ * Curva de f        : 3, 4, 5, 7, 9, 11, 10, 12, 14, 30 (asciende en casi
+ *                     todos los niveles — es la palanca principal de
+ *                     dificultad dentro de cada bloque de r constante;
+ *                     el salto a 30 en N10 es mucho mayor que cualquier
+ *                     otro paso de la tabla).
  * noEnclosure       : OFF hasta N6, ON desde N7. Es un cambio binario de
  *                     reglas, no un parámetro gradual: por eso se
  *                     introduce solo, en un nivel donde el tablero (r=4)
  *                     ya es familiar desde N6.
  *
  * Ajustes finos si hicieran falta:
- *   - Si N10 con f=10 se hace eterno, bajar f a 8-9 (sigue siendo
- *     claramente el más duro por cpuTime y por tablero/piezas).
+ *   - N10 (r=5, f=30) es un salto notablemente más grande que el resto
+ *     de la progresión — si se siente como un muro en vez de un cierre
+ *     natural, considerar un escalón intermedio (p.ej. r=4, f=20-24)
+ *     antes de N10, o bajar f directamente si las partidas se hacen
+ *     eternas (con f=30 sobre 91 celdas el tablero queda muy denso).
  *   - Si N7 (no-enclosure) resulta demasiado brusco, probar a activarlo
  *     ya en N6 con r=3 y luego en N7 con r=4.
  *   - Si algún nivel se siente demasiado errático con tan poco cpuTime
- *     (p.ej. N1/N5), es la primera palanca a subir — con cpuDepth en
+ *     (p.ej. N1/N2), es la primera palanca a subir — con cpuDepth en
  *     "Auto" no hay una segunda palanca de profundidad que compense por
  *     separado.
  *   - Si se quiere un nivel con dificultad reproducible exactamente
