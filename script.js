@@ -123,7 +123,7 @@ const Game = {
   // over from the easiest level, same as difficulty already does.
   classicMode: false, // ?classicMode=true — see applyUrlConfig(); reveals the mode/difficulty icons and disables this whole ladder
   challengeLevelIndex: 0, // index into FeatureConfig.difficulty_levels (config.js)
-  challengeMarkerPos: CHALLENGE_WINS_REQUIRED, // corrected in boot() to challengeWinsForLevel(0), once level 0 is actually known
+  challengeMarkerPos: 0, // placeholder — corrected in boot() to challengeWinsForLevel(0), once level 0's own challengeWins (config.js) is actually known
 };
 
 // ---------------------------------------------------------------------
@@ -1289,22 +1289,29 @@ function cancelBoardFade() {
 
 // =======================================================================
 // Minimalist win/loss "challenge ladder" (the default experience — see
-// Game.classicMode / applyUrlConfig(), and CHALLENGE_WINS_REQUIRED in
-// config.js). Replaces manually picking a mode/difficulty: every decisive
-// game against the computer nudges a marker toward whichever side just
-// won, and reaching either end of the bar moves the player a
-// difficulty_levels step in that direction.
+// Game.classicMode / applyUrlConfig(), and difficulty_levels' required
+// challengeWins field in config.js). Replaces manually picking a mode/
+// difficulty: every decisive game against the computer nudges a marker
+// toward whichever side just won, and reaching either end of the bar
+// moves the player a difficulty_levels step in that direction.
 // =======================================================================
 
+/** Defensive-only fallback for a difficulty_levels entry that's missing
+ *  its (required — see that field's doc comment in config.js)
+ *  challengeWins, so a config mistake degrades gracefully instead of
+ *  breaking the ladder outright. Not meant to be relied on — every
+ *  shipped level sets its own value explicitly, on purpose, since
+ *  different levels are meant to have differently-sized ladders. */
+const DEFAULT_CHALLENGE_WINS_FALLBACK = 3;
+
 /** Wins required to move a level at difficulty_levels[index] — that
- *  level's own challengeWins if it sets one, else the
- *  CHALLENGE_WINS_REQUIRED fallback (config.js — see both fields' doc
- *  comments there). Out-of-range index (shouldn't normally happen) falls
- *  back the same way. */
+ *  level's own challengeWins (config.js — every level is expected to set
+ *  this), or DEFAULT_CHALLENGE_WINS_FALLBACK above if it's missing/
+ *  invalid. */
 function challengeWinsForLevel(index) {
   const level = (FeatureConfig.difficulty_levels || [])[index];
   const wins = level && level.challengeWins;
-  return Number.isFinite(wins) && wins > 0 ? wins : CHALLENGE_WINS_REQUIRED;
+  return Number.isFinite(wins) && wins > 0 ? wins : DEFAULT_CHALLENGE_WINS_FALLBACK;
 }
 
 /** Builds #challengeSegments' divider elements for the *current* level's

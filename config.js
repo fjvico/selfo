@@ -16,30 +16,8 @@
  *              cell edges more visible.
  */
 const BOARD_COLORS = {
-  cellEdge: "#7b7b7b",
+  cellEdge: "#929292",
 };
-
-/**
- * CHALLENGE_WINS_REQUIRED
- * ------------------------
- * The default experience (no ?classicMode=true — see URL_PARAMS below) is
- * a minimalist win/loss "ladder" against the computer instead of manually
- * picking a mode/difficulty: net wins over the computer move the player
- * up one difficulty_levels entry, and symmetrically, net losses move them
- * down one. See applyChallengeOutcome() in script.js for the full
- * mechanics (the progress bar under the board is literally 2x the
- * required count in segments, the marker starts in the middle, and
- * beating the hardest level with a full net-win streak ends the ladder in
- * a celebration before restarting from the easiest level).
- *
- * This is the FALLBACK count, used by any difficulty_levels entry that
- * doesn't set its own challengeWins (see that field's doc comment further
- * down) — in practice, the count every level actually uses unless you
- * specifically want one level's ladder segment to be longer or shorter
- * than the rest (e.g. a short 1-win formality on the easiest level, or a
- * deliberately long grind right before the final one).
- */
-const CHALLENGE_WINS_REQUIRED = 3;
 
 /**
  * GAME_PARAM_RANGES
@@ -190,17 +168,21 @@ const FeatureConfig = {
    *                omit to leave whatever's already in effect untouched.
    *                In computerself mode, computerself_strategies (if it
    *                sets a value for that color) takes priority over this.
-   *   challengeWins OPTIONAL. Only meaningful in the default minimalist
+   *   challengeWins REQUIRED (unlike everything else in this list, which
+   *                is optional). Only meaningful in the default minimalist
    *                win/loss "challenge ladder" (no ?classicMode=true — see
-   *                CHALLENGE_WINS_REQUIRED above and
    *                applyChallengeOutcome() in script.js): net wins over
    *                the computer needed at *this specific level* before
    *                moving up (or, symmetrically, net losses before moving
-   *                down) — overriding CHALLENGE_WINS_REQUIRED just for
-   *                this one level's stretch of the ladder. Same "only
-   *                overrides if present" behavior as cpuTime/cpuDepth/
-   *                cpuStrategy. Changes that level's progress bar segment
-   *                count too (2x this), not just the threshold.
+   *                down) — every level sets its own, there's no shared
+   *                fallback constant, so an easy level can ask for just a
+   *                couple of confirming wins while a harder one demands a
+   *                longer streak. Also sets that level's progress bar
+   *                segment count (2x this), not just the threshold. A
+   *                level that omits it falls back to 3 in script.js
+   *                (challengeWinsForLevel()) purely as a defensive
+   *                fallback against a config mistake, not a value meant to
+   *                be relied on — always set this explicitly.
    *
    * MUST be listed easiest first, hardest last: the picker renders them
    * in this exact order with no other cue to their relative difficulty.
@@ -226,22 +208,22 @@ const FeatureConfig = {
    */
   difficulty_levels: [
     // --- Bloque Aprendizaje (1-3) ------------------------------------
-    { label: "N1 — Primer contacto",   r: 2, f:  3, cpuTime:  1 },
-    { label: "N2 — Fácil",             r: 2, f:  4, cpuTime:  1 },
-    { label: "N3 — Primer reto",       r: 2, f:  5, cpuTime:  3 },
+    { label: "N1 — Primer contacto",   r: 2, f:  3, cpuTime:  1, challengeWins: 2 },
+    { label: "N2 — Fácil",             r: 2, f:  4, cpuTime:  1, challengeWins: 2 },
+    { label: "N3 — Primer reto",       r: 2, f:  5, cpuTime:  3, challengeWins: 3 },
 
     // --- Bloque Táctica (4-6) ----------------------------------------
-    { label: "N4 — Táctica",           r: 3, f:  7, cpuTime:  5 },
-    { label: "N5 — IA rápida",         r: 3, f:  9, cpuTime:  5 },
-    { label: "N6 — Tablero grande",    r: 3, f: 11, cpuTime:  5 },
+    { label: "N4 — Táctica",           r: 3, f:  7, cpuTime:  5, challengeWins: 3 },
+    { label: "N5 — IA rápida",         r: 3, f:  9, cpuTime:  5, challengeWins: 3 },
+    { label: "N6 — Tablero grande",    r: 3, f: 11, cpuTime:  5, challengeWins: 3 },
 
     // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
-    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, noEnclosure: true },
-    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, noEnclosure: true },
-    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, noEnclosure: true },
+    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, noEnclosure: true, challengeWins: 3 },
+    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, noEnclosure: true, challengeWins: 3 },
+    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, noEnclosure: true, challengeWins: 4 },
 
     // --- Bloque Final (10) -------------------------------------------
-    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, noEnclosure: true },
+    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, noEnclosure: true, challengeWins: 5 },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh

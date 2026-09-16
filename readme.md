@@ -16,17 +16,10 @@ plugs into. It's not a player-facing document.
 
 ## `config.js`
 
-`config.js` exports seven top-level `const`s. All of them are read once,
+`config.js` exports six top-level `const`s. All of them are read once,
 early, and nothing else in the app is supposed to define game rules,
 difficulty tiers, parameter ranges, board colors, or URL-parameter docs
 outside of this file.
-
-### `CHALLENGE_WINS_REQUIRED`
-
-A single number — net wins over the computer needed to move up one
-`difficulty_levels` entry in the default minimalist "challenge ladder"
-(see its own section below), and symmetrically, net losses to move down
-one. The progress bar under the board is literally `2 * this` segments.
 
 ### `BOARD_COLORS`
 
@@ -248,12 +241,12 @@ icons and never picks either manually. Instead:
   always) and from there is driven entirely by results, not a slider.
 - A horizontal bar under the board (`#challengeBar`, built/positioned by
   `renderChallengeBar()`) shows progress: `2 * challengeWinsForLevel(
-  Game.challengeLevelIndex)` segments (that level's own `challengeWins`
-  from `difficulty_levels`, falling back to `CHALLENGE_WINS_REQUIRED` —
-  see both fields' doc comments in `config.js` — so different levels can
-  have shorter or longer ladders), a marker starting dead center. Each
-  decisive game nudges the marker one segment toward whichever side
-  won — computer right, human left — via
+  Game.challengeLevelIndex)` segments (that level's own **required**
+  `challengeWins` field in `difficulty_levels` — see its doc comment in
+  `config.js`; every level sets this explicitly, so different levels can
+  have shorter or longer ladders on purpose), a marker starting dead
+  center. Each decisive game nudges the marker one segment toward
+  whichever side won — computer right, human left — via
   `applyChallengeOutcome(winnerColor)`, called from `endGame()` (never
   `endGameDraw()` — a draw doesn't move it either way). Which side
   actually won is read from `Game.players[winnerColor].isLocal`, not

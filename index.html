@@ -289,11 +289,11 @@
       <!-- Win/loss "challenge ladder" bar — the default minimalist
            experience's difficulty progression, replacing the manual mode/
            difficulty icons (see the topbar comment near #modeMenuWrap).
-           2 x that level's challengeWins (config.js, falls back to
-           CHALLENGE_WINS_REQUIRED) segments; the marker starts centered
-           and steps toward whichever side just won a game. Reaching an
-           end triggers a level change — see applyChallengeOutcome() in
-           script.js, which is also what builds the segments and
+           2 x that level's required challengeWins (config.js) segments;
+           the marker starts centered and steps toward whichever side just
+           won a game. Reaching an end triggers a level change — see
+           applyChallengeOutcome() in script.js, which is also what
+           builds the segments and
            positions the marker; nothing here is hardcoded to a specific
            challenge size. Hidden outside the default minimalist mode
            (?classicMode=true) and whenever the mode isn't vscomputer. -->
