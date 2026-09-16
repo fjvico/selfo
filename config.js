@@ -208,22 +208,22 @@ const FeatureConfig = {
    */
   difficulty_levels: [
     // --- Bloque Aprendizaje (1-3) ------------------------------------
-    { label: "N1 — Primer contacto",   r: 2, f:  3, cpuTime:  1, challengeWins: 2 },
-    { label: "N2 — Fácil",             r: 2, f:  4, cpuTime:  1, challengeWins: 2 },
+    { label: "N1 — Primer contacto",   r: 2, f:  3, cpuTime:  1, challengeWins: 3 },
+    { label: "N2 — Fácil",             r: 2, f:  4, cpuTime:  1, challengeWins: 3 },
     { label: "N3 — Primer reto",       r: 2, f:  5, cpuTime:  3, challengeWins: 3 },
 
     // --- Bloque Táctica (4-6) ----------------------------------------
-    { label: "N4 — Táctica",           r: 3, f:  7, cpuTime:  5, challengeWins: 3 },
-    { label: "N5 — IA rápida",         r: 3, f:  9, cpuTime:  5, challengeWins: 3 },
-    { label: "N6 — Tablero grande",    r: 3, f: 11, cpuTime:  5, challengeWins: 3 },
+    { label: "N4 — Táctica",           r: 3, f:  7, cpuTime:  5, challengeWins: 4 },
+    { label: "N5 — IA rápida",         r: 3, f:  9, cpuTime:  5, challengeWins: 4 },
+    { label: "N6 — Tablero grande",    r: 3, f: 11, cpuTime:  5, challengeWins: 4 },
 
     // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
-    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, noEnclosure: true, challengeWins: 3 },
-    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, noEnclosure: true, challengeWins: 3 },
-    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, noEnclosure: true, challengeWins: 4 },
+    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, noEnclosure: true, challengeWins: 2 },
+    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, noEnclosure: true, challengeWins: 2 },
+    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, noEnclosure: true, challengeWins: 2 },
 
     // --- Bloque Final (10) -------------------------------------------
-    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, noEnclosure: true, challengeWins: 5 },
+    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, noEnclosure: true, challengeWins: 1 },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh
