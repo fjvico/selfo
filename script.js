@@ -1209,11 +1209,14 @@ let endedAutoRestartTimer = null;
 
 /** Set by applyChallengeOutcome() when a win/loss just crossed the
  *  challenge ladder's threshold — the *actual* difficulty_levels index
- *  change is deliberately deferred to here (fadeToBlackThenRestart(),
- *  right as the next game is about to begin) rather than applied
- *  immediately in endGame(), so the normal end-of-game flash/pause still
- *  plays first at the level just finished, instead of the UI jumping
- *  straight to the new level's board under the old one's win flash. */
+ *  change (and the challenge-bar marker snapping back to center) is
+ *  deliberately deferred to here (fadeToBlackThenRestart(), right as the
+ *  next game is about to begin) rather than applied immediately in
+ *  endGame(), so the normal end-of-game flash/pause still plays first at
+ *  the level just finished — with the marker left visibly sitting at
+ *  whichever end it just reached — instead of the UI jumping straight to
+ *  the new level's board (and a already-recentered marker) under the old
+ *  one's win flash. */
 let pendingChallengeLevelIndex = null;
 
 /** Same deferral reasoning as pendingChallengeLevelIndex above, for the
@@ -1265,11 +1268,19 @@ function fadeToBlackThenRestart() {
     if (pendingChallengeLevelIndex !== null) {
       // Screen is fully black right now — the right moment to actually
       // switch difficulty_levels entry (see pendingChallengeLevelIndex's
-      // own comment above for why this was deferred this far).
+      // own comment in applyChallengeOutcome() for why this was deferred
+      // this far) AND to reset Game.challengeLevelIndex/challengeMarkerPos
+      // together with it — the marker was deliberately left sitting at
+      // whichever end it just reached, on the level just finished, so it
+      // only snaps back to center once this new level's board is what's
+      // about to appear, not while the previous board was still showing.
       // applyDifficultyLevel() calls beginSetupPreview() itself.
       const index = pendingChallengeLevelIndex;
       pendingChallengeLevelIndex = null;
+      Game.challengeLevelIndex = index;
+      Game.challengeMarkerPos = challengeWinsForLevel(index);
       applyDifficultyLevel(index);
+      renderChallengeBar();
     } else {
       beginSetupPreview();
     }
@@ -1377,8 +1388,11 @@ function applyChallengeOutcome(winnerColor) {
   const totalSegments = challengeWinsForLevel(Game.challengeLevelIndex) * 2;
   if (Game.challengeMarkerPos >= totalSegments) {
     pendingChallengeLevelIndex = Math.max(0, Game.challengeLevelIndex - 1);
-    Game.challengeLevelIndex = pendingChallengeLevelIndex;
-    Game.challengeMarkerPos = challengeWinsForLevel(pendingChallengeLevelIndex);
+    // Game.challengeLevelIndex/challengeMarkerPos themselves are NOT
+    // updated yet — the marker stays sitting at this (right) end, on the
+    // level just finished, until the next level's board actually appears
+    // (see fadeToBlackThenRestart(), which is where
+    // pendingChallengeLevelIndex actually gets consumed).
     renderChallengeBar();
     playLevelChangeAnimation("down");
   } else if (Game.challengeMarkerPos <= 0) {
@@ -1389,8 +1403,8 @@ function applyChallengeOutcome(winnerColor) {
       return;
     }
     pendingChallengeLevelIndex = Game.challengeLevelIndex + 1;
-    Game.challengeLevelIndex = pendingChallengeLevelIndex;
-    Game.challengeMarkerPos = challengeWinsForLevel(pendingChallengeLevelIndex);
+    // same deferral as the right-end branch above, mirrored for this
+    // (left) end.
     renderChallengeBar();
     playLevelChangeAnimation("up");
   } else {
