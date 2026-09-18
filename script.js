@@ -620,26 +620,27 @@ function pieceRangeForRadius(radius) {
  * board's radius (radius 4 -> at most 4 same-color pieces already
  * touching each other) — see placeColorWithGroupLimit.
  *
- * `enclosureAllowed` is the inverse of the "No enclosure" setup toggle
- * (see FeatureConfig.no_enclosure in config.js — callers pass
- * `!Game.noEnclosure`). When enclosure is NOT allowed, a random-but-valid
- * layout on a small, densely-packed board can fail in two different ways
- * that both have to be checked separately:
- *   - a color can end up with *zero* legal moves at all (every empty cell
- *     it could step into would trap some piece) — checked with
- *     MoveRules.hasAnyLegalMove.
- *   - a color can still have *some* legal moves available through its
- *     other pieces while one specific piece is already sitting enclosed
- *     right from the initial scatter — checked separately with
- *     MoveRules.hasEnclosedPiece, since hasAnyLegalMove being true says
- *     nothing about any *individual* piece's situation. Skipping this
- *     check was a real bug: "No enclosure" is supposed to guarantee no
- *     piece is ever trapped, and an initial layout could quietly violate
- *     that from move one.
- * Either failure makes the whole placement (both colors, fresh random
- * scatter) retried until one clears both checks, or MAX_LAYOUT_ATTEMPTS is
- * reached — at which point the last attempt is used anyway rather than
- * never finishing setup. The layout is re-randomized every game regardless.
+ * Two checks can each force a retry of the whole scatter (both colors,
+ * fresh random placement):
+ *   - MoveRules.hasEnclosedPiece: no piece may start the game already
+ *     walled in by the opponent. This is a property of the STARTING
+ *     position, not of which moves are legal from it, so it's checked
+ *     unconditionally — even with enclosureAllowed true (enclosing moves
+ *     permitted once play begins), the position the game actually opens
+ *     with must never already have one.
+ *   - MoveRules.hasAnyLegalMove: specific to the "No enclosure" setup
+ *     toggle (see FeatureConfig.no_enclosure in config.js — callers pass
+ *     `!Game.noEnclosure` as enclosureAllowed). Only checked when
+ *     enclosureAllowed is false: a random-but-valid layout on a small,
+ *     densely-packed board can leave a color with *zero* legal moves at
+ *     all, because every empty cell it could step into would trap some
+ *     piece — that failure mode only exists because "No enclosure" is
+ *     blocking those moves in the first place, so it has nothing to
+ *     check when enclosure is allowed.
+ * Either failure retries the placement until one clears the relevant
+ * checks, or MAX_LAYOUT_ATTEMPTS is reached — at which point the last
+ * attempt is used anyway rather than never finishing setup. The layout
+ * is re-randomized every game regardless.
  */
 function buildBoard(radius, piecesPerColor, enclosureAllowed) {
   const MAX_LAYOUT_ATTEMPTS = 25;
@@ -659,12 +660,16 @@ function buildBoard(radius, piecesPerColor, enclosureAllowed) {
     for (const k of whiteCells) cells.get(k).color = "white";
 
     result = { cells, neighborKeys };
-    if (enclosureAllowed) break; // nothing to validate against
-    const bothColorsCanMove = MoveRules.hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
-      MoveRules.hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed);
+
     const noPieceAlreadyEnclosed = !MoveRules.hasEnclosedPiece(cells, neighborKeys, "black") &&
       !MoveRules.hasEnclosedPiece(cells, neighborKeys, "white");
-    if (bothColorsCanMove && noPieceAlreadyEnclosed) break;
+    if (!noPieceAlreadyEnclosed) continue; // never start the game with a trapped piece
+
+    if (enclosureAllowed) break; // no further restriction to validate
+
+    const bothColorsCanMove = MoveRules.hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
+      MoveRules.hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed);
+    if (bothColorsCanMove) break;
   }
   return result;
 }
