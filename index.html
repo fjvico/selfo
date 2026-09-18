@@ -292,14 +292,22 @@
            2 x that level's required challengeWins (config.js) segments;
            the marker starts centered and steps toward whichever side just
            won a game. Reaching an end triggers a level change — see
-           applyChallengeOutcome() in script.js, which is also what
-           builds the segments and
-           positions the marker; nothing here is hardcoded to a specific
-           challenge size. Hidden outside the default minimalist mode
-           (?classicMode=true) and whenever the mode isn't vscomputer. -->
+           applyChallengeOutcome() in script.js, which is also what builds
+           the segments and positions the marker; nothing here is
+           hardcoded to a specific challenge size. Hidden outside the
+           default minimalist mode (?classicMode=true) and whenever the
+           mode isn't vscomputer. -->
       <div id="challengeBar" class="challenge-bar" hidden aria-hidden="true">
         <div class="challenge-track">
-          <div id="challengeSegments" class="challenge-segments"></div>
+          <!-- Segments get their own overflow:hidden wrapper (for the
+               rounded corners) separate from .challenge-track itself,
+               which stays unclipped — otherwise the marker (below, sized
+               bigger than the track for visibility) gets half cut off
+               right at the two ends, exactly where it lands most often
+               (a level just changed). -->
+          <div class="challenge-segments-wrap">
+            <div id="challengeSegments" class="challenge-segments"></div>
+          </div>
           <div id="challengeMarker" class="challenge-marker"></div>
           <!-- Small, no-text "leveled up"/"leveled down" accent — separate
                from #celebrationOverlay's full-screen one for beating the

@@ -400,15 +400,32 @@ body {
 .challenge-bar {
   flex: 0 0 auto;
   width: 100%;
-  max-width: 260px;
+  max-width: 280px;
   margin: 0 auto;
-  padding: 0 8px;
+  /* A bit more side padding than the bar's own edge would otherwise need,
+     specifically so the marker — wider than the track's own rounded-strip
+     visuals, on purpose, so it's easy to see — has room to sit fully
+     inside this padding at either extreme instead of visually crowding
+     the panel's own edge right where it lands most often (a level just
+     changed). */
+  padding: 0 11px;
 }
 .challenge-bar[hidden] { display: none; }
+/* Unclipped, and exactly as wide as .challenge-segments-wrap below —
+   .challenge-marker/.challenge-marker-fx are positioned against *this*
+   element (their nearest positioned ancestor), not the wrap, precisely so
+   they aren't clipped by the wrap's own overflow:hidden (needed there
+   only for the segments' rounded corners) — without this split, the
+   marker was rendering half cut-off right at the two ends, since its own
+   box is wider than an exact 0%/100% track position leaves room for. */
 .challenge-track {
   position: relative;
+  height: 10px;
+}
+.challenge-segments-wrap {
   display: flex;
   height: 8px;
+  margin-top: 1px;
   border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--metal-line);
@@ -425,13 +442,13 @@ body {
   position: absolute;
   top: 50%;
   left: 0%;
-  width: 10px;
-  height: 10px;
-  margin-left: -5px;
-  transform: translateY(-50%) rotate(45deg);
+  width: 18px;
+  height: 6px;
+  margin-left: -9px;
+  transform: translateY(-50%);
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent-glow);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: left 0.4s ease;
 }
 /* Small "leveled up"/"leveled down" accent, separate from
