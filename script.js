@@ -3053,7 +3053,9 @@ function copyTextToClipboard(text) {
 
 dom.shareLinkBtn.addEventListener("click", async () => {
   const url = currentShareUrl();
-  const text = Game.mode === "online2p" ? "Join my Selfo game:" : "Play Selfo with this setup:";
+  // No wording, on purpose — just the emoji invite (👋🎲) ahead of the
+  // link, same for every mode (online invite or a shared setup alike).
+  const text = "👋🎲";
 
   // navigator.share() opens the OS/browser's native share sheet (other
   // apps, contacts, etc.) — supported mainly on mobile and some desktop
