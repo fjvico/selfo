@@ -1228,4 +1228,23 @@ body {
 
   .panel { max-height: none; }
 
+  /* .board-svg's desktop rule (max-width/max-height with width/height:
+     auto) only ever lets the SVG shrink to fit — its intrinsic pixel
+     size is fixed by the board's radius (see renderBoard()'s explicit
+     width/height attributes), so a small radius (the default is 2)
+     renders far narrower than the phone screen, leaving empty space on
+     both sides instead of filling it. Switching to width:100% makes it
+     scale UP to the full width of .board-scroll too; height:auto keeps
+     the board's own aspect ratio (from its viewBox) intact, and
+     max-height:100% is kept as a safety net for landscape phones,
+     where .panel-board's 60vh could be narrower than the screen is
+     wide — there, the browser falls back to sizing by max-height
+     instead, so the board still can't overflow .board-scroll vertically. */
+  .board-svg {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
 }
