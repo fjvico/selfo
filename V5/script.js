@@ -1681,9 +1681,8 @@ function ensureCpuWorker() {
 }
 
 function onCpuWorkerMessage(e) {
-  const { requestId, ok, move, error, nodesEvaluated, depthReached,
-           forcedWinInPlies, forcedLossInPlies } = e.data || {};
-  if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return;
+  const { requestId, ok, move, error, nodesEvaluated, depthReached } = e.data || {};
+  if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return; // stale reply
   const color = cpuPendingRequest.color;
   const strategyName = cpuPendingRequest.strategyName;
   cpuPendingRequest = null;
@@ -1693,14 +1692,14 @@ function onCpuWorkerMessage(e) {
     showMessage("The computer player hit an error \u2014 check the console.");
     return;
   }
-  applyCpuResult(color, move, { nodesEvaluated, depthReached, strategyName,
-                                 forcedWinInPlies, forcedLossInPlies });
+  applyCpuResult(color, move, { nodesEvaluated, depthReached, strategyName });
 }
 
-/** The Worker script itself failed to load/run (e.g. blocked under
- *  file://); falls back to running the search on the main thread for the
- *  rest of the session and, if a request was in flight, retries it there. */
 function onCpuWorkerError(err) {
+  // The Worker script itself failed to load/run (e.g. blocked under
+  // file://, or a restrictive Content-Security-Policy). Stop trying to
+  // use Workers for the rest of the session and, if a request was in
+  // flight, run it locally instead of leaving the CPU stuck.
   console.warn("Web Worker failed \u2014 blocked by the browser (often happens under file://); falling back to running the search on the main thread. Serve the page over http(s) to avoid this.", err);
   cpuWorkerUnavailable = true;
   if (cpuWorker) {
@@ -1726,11 +1725,7 @@ function runCpuSearchLocally(req) {
     cpuPendingRequest = null;
     try {
       const result = AiStrategies.pickMove(req.state, req.options, req.strategyName);
-      applyCpuResult(req.color, result.move, {
-        nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached,
-        strategyName: req.strategyName,
-        forcedWinInPlies: result.forcedWinInPlies, forcedLossInPlies: result.forcedLossInPlies,
-      });
+      applyCpuResult(req.color, result.move, { nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached, strategyName: req.strategyName });
     } catch (err) {
       console.error("CPU local search failed:", err);
       showMessage("The computer player hit an error \u2014 check the console.");
@@ -1784,10 +1779,7 @@ function logCpuSearch(color, stats) {
   const text = document.createElement("span");
   text.className = "cpu-log-text";
   const suffix = stats.strategyName ? ` (${stats.strategyName})` : "";
-  const forced = stats.forcedWinInPlies != null ? ` \u2014 forced win in ${stats.forcedWinInPlies}`
-    : stats.forcedLossInPlies != null ? ` \u2014 forced loss in ${stats.forcedLossInPlies}`
-    : "";
-  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated${suffix}${forced}`;
+  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated${suffix}`;
   line.append(swatch, text);
   dom.cpuLog.appendChild(line);
 

@@ -18,11 +18,7 @@
  *  - aistrategies.js: the CPU's move search, both on the main thread and
  *    inside its Web Worker (which loads this file via `importScripts`,
  *    since a worker doesn't share the page's already-loaded scripts —
- *    see the importScripts call near the top of aistrategies.js). It
- *    also reuses couldPossiblyCut() and hasEnclosedPiece() directly, to
- *    track each color's "is it currently walling an opponent piece in"
- *    status incrementally across the search tree (see makeMove() there)
- *    for the mutual-enclosure draw rule.
+ *    see the importScripts call near the top of aistrategies.js).
  *
  * If the CPU used a different (or no) notion of "legal move" than the
  * human UI, computer vs computer (and vs computer) games would silently
@@ -33,8 +29,8 @@
  * Every function here takes `cells`/`neighborKeys` explicitly (never a
  * global board state), so it works the same whether the board in
  * question is the live Game, a hypothetical board being validated before
- * it's ever assigned to Game, or a cloned/mutated node deep in the CPU's
- * search tree.
+ * it's ever assigned to Game, or a cloned node deep in the CPU's search
+ * tree.
  */
 const MoveRules = (() => {
 
@@ -65,15 +61,6 @@ const MoveRules = (() => {
    * entered), returned as an array of Sets ordered from **largest to
    * smallest**.
    *
-   * `include`-connectivity is allowed to roam through cells that aren't
-   * in `keys` at all (e.g. a detour through the moving piece's vacated
-   * origin cell) — floodFillKeys explores the *whole* reachable region,
-   * and this only keeps the members of `keys` that land in it. Because
-   * of that, each pass over `reached` (a region, often a small sealed
-   * pocket) is cheaper than scanning the full remaining `keys` set on
-   * every component, which is why the loop below intersects against
-   * `reached` rather than the other way around.
-   *
    * The size ordering matters to every caller: when some cells end up
    * cut off from the rest, the largest resulting piece is treated as
    * "the main, still-open part of the board" and every other (smaller)
@@ -90,79 +77,20 @@ const MoveRules = (() => {
    * entrapment instead of being the one region that was never isolated.
    */
   function partitionIntoComponents(neighborKeys, keys, include) {
-    const keySet = new Set(keys);
     const unclassified = new Set(keys);
     const components = [];
     while (unclassified.size > 0) {
       const seed = unclassified.values().next().value;
       const reached = floodFillKeys(neighborKeys, seed, include);
       const component = new Set();
-      for (const k of reached) {
-        if (keySet.has(k)) {
-          component.add(k);
-          unclassified.delete(k);
-        }
+      for (const k of unclassified) {
+        if (reached.has(k)) component.add(k);
       }
+      for (const k of component) unclassified.delete(k);
       components.push(component);
     }
     components.sort((a, b) => b.size - a.size);
     return components;
-  }
-
-  // Canonical cube/axial hex directions, in cyclic order (matches the
-  // cube-coordinate convention s = -q - r used elsewhere, e.g.
-  // fitness.js's cubeDistance). Two entries that are adjacent in this
-  // cyclic order are themselves directly adjacent hexes — every pair of
-  // consecutive neighbors of a cell shares an edge with each other too,
-  // forming the small triangle that tiles a hex grid. couldPossiblyCut()
-  // below relies on exactly this property.
-  const HEX_DIRECTIONS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
-
-  function directionIndex(dq, dr) {
-    for (let i = 0; i < 6; i++) {
-      if (HEX_DIRECTIONS[i][0] === dq && HEX_DIRECTIONS[i][1] === dr) return i;
-    }
-    return -1;
-  }
-
-  /**
-   * Cheap local pre-filter for wouldIsolateOpponentPiece: true if
-   * occupying `to` (with `from` vacated) *might* disconnect something,
-   * false if it provably cannot — safe to skip the expensive check
-   * entirely when this returns false.
-   *
-   * Method: walk `to`'s six neighbors in cyclic hex order and count how
-   * many separate runs of "passable" cells there are — passable meaning
-   * on-board, and either `from` (always free once the move is made) or
-   * any cell not colored `moverColor`. Because cyclically-consecutive
-   * neighbors of a hex are themselves mutually adjacent (see
-   * HEX_DIRECTIONS above), a single run means every passable neighbor
-   * can already reach every other one *without* going through `to` — so
-   * `to` isn't the sole connector between any two things next to it, and
-   * therefore can't be the sole connector for anything farther away
-   * either (a path that used `to` as one hop can always be rerouted
-   * around the ring instead). More than one run doesn't prove a cut,
-   * just that one might exist — exactly the case where the full
-   * wouldIsolateOpponentPiece check below is worth running.
-   *
-   * If a neighbor's offset doesn't match one of the six canonical
-   * directions (shouldn't happen on a standard hex board), this bails
-   * out conservatively (true) rather than risk a false negative.
-   */
-  function couldPossiblyCut(cells, neighborKeys, to, from, moverColor) {
-    const center = cells.get(to);
-    const passable = [false, false, false, false, false, false];
-    for (const nk of neighborKeys.get(to)) {
-      const n = cells.get(nk);
-      const idx = directionIndex(n.q - center.q, n.r - center.r);
-      if (idx === -1) return true; // unexpected geometry — don't risk it
-      passable[idx] = nk === from || n.color !== moverColor;
-    }
-    let runs = 0;
-    for (let d = 0; d < 6; d++) {
-      if (passable[d] && !passable[(d + 5) % 6]) runs++;
-    }
-    return runs > 1;
   }
 
   /**
@@ -172,9 +100,7 @@ const MoveRules = (() => {
    * shut inside a pocket of empty cells and/or other same-color pieces
    * with no way out. Checking only `to`'s immediate neighbors isn't
    * enough: a piece one step further away, sitting in a small
-   * closed-off room, is just as trapped. Callers on a hot path should
-   * try couldPossiblyCut() first — see legalMoveTargets below — since
-   * this does real work (two flood fills over the board) every time.
+   * closed-off room, is just as trapped.
    *
    * Method: `to` is currently empty, so before the move it sits in some
    * connected region of non-`moverColor` cells (empty + opponent
@@ -202,14 +128,10 @@ const MoveRules = (() => {
     const preColor = (key) => cells.get(key).color;
 
     const regionBefore = floodFillKeys(neighborKeys, to, (k) => preColor(k) !== moverColor);
-
-    let hasOpponentNearby = false;
-    const mustStayConnected = [];
-    for (const k of regionBefore) {
-      if (preColor(k) === opponentColor) hasOpponentNearby = true;
-      if (k !== to) mustStayConnected.push(k);
-    }
+    const hasOpponentNearby = [...regionBefore].some((k) => preColor(k) === opponentColor);
     if (!hasOpponentNearby) return false;
+
+    const mustStayConnected = [...regionBefore].filter((k) => k !== to);
     if (mustStayConnected.length === 0) return false; // nothing else in the region to disconnect
 
     const postColor = (key) => {
@@ -244,11 +166,7 @@ const MoveRules = (() => {
    *  it's actually made. Used to carve out the one case where enclosing
    *  an opponent piece is fine anyway: if it's the move that completes
    *  your own connection, winning the game can never be the wrong
-   *  choice, so the enclosure rule steps aside for it — a move that both
-   *  wins AND encloses is a win, never blocked, and never later scored
-   *  as a mutual-enclosure draw (see performMove in script.js and
-   *  aistrategies.js's own terminal-condition ordering, which both check
-   *  connection before enclosure for exactly this reason). */
+   *  choice, so the enclosure rule steps aside for it. */
   function wouldFullyConnectOwnColor(cells, neighborKeys, from, to, moverColor) {
     const effectiveColor = (key) => {
       if (key === to) return moverColor;
@@ -282,21 +200,16 @@ const MoveRules = (() => {
    * or sealed inside an enclosed pocket — *unless* that exact move is
    * the one that fully connects the mover's own pieces (see
    * wouldFullyConnectOwnColor): a winning move is never blocked by this
-   * rule, enclosure toggle or not. couldPossiblyCut() is tried first as
-   * a cheap local filter — if it says a destination provably can't trap
-   * anything, wouldIsolateOpponentPiece's full board-wide check is
-   * skipped entirely, which is what most destinations hit in practice.
-   * Shared by human highlighting, click-to-move, drag-to-move,
-   * buildBoard's own setup validation, and the CPU's move search, so all
-   * of them agree on what counts as a legal move.
+   * rule, enclosure toggle or not. Shared by human highlighting,
+   * click-to-move, drag-to-move, buildBoard's own setup validation, and
+   * the CPU's move search, so all of them agree on what counts as a
+   * legal move.
    */
   function legalMoveTargets(cells, neighborKeys, fromKey, enclosureAllowed) {
     const moverColor = cells.get(fromKey).color;
     return neighborKeys.get(fromKey).filter((nk) => {
       if (cells.get(nk).color) return false;
-      if (!enclosureAllowed &&
-          couldPossiblyCut(cells, neighborKeys, nk, fromKey, moverColor) &&
-          wouldIsolateOpponentPiece(cells, neighborKeys, fromKey, nk, moverColor)) {
+      if (!enclosureAllowed && wouldIsolateOpponentPiece(cells, neighborKeys, fromKey, nk, moverColor)) {
         return wouldFullyConnectOwnColor(cells, neighborKeys, fromKey, nk, moverColor);
       }
       return true;
@@ -356,9 +269,7 @@ const MoveRules = (() => {
    *  "No enclosure" is off, a single move can leave BOTH colors with a
    *  piece enclosed by the other at once (e.g. two pieces sealing each
    *  other's only exits shut in the same move) — neither side can ever
-   *  undo that, so the game is a draw rather than staying stuck. Also
-   *  called by aistrategies.js to keep its own incremental
-   *  enclosureState in sync during search — see makeMove() there. */
+   *  undo that, so the game is a draw rather than staying stuck. */
   function hasEnclosedPiece(cells, neighborKeys, wallColor) {
     return getEnclosedCells(cells, neighborKeys, wallColor).size > 0;
   }
@@ -367,7 +278,6 @@ const MoveRules = (() => {
     opponentOf,
     floodFillKeys,
     partitionIntoComponents,
-    couldPossiblyCut,
     wouldIsolateOpponentPiece,
     wouldFullyConnectOwnColor,
     legalMoveTargets,

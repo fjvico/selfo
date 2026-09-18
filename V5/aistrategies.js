@@ -12,10 +12,7 @@
  * counts as a legal move, in particular the "No enclosure" rule (see
  * FeatureConfig.no_enclosure in config.js): a computer vs computer (or
  * vs computer) game respects it exactly the same way a human player's
- * moves do, since both paths call MoveRules.legalMoveTargets. It also
- * reuses MoveRules.couldPossiblyCut/hasEnclosedPiece directly (not just
- * through legalMoveTargets) to track each color's enclosure status
- * incrementally across the search tree — see makeMove() below.
+ * moves do, since both paths call MoveRules.legalMoveTargets.
  *
  * State shape expected by every strategy:
  *   {
@@ -35,22 +32,12 @@
  *   }
  *
  * Return shape:
- *   { move: { from, to } | null, score: number, nodesEvaluated: number, depthReached: number,
- *     forcedWinInPlies: number | null, forcedLossInPlies: number | null }
+ *   { move: { from, to } | null, score: number, nodesEvaluated: number, depthReached: number }
  *   (nodesEvaluated/depthReached are search-stats for the ?showAdvanced=
  *   true CPU log in script.js — see minimaxAlphaBetaID()'s own doc comment
- *   below for exactly what each counts. forcedWinInPlies/forcedLossInPlies
- *   are set only once the search has *proven* a forced result (see
- *   MATE_THRESHOLD below) — they're internal diagnostics for that same
- *   ?showAdvanced=true log and for the search's own early-exit decision;
- *   script.js must never surface them in the player-facing UI, since
- *   telling the player the outcome is already decided would spoil a
- *   position the game is deliberately still playing out (see
- *   applyCpuResult() in script.js). A strategy that doesn't do a
- *   depth-limited tree search at all — or, like minimaxAlphaBetaCloning
- *   below, doesn't track mate distance — is free to omit any of these
- *   four fields; script.js treats them all as optional and simply
- *   doesn't log a line/field it can't fill.)
+ *   below for exactly what each counts. A strategy that doesn't do a
+ *   depth-limited tree search at all is free to omit them; script.js
+ *   treats both as optional and simply doesn't log a line it can't fill.)
  *
  * New algorithms are added the same way as in boardinit.js: register a
  * function under AiStrategies.strategies["name"], then either set it as
@@ -114,29 +101,33 @@ const AiStrategies = (() => {
   }
 
   // -----------------------------------------------------------------------
-  // Zobrist hashing, for the transposition table (see the TT section
-  // below and `tt` in minimax()/searchAtDepth()/minimaxAlphaBetaID()).
-  // One random 32-bit int per (cell key, color) pair, generated lazily
-  // the first time a given cell key is ever seen — board radius (hence
-  // which keys exist) can differ between games in the same page session,
-  // so this can't be precomputed up front for "the board". The table
-  // itself has no dependency on any particular board's *contents*, only
-  // its *keys*, so it's safe to keep (and reuse) at module scope across
-  // every search this page ever runs, unlike `tt` itself which is fresh
-  // per pickMove() call — see minimaxAlphaBetaID()'s doc comment for why.
+  // Zobrist hashing, for the transposition table (see `tt` in
+  // minimax()/searchAtDepth()/minimaxAlphaBetaID() below). One random
+  // 31-bit int per (cell key, color) pair, generated lazily the first time
+  // a given cell key is ever seen — board radius (hence which keys exist)
+  // can differ between games in the same page session, so this can't be
+  // precomputed up front for "the board". The table itself has no
+  // dependency on any particular board's *contents*, only its *keys*, so
+  // it's safe to keep (and reuse) at module scope across every search this
+  // page ever runs, unlike `tt` itself which is fresh per pickMove() call
+  // — see minimaxAlphaBetaID()'s doc comment for why.
   //
-  // Full 32 bits (not 31) — see the TT section below for why the extra
-  // bit is worth having now that every entry is verified against its
-  // full stored key on read, rather than trusted purely by table index.
+  // A single 31-bit hash (rather than a wider/dual hash) is a deliberate
+  // simplification: this game's state space (at most a few dozen pieces
+  // across CONFIG.MAX_RADIUS's ~91 cells — see script.js) is minuscule
+  // next to 2^31 possible hashes, so the odds of two genuinely different
+  // positions colliding within any one search are negligible in practice,
+  // and a collision here only risks reusing a slightly-wrong cached bound
+  // (a correctness/strength nit, not a crash).
   // -----------------------------------------------------------------------
   const zobristTable = new Map(); // cell key -> { black: number, white: number }
-  function rand32() {
-    return (Math.random() * 0x100000000) | 0; // full-width signed int32
-  }
   function zobristFor(key) {
     let entry = zobristTable.get(key);
     if (!entry) {
-      entry = { black: rand32(), white: rand32() };
+      entry = {
+        black: (Math.random() * 0x7fffffff) | 0,
+        white: (Math.random() * 0x7fffffff) | 0,
+      };
       zobristTable.set(key, entry);
     }
     return entry;
@@ -175,14 +166,13 @@ const AiStrategies = (() => {
    * path (minimax/searchAtDepth below) — mutates `cells` directly instead
    * of cloning a new board per node (see applyMove() above for the
    * clone-based alternative kept for other callers). Returns an `undo()`
-   * closure that restores the board, `connState`, `enclosureState`, and
-   * `hashState` (see below) to exactly how they were before this call;
-   * callers MUST invoke it exactly once, in a `finally` block, so
-   * everything is correctly restored even when a SearchTimeoutError
-   * unwinds the recursion mid-search (see minimax()'s deadline check) —
-   * otherwise the next sibling move explored, or the next
-   * iterative-deepening depth, would silently start from a corrupted
-   * board.
+   * closure that restores the board, `connState`, and `hashState` (see
+   * below) to exactly how they were before this call; callers MUST invoke
+   * it exactly once, in a `finally` block, so everything is correctly
+   * restored even when a SearchTimeoutError unwinds the recursion
+   * mid-search (see minimax()'s deadline check) — otherwise the next
+   * sibling move explored, or the next iterative-deepening depth, would
+   * silently start from a corrupted board.
    *
    * `connState` — { black: boolean, white: boolean }, "is this color
    * currently one fully-connected group" — is the incremental-connectivity
@@ -192,48 +182,25 @@ const AiStrategies = (() => {
    * exactly one of the two BFS calls minimax() used to always do
    * unconditionally at every node, not both).
    *
-   * `enclosureState` — { black: boolean, white: boolean }, "is this
-   * color currently walling at least one opponent piece into a sealed
-   * pocket" (see MoveRules.hasEnclosedPiece) — is the same idea applied
-   * to the mutual-enclosure draw rule: only `color`'s own move can
-   * change whether *its* pieces wall someone in, so only that color is
-   * touched. Unlike connState, the full check (a flood fill over the
-   * board) is real work, so it's only run when it could actually have
-   * changed — either a wall already existed before this move (moving
-   * away might have broken it) or MoveRules.couldPossiblyCut says the
-   * new position might create one. On the common move that neither
-   * breaks nor creates a wall, this is an O(1) carry-forward. Entirely
-   * skipped (stays false/false) when enclosureAllowed is false, since
-   * "No enclosure" makes the draw unreachable in the first place — see
-   * MoveRules.legalMoveTargets and minimax()'s own draw check below.
-   *
    * `hashState` — { value: number }, the current position's Zobrist hash
    * (see computeHash() above) — is the transposition-table piece: moving
    * a piece just XORs out its old (key, color) contribution and XORs in
    * the new one, incrementally, rather than rehashing the whole board.
    * XOR being its own inverse is exactly what makes the undo side trivial.
    */
-  function makeMove(cells, neighborKeys, from, to, connState, enclosureState, hashState, enclosureAllowed) {
+  function makeMove(cells, neighborKeys, from, to, connState, hashState) {
     const color = cells.get(from).color;
     const prevConn = connState[color];
-    const prevEnclosure = enclosureState[color];
     const fromZ = zobristFor(from)[color];
     const toZ = zobristFor(to)[color];
     cells.get(from).color = null;
     cells.get(to).color = color;
     connState[color] = isGroupFullyConnected(cells, neighborKeys, color);
-    if (enclosureAllowed &&
-        (prevEnclosure || MoveRules.couldPossiblyCut(cells, neighborKeys, to, from, color))) {
-      enclosureState[color] = MoveRules.hasEnclosedPiece(cells, neighborKeys, color);
-    } else {
-      enclosureState[color] = prevEnclosure; // provably unchanged — see comment above
-    }
     hashState.value ^= fromZ ^ toZ;
     return function undoMove() {
       cells.get(to).color = null;
       cells.get(from).color = color;
       connState[color] = prevConn;
-      enclosureState[color] = prevEnclosure;
       hashState.value ^= fromZ ^ toZ; // XOR is its own inverse
     };
   }
@@ -284,22 +251,26 @@ const AiStrategies = (() => {
 
   /** Effective depth cap used when maxDepth is left at 0/unspecified (see
    *  minimaxAlphaBetaID()'s doc comment) — deliberately a large *finite*
-   *  number, not Infinity. Recursion depth is real call-stack depth in
-   *  JS — a truly unbounded search could risk a stack overflow on a
-   *  genuinely low-branching, slow-to-resolve position, particularly
-   *  inside a Worker, which isn't guaranteed the same stack size as the
-   *  main thread. (An earlier version of this file also needed this cap
-   *  to stop a "depth" component of the win/loss score from blowing up
-   *  the score's scale on some positions; now that win/loss scores are
-   *  based on ply-from-root instead — see MATE_THRESHOLD/toTT/fromTT
-   *  below — that particular risk is gone, but the stack-depth reason
-   *  alone is enough to keep this.) 40 plies is already far beyond
-   *  anything the time budget realistically lets a real board reach
-   *  (this game's actual move generation/evaluation cost, unlike a
-   *  synthetic benchmark, makes even depth 10-15 slow on a non-trivial
-   *  board) — "unreachable in practice" per GAME_PARAM_RANGES.cpuDepth's
-   *  doc comment in config.js, just as a generous finite ceiling instead
-   *  of true Infinity. */
+   *  number, not Infinity. Two independent reasons:
+   *    - Testing an literally-uncapped loop surfaced a real edge case: a
+   *      position where connectivity keeps flipping in and out lets
+   *      iterative deepening "complete" depth after depth almost
+   *      instantly, with the nominal depth climbing into the hundreds of
+   *      thousands within the time budget — and since a forced win's
+   *      score is SCORE.WIN + depth (see minimax()), that distorted the
+   *      score's scale completely (a tie-break bonus meant to be
+   *      single-digit blowing up alongside it).
+   *    - Recursion depth is real call-stack depth in JS — a truly
+   *      unbounded search could risk a stack overflow on a genuinely
+   *      low-branching, slow-to-resolve position, particularly inside a
+   *      Worker, which isn't guaranteed the same stack size as the main
+   *      thread.
+   *  40 plies is already far beyond anything the time budget realistically
+   *  lets a real board reach (this game's actual move generation/
+   *  evaluation cost, unlike a synthetic benchmark, makes even depth
+   *  10-15 slow on a non-trivial board) — "unreachable in practice" per
+   *  GAME_PARAM_RANGES.cpuDepth's doc comment in config.js, just as a
+   *  generous finite ceiling instead of true Infinity. */
   const NO_DEPTH_CAP_LIMIT = 40;
 
   // Weights for the static evaluation (tunable without touching the search).
@@ -328,53 +299,6 @@ const AiStrategies = (() => {
     // burning the full time budget on already-decided positions).
     GOOD_ENOUGH: 450,
   };
-
-  // A score at or beyond this magnitude is a *proven* forced win/loss,
-  // not just a strong static evaluation — evaluatePosition() never gets
-  // close (see colorScore()'s comment above: even a huge material/cohesion
-  // lead tops out far below this), so there's no risk of a merely-good
-  // position being mistaken for a proven one. Used to: (a) decide when a
-  // TT-stored score needs the ply-adjustment round-trip below, and (b)
-  // let minimaxAlphaBetaID() stop early on a provably lost position — see
-  // its own doc comment.
-  const MATE_THRESHOLD = SCORE.WIN - NO_DEPTH_CAP_LIMIT;
-
-  /**
-   * Win/loss scores are expressed as SCORE.WIN minus the number of plies
-   * from the *root* of the current search to the win — see minimax()'s
-   * terminal checks below — so that a faster forced win always scores
-   * higher than a slower one, and a slower forced loss always scores
-   * higher (less bad) than a faster one, at any point in the tree.
-   *
-   * That "plies from root" framing is exactly what makes a score
-   * *unsafe* to cache in the transposition table as-is: the same
-   * position can be reached again by transposition at a *different*
-   * ply-from-root, and a stored value tied to the wrong ply would be
-   * silently wrong. The standard fix is to store mate scores relative to
-   * the *node* instead (distance-to-mate from there, independent of how
-   * the node was reached), and convert back to root-relative on read:
-   *
-   *   toTT(value, ply)   — root-relative score seen while returning from
-   *                        a node at `ply` plies deep -> node-relative,
-   *                        for storage.
-   *   fromTT(stored, ply) — node-relative score read back out of the TT
-   *                        at a (possibly different) `ply` -> the correct
-   *                        root-relative score for *this* occurrence.
-   *
-   * Ordinary (non-mate) evaluation scores are always well under
-   * MATE_THRESHOLD in magnitude (see its own comment) and pass through
-   * both functions unchanged.
-   */
-  function toTT(value, ply) {
-    if (value >= MATE_THRESHOLD) return value + ply;
-    if (value <= -MATE_THRESHOLD) return value - ply;
-    return value;
-  }
-  function fromTT(stored, ply) {
-    if (stored >= MATE_THRESHOLD) return stored - ply;
-    if (stored <= -MATE_THRESHOLD) return stored + ply;
-    return stored;
-  }
 
   /** Static value of a color's position: group-size + adjacency-cohesion,
    *  weighted. Does NOT check for a win — callers check that separately
@@ -433,69 +357,11 @@ const AiStrategies = (() => {
     return reordered;
   }
 
-  // -----------------------------------------------------------------------
-  // Transposition table.
-  //
-  // A fixed-size, two-slot-per-bucket table instead of an unbounded Map:
-  // bucket index is `(hash >>> 0) & TT_MASK`; each bucket holds two
-  // entries, [0] kept under depth-preferred replacement (only overwritten
-  // by an entry at least as deep, so a shallow probe within the same
-  // iterative-deepening depth can't evict a hard-won deep result) and [1]
-  // always-replace (so a bucket under heavy traffic still tracks whatever
-  // was seen most recently, rather than getting stuck).
-  //
-  // Every entry stores its own full 32-bit hash (`key`) and ttGet()
-  // compares it before trusting the entry — two different positions that
-  // happen to land in the same bucket (a certainty at this table size,
-  // not just a rare accident) are never treated as the same position.
-  // This is what makes 32 bits enough: correctness comes from the
-  // full-key comparison on every read, not from the index alone, so
-  // there's no need for a wider (or BigInt-based) hash just to keep
-  // collisions rare — a stale/foreign entry is simply detected and
-  // treated as a miss.
-  //
-  // Freshly allocated per minimaxAlphaBetaID() call (see its own doc
-  // comment for why: the board, the no-enclosure rule, and even which
-  // color is thinking can all differ from one call to the next, and
-  // reusing a table across calls risks a wrong-but-plausible stale hit
-  // being worse than the modest cost of rebuilding it).
-  // -----------------------------------------------------------------------
-  const TT_SIZE_BITS = 16;
-  const TT_SIZE = 1 << TT_SIZE_BITS;
-  const TT_MASK = TT_SIZE - 1;
-
-  function ttCreate() {
-    return new Array(TT_SIZE * 2).fill(null);
-  }
-  function ttBucket(hash) {
-    return ((hash >>> 0) & TT_MASK) * 2;
-  }
-  function ttGet(tt, hash) {
-    const i = ttBucket(hash);
-    const depthSlot = tt[i];
-    if (depthSlot && depthSlot.key === hash) return depthSlot;
-    const freshSlot = tt[i + 1];
-    if (freshSlot && freshSlot.key === hash) return freshSlot;
-    return null;
-  }
-  function ttSet(tt, hash, entry) {
-    entry.key = hash;
-    const i = ttBucket(hash);
-    const depthSlot = tt[i];
-    if (!depthSlot || entry.depth >= depthSlot.depth) {
-      tt[i] = entry;
-    } else {
-      tt[i + 1] = entry;
-    }
-  }
-
   // ---------------------------------------------------------------------
   // Minimax with alpha-beta pruning (single fixed-depth search).
   // `rootColor` never changes across the recursion: it's whose
   // perspective the evaluation is scored from. `moverColor` is whichever
-  // color is actually choosing a move at this node. `ply` is how many
-  // moves have been made since the actual root position (used only for
-  // mate-score scaling — see toTT/fromTT above). `counter` is a
+  // color is actually choosing a move at this node. `counter` is a
   // { nodes } object shared (by reference) across one entire
   // minimaxAlphaBetaID() call — every candidate move actually expanded
   // (root-level, in searchAtDepth, or here) increments it once, so the
@@ -507,9 +373,9 @@ const AiStrategies = (() => {
   //
   // PERFORMANCE: this walks the tree via make/unmake (see makeMove()
   // above) instead of cloning a new board per node, reads
-  // connState[color]/enclosureState[color] instead of re-deriving them
-  // for both colors at every single node (see makeMove()'s comment for
-  // why only the mover's color ever needs recomputing), and consults a
+  // connState[color] instead of re-running isGroupFullyConnected() for
+  // both colors at every single node (see makeMove()'s comment for why
+  // only the mover's color ever needs recomputing), and consults a
   // transposition table (`tt`, keyed by hashState.value — see
   // makeMove()/computeHash() above) both to short-circuit a node outright
   // when a deep-enough cached result already settles it, and — even when
@@ -517,8 +383,7 @@ const AiStrategies = (() => {
   // putMoveFirst()), which is normally the single biggest lever on how
   // much alpha-beta gets to prune. `cells` is mutated and restored in
   // place across the whole call; nothing here is safe to call
-  // concurrently against the same `cells`/`connState`/`enclosureState`/
-  // `hashState` tuple.
+  // concurrently against the same `cells`/`connState`/`hashState` triple.
   //
   // Standard fail-soft alpha-beta + TT: `flagOf(value, alphaOrig, beta)`
   // records whether the returned value is exact, or only a bound (because
@@ -529,43 +394,27 @@ const AiStrategies = (() => {
   const TT_LOWER = 1; // value is a lower bound (search cut off on a fail-high / beta cutoff)
   const TT_UPPER = 2; // value is an upper bound (nothing beat alpha)
 
-  function minimax(cells, neighborKeys, moverColor, rootColor, depth, ply, alpha, beta, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt) {
+  function minimax(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed, counter, connState, hashState, tt) {
     if (nowMs() > deadline) throw new SearchTimeoutError();
 
     const opponentOfRoot = otherColor(rootColor);
-    // Win/loss short-circuits the search at any depth. Checked before the
-    // mutual-enclosure draw just below, matching performMove()'s own
-    // precedence in script.js: a move that simultaneously completes the
-    // mover's connection AND would enclose an opponent is a win, never a
-    // draw — MoveRules.wouldFullyConnectOwnColor already exempts a
-    // winning move from the "No enclosure" rule itself, so this exact
-    // situation is reachable (a move that both wins and walls someone in)
-    // even with the toggle on, and the order here has to agree.
-    if (connState[rootColor]) return SCORE.WIN - ply;
-    if (connState[opponentOfRoot]) return -(SCORE.WIN - ply);
-
-    // Mutual-enclosure draw — see performMove()'s own version of this
-    // check in script.js, which this mirrors exactly. Only reachable at
-    // all when enclosureAllowed: with "No enclosure" on, an enclosing
-    // move is only ever offered when it's also the winning move (see
-    // above), so enclosureState never goes true in the first place — see
-    // makeMove()'s own enclosureAllowed gate.
-    if (enclosureAllowed && enclosureState.black && enclosureState.white) return 0;
+    // instant win/loss short-circuits the search at any depth
+    if (connState[rootColor]) return SCORE.WIN + depth;
+    if (connState[opponentOfRoot]) return -(SCORE.WIN + depth);
 
     if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
     const alphaOrig = alpha;
     const ttKey = hashState.value;
-    const ttEntry = ttGet(tt, ttKey);
+    const ttEntry = tt.get(ttKey);
     let ttMove = null;
     if (ttEntry) {
       ttMove = ttEntry.move;
       if (ttEntry.depth >= depth) {
-        const score = fromTT(ttEntry.score, ply);
-        if (ttEntry.flag === TT_EXACT) return score;
-        if (ttEntry.flag === TT_LOWER && score > alpha) alpha = score;
-        else if (ttEntry.flag === TT_UPPER && score < beta) beta = score;
-        if (alpha >= beta) return score;
+        if (ttEntry.flag === TT_EXACT) return ttEntry.score;
+        if (ttEntry.flag === TT_LOWER && ttEntry.score > alpha) alpha = ttEntry.score;
+        else if (ttEntry.flag === TT_UPPER && ttEntry.score < beta) beta = ttEntry.score;
+        if (alpha >= beta) return ttEntry.score;
       }
     }
 
@@ -579,10 +428,10 @@ const AiStrategies = (() => {
 
     for (const move of ordered) {
       counter.nodes++;
-      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, enclosureState, hashState, enclosureAllowed);
+      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, hashState);
       let childValue;
       try {
-        childValue = minimax(cells, neighborKeys, otherColor(moverColor), rootColor, depth - 1, ply + 1, alpha, beta, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt);
+        childValue = minimax(cells, neighborKeys, otherColor(moverColor), rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState, hashState, tt);
       } finally {
         undo(); // always restore, even if the line above threw SearchTimeoutError
       }
@@ -602,21 +451,17 @@ const AiStrategies = (() => {
     // right, since `value` would only reflect the moves tried so far,
     // not a legitimate bound for the full node.
     const flag = value <= alphaOrig ? TT_UPPER : value >= beta ? TT_LOWER : TT_EXACT;
-    ttSet(tt, ttKey, { depth, score: toTT(value, ply), move: bestMoveHere, flag });
+    tt.set(ttKey, { depth, score: value, move: bestMoveHere, flag });
 
     return value;
   }
 
   /** One full-width search at a fixed depth from the root, returning the
    *  best move found (root is always the maximizing side). `counter`/
-   *  `connState`/`enclosureState`/`hashState`/`tt` — see minimax() above;
-   *  same make/unmake-in-`finally` discipline applies here at the root
-   *  level too. The root search always uses a full (-Infinity, Infinity)
-   *  window, so its own result is always an exact value UNLESS it broke
-   *  out of the root-move loop early (see brokeEarly below) — in that
-   *  case only a lower bound was actually established, and the TT entry
-   *  must say so, or a later, larger-window probe could wrongly trust an
-   *  incomplete comparison as if every root move had been checked.
+   *  `connState`/`hashState`/`tt` — see minimax() above; same
+   *  make/unmake-in-`finally` discipline applies here at the root level
+   *  too. The root search always uses a full (-Infinity, Infinity) window,
+   *  so its own result is always an exact value — stored as TT_EXACT.
    *
    *  Stops checking the *remaining* root moves early, without finishing
    *  this depth's full-width comparison, the moment one root move's
@@ -627,10 +472,10 @@ const AiStrategies = (() => {
    *  comment on why depth is normally left uncapped). A genuine forced
    *  win always clears this same bar first, so no separate check is
    *  needed for that case specifically. */
-  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt) {
+  function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState, hashState, tt) {
     const opponentColor = otherColor(rootColor);
     const ttKey = hashState.value;
-    const ttEntry = ttGet(tt, ttKey);
+    const ttEntry = tt.get(ttKey);
     const ttMove = ttEntry ? ttEntry.move : null;
     const rootMoves = putMoveFirst(orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor), ttMove);
 
@@ -638,14 +483,13 @@ const AiStrategies = (() => {
     let bestScore = -Infinity;
     let alpha = -Infinity;
     const beta = Infinity;
-    let brokeEarly = false;
 
     for (const move of rootMoves) {
       counter.nodes++;
-      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, enclosureState, hashState, enclosureAllowed);
+      const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, hashState);
       let score;
       try {
-        score = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, 1, alpha, beta, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt);
+        score = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, alpha, beta, deadline, enclosureAllowed, counter, connState, hashState, tt);
       } finally {
         undo();
       }
@@ -654,28 +498,27 @@ const AiStrategies = (() => {
         bestMove = move;
       }
       if (bestScore > alpha) alpha = bestScore;
-      if (bestScore >= SCORE.GOOD_ENOUGH) { brokeEarly = true; break; } // good enough — see doc comment above
+      if (bestScore >= SCORE.GOOD_ENOUGH) break; // good enough — see doc comment above
     }
-    ttSet(tt, ttKey, { depth, score: toTT(bestScore, 0), move: bestMove, flag: brokeEarly ? TT_LOWER : TT_EXACT });
+    tt.set(ttKey, { depth, score: bestScore, move: bestMove, flag: TT_EXACT });
     return { move: bestMove, score: bestScore };
   }
 
   /**
    * Iterative deepening driver: searches depth 1, 2, 3... until one of
-   * four things stops it — options.maxDepth is reached (if it's set to
-   * an explicit cap at all: see below), the time budget runs out, the
+   * three things stops it — options.maxDepth is reached (if it's set to
+   * an explicit cap at all: see below), the time budget runs out, or the
    * position is already good enough that further search wouldn't change
-   * what gets played, or the position is a *proven* forced loss — keeping
-   * the best move found at each *completed* depth. If the time budget
-   * runs out mid-search at some depth, that depth's (incomplete,
-   * unreliable) result is discarded and the last fully-completed depth's
-   * move is returned instead.
+   * what gets played — keeping the best move found at each *completed*
+   * depth. If the time budget runs out mid-search at some depth, that
+   * depth's (incomplete, unreliable) result is discarded and the last
+   * fully-completed depth's move is returned instead.
    *
    * options.maxDepth of 0 or undefined means NO fixed ply cap — the loop
-   * only stops on time or on one of the two decided-position cases below,
-   * not on a depth ceiling (see GAME_PARAM_RANGES.cpuDepth's doc comment
-   * in config.js for why this is the default: response time is the thing
-   * a player actually feels turn to turn, so cpuTime alone should govern
+   * only stops on time or on a good-enough/won position (see below), not
+   * on a depth ceiling (see GAME_PARAM_RANGES.cpuDepth's doc comment in
+   * config.js for why this is the default: response time is the thing a
+   * player actually feels turn to turn, so cpuTime alone should govern
    * search strength for a predictable, low-latency feel — a separate
    * depth dial fighting against that same time budget just adds a way to
    * *accidentally* make the CPU slower or weaker than the time budget
@@ -684,59 +527,43 @@ const AiStrategies = (() => {
    * how much time is available (e.g. benchmarking, or comparing two
    * AiStrategies implementations at an identical depth).
    *
-   * Three conditions end the search early, before either the depth cap
-   * (if any) or the time budget is actually exhausted:
-   *   - SCORE.GOOD_ENOUGH (see its own comment) on the winning side — not
-   *     a proven win, but confidently ahead. Continuing to search (deeper,
-   *     or through the rest of the current depth's root moves — see
+   * Two conditions end the search early, before either the depth cap (if
+   * any) or the time budget is actually exhausted:
+   *   - a forced win/loss (score magnitude >= SCORE.WIN) — deeper search
+   *     literally cannot change a proven outcome.
+   *   - SCORE.GOOD_ENOUGH (see its own comment) — not a proven win, but
+   *     confidently ahead. Continuing to search (whether deeper, or
+   *     through the rest of the current depth's root moves — see
    *     searchAtDepth()) would mostly just spend time budget confirming
-   *     what's already a clearly fine choice.
-   *   - a forced win (score magnitude >= SCORE.WIN, technically covered
-   *     by the GOOD_ENOUGH check above since WIN is always above it) —
-   *     deeper search literally cannot change a proven outcome.
-   *   - a *forced loss* (score <= -MATE_THRESHOLD, i.e. the search has
-   *     proven every line loses — see MATE_THRESHOLD/toTT/fromTT above):
-   *     the CPU still plays the position out (it does not resign — see
-   *     script.js's applyCpuResult()), but there is no reason to spend
-   *     the rest of the time budget confirming a loss that's already
-   *     certain, so this shortens the wait the same way the
-   *     GOOD_ENOUGH break does for a win. Gated on `depthReached >= 3` so
-   *     the search has had a genuine chance to find the *most resistant*
-   *     losing line rather than latching onto the first one seen at a
-   *     shallow depth — deeper search, when there's time for it, finds a
-   *     less-bad (less negative) score for a longer forced loss, which is
-   *     the better move to actually play even though the outcome doesn't
-   *     change.
+   *     what's already a clearly fine choice, which runs directly against
+   *     the low-response-time goal above.
    *
-   * Returns { move, score, nodesEvaluated, depthReached, forcedWinInPlies,
-   * forcedLossInPlies } — the first four purely for display/diagnostics
-   * (see the file-header comment and script.js's ?showAdvanced=true CPU
-   * search log): nodesEvaluated is the total candidate moves expanded
-   * across *every* depth tried this call, depthReached is the last depth
-   * that actually completed before the search stopped for any of the
-   * reasons above. forcedWinInPlies/forcedLossInPlies are non-null only
-   * once the final score has crossed MATE_THRESHOLD, and are internal
-   * diagnostics only — see the file-header Return shape comment for why
-   * script.js must never show them to the player.
+   * Returns { move, score, nodesEvaluated, depthReached } — the latter
+   * two purely for display (see the file-header comment and script.js's
+   * ?showAdvanced=true CPU search log): nodesEvaluated is the total
+   * candidate moves expanded across *every* depth tried this call, and
+   * depthReached is the last depth that actually completed before the
+   * search stopped for any of the reasons above.
    *
-   * connState (see makeMove()) and enclosureState (see makeMove()) and
-   * hashState (see computeHash()) are computed once here, from the
-   * actual root position, and then threaded through every depth's
-   * search — each depth's own make/unmake calls fully unwind back to
-   * this same root state (via the `finally` blocks in
-   * minimax()/searchAtDepth()) before the next depth starts, so
-   * recomputing any of them would be redundant.
+   * connState (see makeMove()) and hashState (see computeHash()) are
+   * computed once here, from the actual root position, and then threaded
+   * through every depth's search — each depth's own make/unmake calls
+   * fully unwind back to this same root state (via the `finally` blocks
+   * in minimax()/searchAtDepth()) before the next depth starts, so
+   * recomputing either would be redundant.
    *
-   * `tt` (the transposition table — see the TT section above) is
-   * likewise created fresh here and shared across every depth this call
-   * tries — unlike connState/enclosureState/hashState it's deliberately
-   * *not* reset between depths, since reusing a shallower depth's
-   * results (as a cutoff, or at minimum as move ordering — see
-   * minimax()) is the entire point of iterative deepening plus a TT
-   * together. It's also deliberately *not* persisted beyond this one
-   * call (a fresh table every time minimaxAlphaBetaID() runs, not a
-   * module-level one reused across separate CPU moves) — see ttCreate()'s
-   * own doc comment for why.
+   * `tt` (the transposition table) is likewise created fresh here and
+   * shared across every depth this call tries — unlike connState/
+   * hashState it's deliberately *not* reset between depths, since reusing
+   * a shallower depth's results (as a cutoff, or at minimum as move
+   * ordering — see minimax()) is the entire point of iterative deepening
+   * plus a TT together. It's also deliberately *not* persisted beyond
+   * this one call (a fresh Map every time minimaxAlphaBetaID() runs, not
+   * a module-level one reused across separate CPU moves): the board, the
+   * no-enclosure rule, and even which color is thinking can all differ
+   * from one call to the next, and a stale cross-call entry being wrong
+   * in a way that's actually visible is a much worse failure mode than
+   * the modest extra work of rebuilding it once per move.
    */
   function minimaxAlphaBetaID(state, options = {}) {
     const { cells, neighborKeys, color, enclosureAllowed } = state;
@@ -751,28 +578,21 @@ const AiStrategies = (() => {
       black: isGroupFullyConnected(cells, neighborKeys, "black"),
       white: isGroupFullyConnected(cells, neighborKeys, "white"),
     };
-    const enclosureState = enclosureAllowed
-      ? {
-          black: MoveRules.hasEnclosedPiece(cells, neighborKeys, "black"),
-          white: MoveRules.hasEnclosedPiece(cells, neighborKeys, "white"),
-        }
-      : { black: false, white: false };
     const hashState = { value: computeHash(cells) };
-    const tt = ttCreate();
+    const tt = new Map();
     let best = { move: null, score: -Infinity };
     let depthReached = 0;
 
     for (let depth = 1; depth <= maxDepth; depth++) {
       let result;
       try {
-        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt);
+        result = searchAtDepth(cells, neighborKeys, color, depth, deadline, enclosureAllowed, counter, connState, hashState, tt);
       } catch (err) {
         if (err instanceof SearchTimeoutError) break; // keep the previous depth's result
         throw err;
       }
       if (result.move) { best = result; depthReached = depth; }
       if (best.score >= SCORE.GOOD_ENOUGH) break; // forced win, or just confidently ahead — see doc comment above
-      if (best.score <= -MATE_THRESHOLD && depthReached >= 3) break; // proven forced loss — see doc comment above
       if (nowMs() > deadline) break;
     }
 
@@ -782,18 +602,7 @@ const AiStrategies = (() => {
       const fallback = getLegalMoves(cells, neighborKeys, state.color, enclosureAllowed)[0] || null;
       best = { move: fallback, score: 0 };
     }
-
-    const magnitude = Math.abs(best.score);
-    const mateDistance = magnitude >= MATE_THRESHOLD ? SCORE.WIN - magnitude : null;
-
-    return {
-      move: best.move,
-      score: best.score,
-      nodesEvaluated: counter.nodes,
-      depthReached,
-      forcedWinInPlies: mateDistance !== null && best.score > 0 ? mateDistance : null,
-      forcedLossInPlies: mateDistance !== null && best.score < 0 ? mateDistance : null,
-    };
+    return { move: best.move, score: best.score, nodesEvaluated: counter.nodes, depthReached };
   }
 
   strategies.minimaxAlphaBetaID = minimaxAlphaBetaID;
@@ -808,27 +617,16 @@ const AiStrategies = (() => {
   //
   // Identical algorithm and evaluation to minimaxAlphaBetaID above — same
   // helpers (getLegalMoves/orderMoves/evaluatePosition/SCORE/etc.), same
-  // iterative deepening driver shape, same return shape (minus the mate-
-  // distance fields — see below) — differing only in how it walks the
-  // tree:
+  // iterative deepening driver shape, same return shape — differing only
+  // in how it walks the tree:
   //   - clones the whole board per node (applyMove()) instead of
   //     make/unmake in place (makeMove()/undo()).
-  //   - re-checks isGroupFullyConnected() for BOTH colors, and (when
-  //     enclosureAllowed) MoveRules.hasEnclosedPiece() for both colors,
-  //     at every node, instead of caching one boolean per color and only
-  //     recomputing the side that just moved (connState/enclosureState).
-  //   - has no transposition table at all, so no mate-score ply-scaling
-  //     concern either — depth-relative WIN scores (SCORE.WIN + depth)
-  //     are fine here since nothing caches them across different depths.
-  //     This also means it has no forced-loss fast-exit: the mutual-
-  //     enclosure draw rule below is a game-rules correctness fix that
-  //     has to hold regardless of which engine is selected to actually
-  //     play, but the ply-adjusted mate scoring and early loss-exit in
-  //     minimaxAlphaBetaID are deliberate *performance* behavior this
-  //     baseline exists to hold constant for A/B comparison — see
-  //     README.md's "CPU search performance" section for the full
-  //     writeup and benchmark notes from when minimaxAlphaBetaID replaced
-  //     this as the default.
+  //   - re-checks isGroupFullyConnected() for BOTH colors at every node,
+  //     instead of caching one boolean per color and only recomputing the
+  //     side that just moved (connState).
+  // See README.md's "CPU search performance" section for the full
+  // writeup and benchmark notes from when minimaxAlphaBetaID replaced
+  // this as the default.
   // -----------------------------------------------------------------------
   function minimaxCloning(cells, neighborKeys, moverColor, rootColor, depth, alpha, beta, deadline, enclosureAllowed, counter) {
     if (nowMs() > deadline) throw new SearchTimeoutError();
@@ -836,17 +634,6 @@ const AiStrategies = (() => {
     const opponentOfRoot = otherColor(rootColor);
     if (isGroupFullyConnected(cells, neighborKeys, rootColor)) return SCORE.WIN + depth;
     if (isGroupFullyConnected(cells, neighborKeys, opponentOfRoot)) return -(SCORE.WIN + depth);
-
-    // Mutual-enclosure draw — see minimax()'s version of this check
-    // above for the full rationale; this engine just recomputes both
-    // colors' wall status from scratch every node instead of caching it,
-    // matching its documented always-recompute style (see the file
-    // comment just above).
-    if (enclosureAllowed &&
-        MoveRules.hasEnclosedPiece(cells, neighborKeys, "black") &&
-        MoveRules.hasEnclosedPiece(cells, neighborKeys, "white")) {
-      return 0;
-    }
 
     if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
@@ -982,12 +769,8 @@ const AiStrategies = (() => {
 // Message protocol (plain postMessage — Map/Array/Object are all
 // structured-cloneable, no transferables needed):
 //   in  -> { requestId, state: { cells, neighborKeys, color, enclosureAllowed }, options, strategyName }
-//   out -> { requestId, ok: true,  move, score, nodesEvaluated, depthReached,
-//            forcedWinInPlies, forcedLossInPlies }
+//   out -> { requestId, ok: true,  move, score, nodesEvaluated, depthReached }
 //        | { requestId, ok: false, error }
-// forcedWinInPlies/forcedLossInPlies are internal diagnostics — see the
-// file-header Return shape comment — and are undefined when the chosen
-// strategy doesn't report them (e.g. minimaxAlphaBetaCloning).
 // strategyName is optional — omitting it (or passing undefined) uses
 // AiStrategies.activeStrategy, same as calling pickMove() with only two
 // arguments. See config.js's DEFAULT_CPU_STRATEGY/computerself_strategies/
@@ -1005,8 +788,6 @@ if (typeof importScripts === "function") {
         score: result.score,
         nodesEvaluated: result.nodesEvaluated,
         depthReached: result.depthReached,
-        forcedWinInPlies: result.forcedWinInPlies,
-        forcedLossInPlies: result.forcedLossInPlies,
       });
     } catch (err) {
       self.postMessage({ requestId, ok: false, error: (err && err.message) || String(err) });
