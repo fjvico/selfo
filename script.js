@@ -1925,11 +1925,12 @@ function updateSetupVisibility() {
   // The challenge ladder only exists (and only means anything) in the
   // default minimalist mode against the computer — see
   // applyChallengeOutcome(). Kept in sync with dom.modeMenuWrap/
-  // dom.difficultyMenuWrap's own Game.classicMode-only hidden state (set
-  // in applyUrlConfig(), not repeated here since it never changes mid
-  // session) by additionally requiring vscomputer specifically, in case
-  // ?classicMode isn't set but some other mode still ends up selected.
-  dom.challengeBar.hidden = Game.classicMode || Game.mode !== "vscomputer";
+  // dom.difficultyMenuWrap's own (Game.classicMode || Game.showAdvanced)
+  // hidden state (set in applyUrlConfig(), not repeated here since
+  // neither flag changes mid session) by additionally requiring
+  // vscomputer specifically, in case neither flag is set but some other
+  // mode still ends up selected.
+  dom.challengeBar.hidden = Game.classicMode || Game.showAdvanced || Game.mode !== "vscomputer";
 
   // a guest doesn't control the host's board — visible (fixed position),
   // just inert
@@ -3269,10 +3270,17 @@ function applyUrlConfig() {
   // icons, mode locked to vscomputer (enforced after this whole function
   // runs, in boot(), so it wins over any ?mode= above), Share only hands
   // out a bare link (see buildSetupUrl()). ?classicMode=true restores the
-  // old fully manual UI and turns the ladder off.
+  // old fully manual UI and turns the ladder off; ?showAdvanced=true
+  // reveals the same two icons too (alongside Share, which is never
+  // hidden either way — see dom.shareLinkBtn) without going as far as
+  // turning the ladder off itself, since someone reaching for the
+  // advanced board-setup controls likely also wants to hand-pick mode
+  // and difficulty rather than only being able to see them lower via
+  // wins/losses — see updateSetupVisibility()'s dom.challengeBar.hidden
+  // for the corresponding, now showAdvanced-aware, other half of this.
   Game.classicMode = params.get("classicMode") === "true";
-  dom.modeMenuWrap.hidden = !Game.classicMode;
-  dom.difficultyMenuWrap.hidden = !Game.classicMode;
+  dom.modeMenuWrap.hidden = !(Game.classicMode || showAdvanced);
+  dom.difficultyMenuWrap.hidden = !(Game.classicMode || showAdvanced);
 
   const mode = params.get("mode");
   if (["local2p", "online2p", "vscomputer", "computerself"].includes(mode)) {
