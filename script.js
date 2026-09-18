@@ -3055,7 +3055,15 @@ dom.shareLinkBtn.addEventListener("click", async () => {
   const url = currentShareUrl();
   // No wording, on purpose — just the emoji invite (👋🎲) ahead of the
   // link, same for every mode (online invite or a shared setup alike).
-  const text = "👋🎲";
+  const emoji = "👋🎲";
+  // The link is folded into this single "text" field (not passed as a
+  // separate "url" field below) because of a WebKit bug where, when
+  // both are given, some share targets — WhatsApp among them — use
+  // only the "url" field and silently drop "text" entirely (see
+  // https://bugs.webkit.org/show_bug.cgi?id=203221). Keeping everything
+  // in one field is what actually gets the emoji to show up next to the
+  // link once shared, on every platform/target rather than just some.
+  const text = `${emoji} ${url}`;
 
   // navigator.share() opens the OS/browser's native share sheet (other
   // apps, contacts, etc.) — supported mainly on mobile and some desktop
@@ -3064,16 +3072,16 @@ dom.shareLinkBtn.addEventListener("click", async () => {
   // at all, so falling back to a silent clipboard copy there left no
   // visible way to actually share to email/WhatsApp/etc. — this menu of
   // direct links is that fallback.
-  if (navigator.share && (!navigator.canShare || navigator.canShare({ title: "Selfo", text, url }))) {
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ title: "Selfo", text }))) {
     try {
-      await navigator.share({ title: "Selfo", text, url });
+      await navigator.share({ title: "Selfo", text });
       return;
     } catch (err) {
       if (err && err.name === "AbortError") return; // user cancelled the native sheet — do nothing
       // fall through to the menu below on any other failure
     }
   }
-  openShareMenu(url, text);
+  openShareMenu(url, emoji);
 });
 
 function openShareMenu(url, text) {
