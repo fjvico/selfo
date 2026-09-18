@@ -3051,36 +3051,30 @@ function copyTextToClipboard(text) {
   });
 }
 
-dom.shareLinkBtn.addEventListener("click", async () => {
+dom.shareLinkBtn.addEventListener("click", () => {
   const url = currentShareUrl();
   // No wording, on purpose — just the emoji invite (👋🎲) ahead of the
   // link, same for every mode (online invite or a shared setup alike).
   const emoji = "👋🎲";
-  // The link is folded into this single "text" field (not passed as a
-  // separate "url" field below) because of a WebKit bug where, when
-  // both are given, some share targets — WhatsApp among them — use
-  // only the "url" field and silently drop "text" entirely (see
-  // https://bugs.webkit.org/show_bug.cgi?id=203221). Keeping everything
-  // in one field is what actually gets the emoji to show up next to the
-  // link once shared, on every platform/target rather than just some.
-  const text = `${emoji} ${url}`;
 
-  // navigator.share() opens the OS/browser's native share sheet (other
-  // apps, contacts, etc.) — supported mainly on mobile and some desktop
-  // browsers with OS-level integration (e.g. Edge on Windows). Most
-  // desktop browsers (Chrome/Firefox on macOS/Linux) don't implement it
-  // at all, so falling back to a silent clipboard copy there left no
-  // visible way to actually share to email/WhatsApp/etc. — this menu of
-  // direct links is that fallback.
-  if (navigator.share && (!navigator.canShare || navigator.canShare({ title: "Selfo", text }))) {
-    try {
-      await navigator.share({ title: "Selfo", text });
-      return;
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the native sheet — do nothing
-      // fall through to the menu below on any other failure
-    }
-  }
+  // This always opens our own menu now, rather than trying
+  // navigator.share() first (the OS/browser-native share sheet) and
+  // falling back to this menu only when unsupported or cancelled, as
+  // it used to. navigator.share() hands the title/text/url fields over
+  // to whichever share target the person picks, and re-combining them
+  // into the actual shared message turns out to be unreliable in ways
+  // outside this app's control: Safari on iOS is documented to prefer
+  // the "url" field over "text" for some targets — WhatsApp among them
+  // — dropping the text entirely even when both are given as one
+  // combined string (https://bugs.webkit.org/show_bug.cgi?id=203221);
+  // Firefox for Android shows its own custom share sheet instead of
+  // the OS one, which re-parses the shared text, detects the URL
+  // inside it, and forwards *only* that URL to the target app,
+  // dropping the emoji right beside it — same symptom, unrelated cause,
+  // and equally out of reach here. Building the WhatsApp/Telegram/email
+  // links ourselves (below) means this app controls the exact string
+  // each one receives, so the emoji can't get silently dropped no
+  // matter which browser or OS is sharing it.
   openShareMenu(url, emoji);
 });
 
