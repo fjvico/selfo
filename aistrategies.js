@@ -41,12 +41,15 @@
  *   true CPU log in script.js — see minimaxAlphaBetaID()'s own doc comment
  *   below for exactly what each counts. forcedWinInPlies/forcedLossInPlies
  *   are set only once the search has *proven* a forced result (see
- *   MATE_THRESHOLD below) — they're internal diagnostics for that same
- *   ?showAdvanced=true log and for the search's own early-exit decision;
- *   script.js must never surface them in the player-facing UI, since
- *   telling the player the outcome is already decided would spoil a
- *   position the game is deliberately still playing out (see
- *   applyCpuResult() in script.js). A strategy that doesn't do a
+ *   MATE_THRESHOLD below) — they feed that same ?showAdvanced=true log and
+ *   the search's own early-exit decision. forcedWinInPlies stays internal:
+ *   script.js must not surface it in the player-facing UI, since telling
+ *   the player the outcome is already decided would spoil a position the
+ *   game is deliberately still playing out. forcedLossInPlies is the one
+ *   deliberate exception: script.js's applyCpuResult()/updateCompactBar()
+ *   use it to lay the android icon down while the CPU knows it has lost
+ *   (and stand it back up if a later search no longer sees a forced
+ *   loss). A strategy that doesn't do a
  *   depth-limited tree search at all — or, like minimaxAlphaBetaCloning
  *   below, doesn't track mate distance — is free to omit any of these
  *   four fields; script.js treats them all as optional and simply
@@ -153,6 +156,27 @@ const AiStrategies = (() => {
       if (cell.color) hash ^= zobristFor(k)[cell.color];
     }
     return hash;
+  }
+
+  /** One more random 32-bit value, XORed into the transposition-table key
+   *  when it is WHITE's turn to move at the node (see ttKeyFor()). The
+   *  board hash alone (computeHash() above) only says where the pieces
+   *  are, not whose turn it is — and the same arrangement CAN recur with
+   *  the other side to move (e.g. one color walks a piece around a
+   *  three-cell triangle while the other steps a piece out and back: five
+   *  plies, same pieces on the same cells, turn flipped). Without the
+   *  side to move in the key such a node reads the wrong side's stored
+   *  score and best move, which quietly corrupts results — including the
+   *  exact win/loss distances that both the forced-loss detection and the
+   *  choice among lost moves (see searchAtDepth()) depend on. `|| 1` so
+   *  the (astronomically unlikely) all-zero draw can't turn it into a
+   *  no-op. */
+  const SIDE_TO_MOVE_KEY = rand32() || 1;
+
+  /** Transposition-table key for a node: the incremental board hash plus
+   *  who is to move there. */
+  function ttKeyFor(boardHash, moverColor) {
+    return moverColor === "white" ? boardHash ^ SIDE_TO_MOVE_KEY : boardHash;
   }
 
   /** Returns a *new* board with the move applied (does not mutate input).
@@ -301,6 +325,11 @@ const AiStrategies = (() => {
    *  doc comment in config.js, just as a generous finite ceiling instead
    *  of true Infinity. */
   const NO_DEPTH_CAP_LIMIT = 40;
+
+  /** Upper bound on the extra confirmation searches searchAtDepth() may
+   *  run to break a tie between equally-lost root moves — see its
+   *  "Choosing among LOST root moves" comment. */
+  const MAX_TIE_CONFIRMATIONS = 6;
 
   // Weights for the static evaluation (tunable without touching the search).
   const SCORE = {
@@ -510,8 +539,9 @@ const AiStrategies = (() => {
   // connState[color]/enclosureState[color] instead of re-deriving them
   // for both colors at every single node (see makeMove()'s comment for
   // why only the mover's color ever needs recomputing), and consults a
-  // transposition table (`tt`, keyed by hashState.value — see
-  // makeMove()/computeHash() above) both to short-circuit a node outright
+  // transposition table (`tt`, keyed by hashState.value plus the side to
+  // move — see makeMove()/computeHash()/ttKeyFor() above) both to
+  // short-circuit a node outright
   // when a deep-enough cached result already settles it, and — even when
   // it doesn't — to try that position's previously-best move first (see
   // putMoveFirst()), which is normally the single biggest lever on how
@@ -555,7 +585,7 @@ const AiStrategies = (() => {
     if (depth === 0) return evaluatePosition(cells, neighborKeys, rootColor, opponentOfRoot);
 
     const alphaOrig = alpha;
-    const ttKey = hashState.value;
+    const ttKey = ttKeyFor(hashState.value, moverColor);
     const ttEntry = ttGet(tt, ttKey);
     let ttMove = null;
     if (ttEntry) {
@@ -626,10 +656,43 @@ const AiStrategies = (() => {
    *  trade for keeping response time low (see minimaxAlphaBetaID()'s doc
    *  comment on why depth is normally left uncapped). A genuine forced
    *  win always clears this same bar first, so no separate check is
-   *  needed for that case specifically. */
+   *  needed for that case specifically.
+   *
+   *  Choosing among LOST root moves. Once the best root score found is a
+   *  proven loss (<= -MATE_THRESHOLD), the move played is picked in two
+   *  steps, so the CPU looks like it is still fighting instead of handing
+   *  the game over (the human may well not have seen the winning line
+   *  yet):
+   *    1. the move that loses LATEST — already what a plain max over
+   *       win/loss-by-ply scores gives (a slower forced loss scores
+   *       higher, see MATE_THRESHOLD/toTT/fromTT above);
+   *    2. among moves that lose equally late, the one that leaves the CPU
+   *       the best static position (evaluatePosition() right after the
+   *       move: its own connected group and cohesion minus the
+   *       opponent's) — the position it is best placed to build on if
+   *       the human slips. Before, such ties fell to whichever came
+   *       first in the move ordering (orderMoves()/the previous depth's
+   *       best), which is what could make the play look arbitrary.
+   *  Step 2 costs almost nothing, on purpose (the CPU must keep
+   *  answering as fast as it did): the main loop is unchanged, and only
+   *  notes which root moves *came back* equal to the best score (a move
+   *  whose true value is at or below alpha only comes back as a bound
+   *  <= alpha, so "came back equal" means "might tie", not "ties") along
+   *  with their static evaluation. Afterwards those candidates are tried
+   *  best-evaluation first, each confirmed with one search using a window
+   *  lowered by a point (alpha - 1: a child worth exactly the best score
+   *  then comes back exact, anything worse still comes back lower), and
+   *  the first confirmed tie wins. The move that actually set the best
+   *  score needs no confirmation, so when it is also the best-evaluated
+   *  candidate — or there is no other candidate — nothing extra is
+   *  searched at all. At most MAX_TIE_CONFIRMATIONS extra searches are
+   *  ever run, and if the time budget runs out during one, the search
+   *  simply keeps the move it already had: the iteration itself is
+   *  complete by then, so a timeout here never throws the proven loss
+   *  away. */
   function searchAtDepth(cells, neighborKeys, rootColor, depth, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt) {
     const opponentColor = otherColor(rootColor);
-    const ttKey = hashState.value;
+    const ttKey = ttKeyFor(hashState.value, rootColor);
     const ttEntry = ttGet(tt, ttKey);
     const ttMove = ttEntry ? ttEntry.move : null;
     const rootMoves = putMoveFirst(orderMoves(getLegalMoves(cells, neighborKeys, rootColor, enclosureAllowed), cells, neighborKeys, rootColor), ttMove);
@@ -639,22 +702,59 @@ const AiStrategies = (() => {
     let alpha = -Infinity;
     const beta = Infinity;
     let brokeEarly = false;
+    // Only filled while bestScore is a proven loss (see the doc comment
+    // above): root moves that came back equal to bestScore — plus the move
+    // that set it, `exact: true` — each with the static evaluation of the
+    // position it leaves.
+    let lostCandidates = [];
 
     for (const move of rootMoves) {
       counter.nodes++;
       const undo = makeMove(cells, neighborKeys, move.from, move.to, connState, enclosureState, hashState, enclosureAllowed);
       let score;
+      let moveEval = null;
       try {
         score = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, 1, alpha, beta, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt);
+        // While the move is still made: rate the position it leaves — only
+        // for a lost move at least as good as the best so far, the only
+        // kind the tie-break can ever pick.
+        if (score <= -MATE_THRESHOLD && score >= bestScore) {
+          moveEval = evaluatePosition(cells, neighborKeys, rootColor, opponentColor);
+        }
       } finally {
         undo();
       }
       if (score > bestScore) {
         bestScore = score;
         bestMove = move;
+        // a new best always came back exact (it beat alpha inside the window)
+        lostCandidates = moveEval !== null ? [{ move, moveEval, exact: true }] : [];
+      } else if (score === bestScore && moveEval !== null) {
+        lostCandidates.push({ move, moveEval, exact: false }); // "might tie" — confirmed below
       }
       if (bestScore > alpha) alpha = bestScore;
       if (bestScore >= SCORE.GOOD_ENOUGH) { brokeEarly = true; break; } // good enough — see doc comment above
+    }
+
+    // Tie-break among equally-lost moves — see "Choosing among LOST root moves".
+    if (lostCandidates.length > 1) {
+      lostCandidates.sort((a, b) => b.moveEval - a.moveEval); // stable: equal evaluations keep search order
+      let confirmations = 0;
+      for (const c of lostCandidates) {
+        if (c.exact) { bestMove = c.move; break; } // nobody better-evaluated tied after all
+        if (confirmations++ >= MAX_TIE_CONFIRMATIONS) break; // keep bestMove as it is
+        const undo = makeMove(cells, neighborKeys, c.move.from, c.move.to, connState, enclosureState, hashState, enclosureAllowed);
+        let value;
+        try {
+          value = minimax(cells, neighborKeys, opponentColor, rootColor, depth - 1, 1, bestScore - 1, beta, deadline, enclosureAllowed, counter, connState, enclosureState, hashState, tt);
+        } catch (err) {
+          if (err instanceof SearchTimeoutError) break; // out of time: keep bestMove, the iteration itself is complete
+          throw err;
+        } finally {
+          undo();
+        }
+        if (value === bestScore) { bestMove = c.move; break; } // confirmed tie, best evaluation among the true ties
+      }
     }
     ttSet(tt, ttKey, { depth, score: toTT(bestScore, 0), move: bestMove, flag: brokeEarly ? TT_LOWER : TT_EXACT });
     return { move: bestMove, score: bestScore };
@@ -706,7 +806,10 @@ const AiStrategies = (() => {
    *     shallow depth — deeper search, when there's time for it, finds a
    *     less-bad (less negative) score for a longer forced loss, which is
    *     the better move to actually play even though the outcome doesn't
-   *     change.
+   *     change. Which lost move is played — the one that loses latest,
+   *     and among equals the one with the best resulting position — is
+   *     decided in searchAtDepth() (see its "Choosing among LOST root
+   *     moves" comment), at no extra time cost.
    *
    * Returns { move, score, nodesEvaluated, depthReached, forcedWinInPlies,
    * forcedLossInPlies } — the first four purely for display/diagnostics
@@ -716,8 +819,8 @@ const AiStrategies = (() => {
    * that actually completed before the search stopped for any of the
    * reasons above. forcedWinInPlies/forcedLossInPlies are non-null only
    * once the final score has crossed MATE_THRESHOLD, and are internal
-   * diagnostics only — see the file-header Return shape comment for why
-   * script.js must never show them to the player.
+   * diagnostics — see the file-header Return shape comment for what
+   * script.js does (and must not) show the player.
    *
    * connState (see makeMove()) and enclosureState (see makeMove()) and
    * hashState (see computeHash()) are computed once here, from the
