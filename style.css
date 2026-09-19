@@ -27,6 +27,9 @@
 
   --danger: #ff5c6c;
   --danger-glow: rgba(255, 92, 108, 0.5);
+  --heart-red: #ff3d54;         /* the support heart while it beats */
+  --heart-red-fill: rgba(255, 61, 84, 0.42);
+  --heart-red-glow: rgba(255, 61, 84, 0.75);
 
   --start-glow: rgba(110, 255, 150, 0.55); /* green — distinct from the cyan end-of-game flash */
 
@@ -739,6 +742,46 @@ body {
   color: var(--accent);
   border-color: var(--accent-dim);
   box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Support heart — every so often it turns red and beats like a pulse
+   (script.js's SupportHeart adds/removes .beating at random times and sets
+   --beat-period / --beat-peak per episode, so no two look quite alike).
+   Red on its own color, not the link's, so hovering the chip (cyan halo)
+   doesn't wash the heart out mid-beat. The fill is transparent-red rather
+   than `none` so it can fade in: `none` can't be transitioned. */
+#supportLink .icon-wire {
+  fill: rgba(255, 61, 84, 0);
+  transition: color 0.35s ease, fill 0.35s ease;
+}
+#supportLink .icon-wire.beating {
+  color: var(--heart-red);
+  fill: var(--heart-red-fill);
+  animation: support-heartbeat var(--beat-period, 0.9s) ease-in-out infinite;
+}
+/* lub-dub: a strong beat, a short rest, a weaker second beat, a longer
+   rest. The glow swells with each beat. */
+@keyframes support-heartbeat {
+  0%, 56%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(255, 61, 84, 0));
+  }
+  14% {
+    transform: scale(var(--beat-peak, 1.3));
+    filter: drop-shadow(0 0 3px var(--heart-red-glow));
+  }
+  28% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(255, 61, 84, 0));
+  }
+  42% {
+    transform: scale(calc(1 + (var(--beat-peak, 1.3) - 1) * 0.6));
+    filter: drop-shadow(0 0 2px var(--heart-red-glow));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* still turns red for the episode, just without the pulsing */
+  #supportLink .icon-wire.beating { animation: none; }
 }
 
 /* ---------------------------------------------------------------

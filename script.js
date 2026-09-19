@@ -267,6 +267,76 @@ const ModeIcons = (() => {
 ModeIcons.renderAll();
 
 // ---------------------------------------------------------------------
+// Support heart
+// ---------------------------------------------------------------------
+// Every so often the heart in the top bar's support link turns red and
+// beats like a pulse (the look itself lives in style.css, .beating), then
+// goes back to normal. Meant to catch the eye now and then, so it must
+// not be predictable: the wait before each episode, the length of each
+// episode, and the tempo and strength of its beat are all drawn at random
+// each time. Waits are skewed toward the short end (many short pauses, the
+// occasional long one) so there's no rhythm to learn either.
+const SupportHeart = (() => {
+  const icon = document.querySelector("#supportLink .icon-wire");
+  if (!icon) return null;
+
+  const REST_MS   = [3000, 45000]; // pause between episodes
+  const BEAT_MS   = [3000, 11000]; // how long one episode lasts
+  const PERIOD_S  = [0.65, 1.15];  // seconds per heartbeat (lub-dub)
+  const PEAK      = [1.18, 1.4];   // scale at the strongest point of a beat
+
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+  // Same as rand() but bunched toward `lo`.
+  const randLow = (lo, hi) => lo + Math.pow(Math.random(), 1.6) * (hi - lo);
+
+  let timer = null;       // pending start or end of an episode
+  let safetyTimer = null; // backstop for finishBeating(), see endBeating()
+
+  function scheduleRest() {
+    clearTimeout(timer);
+    timer = setTimeout(startBeating, randLow(REST_MS[0], REST_MS[1]));
+  }
+
+  function startBeating() {
+    if (icon.classList.contains("beating")) return;
+    icon.style.setProperty("--beat-period", rand(PERIOD_S[0], PERIOD_S[1]).toFixed(2) + "s");
+    icon.style.setProperty("--beat-peak", rand(PEAK[0], PEAK[1]).toFixed(2));
+    icon.classList.add("beating");
+    clearTimeout(timer);
+    timer = setTimeout(endBeating, rand(BEAT_MS[0], BEAT_MS[1]));
+  }
+
+  // Doesn't cut a beat off half-way: waits for the one in progress to
+  // complete its cycle, then stops. With no animation running (the user
+  // prefers reduced motion — the heart just stays red for the episode) or
+  // in a background tab (animations pause there), there's no cycle
+  // boundary to wait for, so it stops at once / after a short backstop.
+  function endBeating() {
+    if (!icon.classList.contains("beating")) return;
+    if (getComputedStyle(icon).animationName === "none") { finishBeating(); return; }
+    icon.addEventListener("animationiteration", finishBeating, { once: true });
+    const periodMs = parseFloat(icon.style.getPropertyValue("--beat-period")) * 1000;
+    safetyTimer = setTimeout(finishBeating, periodMs * 1.5 + 200);
+  }
+
+  function finishBeating() {
+    clearTimeout(safetyTimer);
+    icon.removeEventListener("animationiteration", finishBeating);
+    if (!icon.classList.contains("beating")) return;
+    icon.classList.remove("beating");
+    scheduleRest();
+  }
+
+  // First episode after a random delay too, so even the opening seconds
+  // of a visit aren't predictable.
+  timer = setTimeout(startBeating, rand(3000, 25000));
+
+  // beatNow(): start an episode right away (handy from the console to see
+  // what it looks like without waiting for the dice).
+  return { beatNow: startBeating };
+})();
+
+// ---------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------
 const dom = {
