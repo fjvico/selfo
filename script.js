@@ -130,16 +130,16 @@ const Game = {
 // Mode-select icons
 // -------------------------------------------------------------------
 // Each of the 4 mode buttons shows two small glyphs (person and/or
-// tower) side by side. Rather than hand-writing near-identical SVG
+// android) side by side. Rather than hand-writing near-identical SVG
 // markup 4 times, both glyphs are drawn by a single function each
-// (person(x), tower(x)), positioned purely via their x argument, and
+// (person(x), android(x)), positioned purely via their x argument, and
 // composed here per mode. GAP is the one explicit knob for how far
 // apart the two glyphs sit in each icon — change a number here, nothing
 // else needs touching.
 // ---------------------------------------------------------------------
 const ModeIcons = (() => {
   const PERSON_WIDTH = 16; // bounding-box width of one person glyph at size=1.0, in svg units
-  const TOWER_WIDTH = 11;  // bounding-box width of one tower glyph, in svg units
+  const ANDROID_WIDTH = 16; // bounding-box width of one android glyph, in svg units (same as the person's, so both sides of a mode icon weigh the same)
 
   /** Head + shoulders, positioned at x and scaled by size (1.0 = current/
    *  base size, smaller values shrink it). yLift optionally raises the
@@ -153,18 +153,25 @@ const ModeIcons = (() => {
       `</g>`;
   }
 
-  /** Tower with two drive-slot lines and a power button. Bounding box
-   *  spans [x, x + TOWER_WIDTH]. */
-  function tower(x) {
-    return `<rect x="${x}" y="2.5" width="${TOWER_WIDTH}" height="19" rx="1.2"/>` +
-      `<line x1="${x + 2.3}" y1="7" x2="${x + 6.7}" y2="7"/>` +
-      `<line x1="${x + 2.3}" y1="10.2" x2="${x + 6.7}" y2="10.2"/>` +
-      `<circle cx="${x + 4.5}" cy="17" r="1.1"/>`;
+  /** Android: same silhouette as person() (head + shoulders, same
+   *  16-wide box, same vertical extent) so the two read as a matched
+   *  pair, but with a rounded-square head carrying two vertical "eyes"
+   *  and squared-off, flat-topped shoulders instead of the person's
+   *  round ones. The torso is inset by 0.8 (half the stroke width) so
+   *  its vertical sides aren't clipped by the viewBox edge. Bounding
+   *  box spans [x, x + ANDROID_WIDTH]. */
+  function android(x) {
+    return `<g transform="translate(${x} 0)">` +
+      `<rect x="3.2" y="3.4" width="9.6" height="9" rx="3.2"/>` +
+      `<line x1="6.2" y1="7" x2="6.2" y2="8.6"/>` +
+      `<line x1="9.8" y1="7" x2="9.8" y2="8.6"/>` +
+      `<path d="M0.8 21v-3a3 3 0 0 1 3-3h8.4a3 3 0 0 1 3 3v3"/>` +
+      `</g>`;
   }
 
   const GLYPH = {
     person: { draw: (x) => person(x, 1.0), width: PERSON_WIDTH },
-    tower: { draw: tower, width: TOWER_WIDTH },
+    android: { draw: android, width: ANDROID_WIDTH },
   };
 
   // The distance (in svg units) between the two glyphs, per mode —
@@ -172,8 +179,8 @@ const ModeIcons = (() => {
   const GAP = {
     local2p: 4,
     online2p: 13,
-    vscomputer: 8,
-    computerself: 12,
+    vscomputer: 6,
+    computerself: 8,
   };
 
   // online2p's right-hand person is drawn smaller and lifted up a touch
@@ -183,8 +190,8 @@ const ModeIcons = (() => {
   // Which two glyphs each mode's icon is made of, left to right.
   const COMPOSITION = {
     local2p: ["person", "person"],
-    vscomputer: ["person", "tower"],
-    computerself: ["tower", "tower"],
+    vscomputer: ["person", "android"],
+    computerself: ["android", "android"],
   };
 
   /** Builds { viewBox, markup } for one mode's icon: places the left
@@ -227,7 +234,7 @@ const ModeIcons = (() => {
     });
   }
 
-  /** A single glyph (person or tower) for one side of a mode's icon,
+  /** A single glyph (person or android) for one side of a mode's icon,
    *  standalone in its own small viewBox at x=0 — used by the minimalist
    *  players strip (#compactIconLeft/#compactIconRight, see
    *  updateCompactBar()) to show each half of the same icon the mode
@@ -2012,7 +2019,7 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactIconRight.innerHTML = rightIcon.markup;
 
   // Which color swatch sits on which side. vscomputer's left/right
-  // icons are a fixed person (human) / tower (computer) composition
+  // icons are a fixed person (human) / android (computer) composition
   // (see ModeIcons.buildSideIcon), so there the swatch colors must
   // track who's actually controlling which color right now — i.e.
   // Game.players[color].isLocal, which the pie-rule swap can change
@@ -2039,7 +2046,7 @@ function updateCompactBar(pieRuleWindow) {
   // sitting on a fully-connected, ready board waiting for black to
   // actually move. Applied to the icon only — not the swatch/"ficha"
   // beside it, so the piece color itself stays neutral and only the
-  // person/tower glyph reads as "your move". Winner indicator (persists
+  // person/android glyph reads as "your move". Winner indicator (persists
   // once Game.phase is "ended", cleared the moment the next game's setup
   // preview resets Game.winner) does still halo both swatch and icon.
   // "ended" is deliberately excluded from the turn indicator — see
@@ -2059,7 +2066,7 @@ function updateCompactBar(pieRuleWindow) {
   // since host and guest otherwise look like two identical person
   // icons with no way to tell "which one is me" apart. Every other mode
   // gets neither mark — local2p is played by both people on one screen,
-  // and vscomputer/computerself already distinguish person vs. tower.
+  // and vscomputer/computerself already distinguish person vs. android.
   const youColor = Game.mode === "online2p" ? Game.localColor : null;
   dom.compactYouMarkLeft.classList.toggle("shown", youColor !== null && leftColor === youColor);
   dom.compactYouMarkRight.classList.toggle("shown", youColor !== null && rightColor === youColor);
