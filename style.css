@@ -320,7 +320,25 @@ body {
   height: var(--compact-icon-h); width: auto;
   color: var(--metal-mid);
   flex-shrink: 0;
-  transition: color 0.2s, filter 0.2s;
+  /* the transform part is the android getting back up (see .lost below):
+     quick start, gentle settle */
+  transition: color 0.2s, filter 0.2s, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* The android knows it has lost (Game.cpuLost — see updateCompactBar()):
+   it tips over onto its left side, head pointing left, like a figure
+   that has given up. Turned about its own center, then lowered by h/6 so
+   it rests on the same baseline it stood on — a 16x24 glyph on its side
+   is 2/3 as tall as standing, so the center drops (h - 2h/3) / 2 = h/6.
+   The fall accelerates into the floor (ease-in) instead of easing out
+   like a controlled move. It overhangs its slot by h/6 on each side,
+   which fits inside the gaps around the icons. */
+.compact-mode-icon.lost {
+  transform: translateY(calc(var(--compact-icon-h) / 6)) rotate(-90deg);
+  transition: color 0.2s, filter 0.2s, transform 0.55s cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-mode-icon,
+  .compact-mode-icon.lost { transition: color 0.2s, filter 0.2s; }
 }
 /* Wraps just the icon (not the swatch beside it) so the "this is you"
    marker below can sit centered under the icon alone, in its own row,

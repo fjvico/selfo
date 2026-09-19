@@ -102,6 +102,14 @@ const Game = {
   drawOffered: null,        // color that offered a draw, or null
   endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | 'mutual-enclosure' | null
   moveLog: [],              // [{ color, from, to }, ...] for the download button
+  // Per color: true while that color's CPU engine has proven the position
+  // lost (its latest search reported forcedLossInPlies — see
+  // applyCpuResult()). Only ever set for CPU-controlled colors, updated
+  // once per CPU move (so it flips back to false the first time a later
+  // search no longer sees a forced loss), and cleared on a new game and
+  // on the pie-rule swap. Drives the android icon lying down — see
+  // updateCompactBar().
+  cpuLost: { black: false, white: false },
 
   players: {
     black: { name: "Player 1", isLocal: true },
@@ -1573,6 +1581,10 @@ function swapColors() {
   Game.turn = "white";
   // minimalist players strip only — see updateCompactBar()
   Game.compactSwapped = !Game.compactSwapped;
+  // the seats just changed hands, so what the CPU concluded about "its"
+  // color no longer describes the color it now plays — its next search
+  // will set it again
+  Game.cpuLost = { black: false, white: false };
 
   if (Game.mode === "online2p") {
     // Either side can be the one whose turn it is when the pie-rule
@@ -1761,6 +1773,11 @@ function runCpuSearchLocally(req) {
 function applyCpuResult(color, move, stats) {
   if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
   logCpuSearch(color, stats);
+  // Set before the move below, so the very UI refresh that shows the
+  // CPU's move also shows the android lying down (or standing back up).
+  // `!= null` (not truthiness): a forced loss "in 0" plies is still a loss,
+  // and strategies that don't report it at all (undefined) count as "not lost".
+  Game.cpuLost[color] = !!stats && stats.forcedLossInPlies != null;
   if (move) {
     performMove(move.from, move.to);
   } else {
@@ -2059,6 +2076,17 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactSwatchRight.classList.toggle("winner", rightColor === winnerColor);
   dom.compactIconLeft.classList.toggle("winner", leftColor === winnerColor);
   dom.compactIconRight.classList.toggle("winner", rightColor === winnerColor);
+
+  // Android lying down (head to the left) while its engine has proven the
+  // position lost — see Game.cpuLost. Only the android glyphs ever do it:
+  // vscomputer's right icon, both icons in computerself, never a person.
+  // A color that has actually won stays upright regardless.
+  const leftIsAndroid = Game.mode === "computerself";
+  const rightIsAndroid = Game.mode === "vscomputer" || Game.mode === "computerself";
+  dom.compactIconLeft.classList.toggle("lost",
+    leftIsAndroid && Game.cpuLost[leftColor] && leftColor !== winnerColor);
+  dom.compactIconRight.classList.toggle("lost",
+    rightIsAndroid && Game.cpuLost[rightColor] && rightColor !== winnerColor);
 
   // "Play online" only: mark whichever icon is *this browser's* player
   // (Game.localColor — never itself sent over the wire, so this is a
@@ -2623,6 +2651,7 @@ function beginSetupPreview() {
   Game.turn = "black";
   Game.pieRuleAvailable = true;
   Game.compactSwapped = false;
+  Game.cpuLost = { black: false, white: false };
   Game.selectedKey = null;
   Game.lastMove = null;
   Game.enclosedCells = null;
