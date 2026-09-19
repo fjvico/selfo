@@ -39,6 +39,12 @@
   --font-body: "Rajdhani", "Segoe UI", sans-serif;
 
   --radius-panel: 10px;
+
+  /* Players strip under the board (see .compact-players): the mode icon
+     and the piece-color swatch next to it. Variables so the mobile
+     query at the bottom of this file can enlarge both from one place. */
+  --compact-icon-h: 22px;
+  --compact-swatch: 18px;
 }
 
 * { box-sizing: border-box; }
@@ -295,7 +301,7 @@ body {
   width: 120px;
 }
 .compact-swatch {
-  width: 18px; height: 18px; border-radius: 50%;
+  width: var(--compact-swatch); height: var(--compact-swatch); border-radius: 50%;
   flex-shrink: 0;
   border: 1px solid var(--metal-line);
   box-sizing: border-box;
@@ -303,15 +309,15 @@ body {
   /* .compact-side aligns to flex-start (not center) so the icon lines up
      by its own height, not the taller .compact-icon-col box that also
      reserves space for the "you" marker underneath it (see below) — this
-     margin re-centers the swatch against just the 22px-tall icon itself:
-     (22 - 18) / 2 = 2px. */
-  margin-top: 2px;
+     margin re-centers the swatch against just the icon itself:
+     (icon height - swatch size) / 2. */
+  margin-top: calc((var(--compact-icon-h) - var(--compact-swatch)) / 2);
 }
 .compact-mode-icon {
-  /* fixed height, auto width — person and tower glyphs have different
-     viewBox aspect ratios (see ModeIcons.buildSideIcon), this keeps
-     both undistorted instead of stretching to a fixed box */
-  height: 22px; width: auto;
+  /* fixed height, auto width — keeps each glyph (see
+     ModeIcons.buildSideIcon) undistorted instead of stretching to a
+     fixed box */
+  height: var(--compact-icon-h); width: auto;
   color: var(--metal-mid);
   flex-shrink: 0;
   transition: color 0.2s, filter 0.2s;
@@ -1187,6 +1193,13 @@ body {
    --------------------------------------------------------------- */
 @media (max-width: 900px) {
   html, body { overflow: auto; }
+
+  /* Bigger players strip on phones: the fixed desktop sizes (22px icon,
+     18px swatch) read as tiny next to a board that fills the screen. */
+  :root {
+    --compact-icon-h: 40px;
+    --compact-swatch: 32px;
+  }
 
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px; }
   .topbar-left { gap: 10px; flex-wrap: wrap; row-gap: 6px; }
