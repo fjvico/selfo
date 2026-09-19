@@ -321,20 +321,37 @@ body {
   color: var(--metal-mid);
   flex-shrink: 0;
   /* the transform part is the android getting back up (see .lost below):
-     quick start, gentle settle */
-  transition: color 0.2s, filter 0.2s, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+     quick start, gentle settle. transform-origin only snaps back to the
+     default once that is over (0.5s delay), so the rise pivots about the
+     same corner the fall did instead of jumping mid-motion. */
+  transition: color 0.2s, filter 0.2s,
+              transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              transform-origin 0s linear 0.5s;
 }
 /* The android knows it has lost (Game.cpuLost — see updateCompactBar()):
-   it tips over onto its left side, head pointing left, like a figure
-   that has given up. Turned about its own center, then lowered by h/6 so
-   it rests on the same baseline it stood on — a 16x24 glyph on its side
-   is 2/3 as tall as standing, so the center drops (h - 2h/3) / 2 = h/6.
-   The fall accelerates into the floor (ease-in) instead of easing out
-   like a controlled move. It overhangs its slot by h/6 on each side,
-   which fits inside the gaps around the icons. */
+   it topples to the left, head pointing left, like a figure that has
+   given up. It pivots about its bottom-left corner (its left foot), so
+   the fall is a real tip-over — a swinging arc that sweeps to the left
+   and ends resting on the same baseline it stood on — rather than a
+   spin in place. Pivoting about the foot alone would land it a whole
+   5h/6 to the left of where it stood; the translateX pulls it back so
+   it ends up only --lost-shift (default h/3) left of its standing
+   position: 5h/6 - h/3 = h/2 of it. The fall accelerates into the floor
+   (ease-in) instead of easing out like a controlled move.
+   Its left end sticks out --lost-shift + h/6 past its standing box; the
+   right-hand icon has the wide swap slot there, while a left-hand icon
+   (computerself) has its swatch only 10px away, so that one gets a
+   smaller shift that leaves ~4px clear of it. */
 .compact-mode-icon.lost {
-  transform: translateY(calc(var(--compact-icon-h) / 6)) rotate(-90deg);
-  transition: color 0.2s, filter 0.2s, transform 0.55s cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  --lost-shift: calc(var(--compact-icon-h) / 3);
+  transform-origin: 0 100%;
+  transform: translateX(calc(var(--compact-icon-h) * 5 / 6 - var(--lost-shift))) rotate(-90deg);
+  transition: color 0.2s, filter 0.2s,
+              transform 0.55s cubic-bezier(0.55, 0.055, 0.675, 0.19),
+              transform-origin 0s;
+}
+.compact-side-left .compact-mode-icon.lost {
+  --lost-shift: calc(6px - var(--compact-icon-h) / 6);
 }
 @media (prefers-reduced-motion: reduce) {
   .compact-mode-icon,
@@ -1215,8 +1232,8 @@ body {
   /* Bigger players strip on phones: the fixed desktop sizes (22px icon,
      18px swatch) read as tiny next to a board that fills the screen. */
   :root {
-    --compact-icon-h: 40px;
-    --compact-swatch: 32px;
+    --compact-icon-h: 31px;
+    --compact-swatch: 25px;
   }
 
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px; }
