@@ -55,6 +55,16 @@ html, body {
   color: var(--metal-light);
   font-family: var(--font-body), sans-serif;
   overflow: hidden;
+  /* No pull-to-refresh, no overscroll glow/bounce chaining out to the
+     browser, and no swipe-sideways back/forward navigation: a stray
+     downward or sideways drag (easy to do while playing on a phone)
+     must never reload the page or leave the game. This doesn't stop
+     normal scrolling — the mobile layout below still scrolls as usual;
+     it only stops a scroll that has already hit its end from being
+     handed to the browser. Set on both html and body because on mobile
+     (see the max-width: 900px query) body is the actual scroll
+     container, not the viewport. */
+  overscroll-behavior: none;
 }
 
 body {
