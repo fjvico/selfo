@@ -218,12 +218,12 @@ const FeatureConfig = {
     { label: "N6 — Tablero grande",    r: 3, f: 11, cpuTime:  5, challengeWins: 4 },
 
     // --- Bloque Estructura (7-9): entra "no enclosure" ---------------
-    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, noEnclosure: true, challengeWins: 2 },
-    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, noEnclosure: true, challengeWins: 2 },
-    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, noEnclosure: true, challengeWins: 2 },
+    { label: "N7 — Sin encierro",      r: 4, f: 10, cpuTime:  5, challengeWins: 2, noEnclosure: true },
+    { label: "N8 — IA sólida",         r: 4, f: 12, cpuTime:  5, challengeWins: 2, noEnclosure: true },
+    { label: "N9 — Muro",              r: 4, f: 14, cpuTime:  5, challengeWins: 2, noEnclosure: true },
 
     // --- Bloque Final (10) -------------------------------------------
-    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, noEnclosure: true, challengeWins: 1 },
+    { label: "N10 — Jefe final",       r: 5, f: 30, cpuTime: 10, challengeWins: 1, noEnclosure: true },
   ],
 
   // Index into difficulty_levels applied at the start of every fresh
