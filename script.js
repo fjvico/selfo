@@ -102,14 +102,6 @@ const Game = {
   drawOffered: null,        // color that offered a draw, or null
   endReason: null,          // 'connection' | 'resign' | 'no-moves' | 'draw' | 'mutual-enclosure' | null
   moveLog: [],              // [{ color, from, to }, ...] for the download button
-  // Per color: true while that color's CPU engine has proven the position
-  // lost (its latest search reported forcedLossInPlies — see
-  // applyCpuResult()). Only ever set for CPU-controlled colors, updated
-  // once per CPU move (so it flips back to false the first time a later
-  // search no longer sees a forced loss), and cleared on a new game and
-  // on the pie-rule swap. Drives the android icon lying down — see
-  // updateCompactBar().
-  cpuLost: { black: false, white: false },
 
   players: {
     black: { name: "Player 1", isLocal: true },
@@ -138,16 +130,16 @@ const Game = {
 // Mode-select icons
 // -------------------------------------------------------------------
 // Each of the 4 mode buttons shows two small glyphs (person and/or
-// android) side by side. Rather than hand-writing near-identical SVG
+// tower) side by side. Rather than hand-writing near-identical SVG
 // markup 4 times, both glyphs are drawn by a single function each
-// (person(x), android(x)), positioned purely via their x argument, and
+// (person(x), tower(x)), positioned purely via their x argument, and
 // composed here per mode. GAP is the one explicit knob for how far
 // apart the two glyphs sit in each icon — change a number here, nothing
 // else needs touching.
 // ---------------------------------------------------------------------
 const ModeIcons = (() => {
   const PERSON_WIDTH = 16; // bounding-box width of one person glyph at size=1.0, in svg units
-  const ANDROID_WIDTH = 16; // bounding-box width of one android glyph, in svg units (same as the person's, so both sides of a mode icon weigh the same)
+  const TOWER_WIDTH = 11;  // bounding-box width of one tower glyph, in svg units
 
   /** Head + shoulders, positioned at x and scaled by size (1.0 = current/
    *  base size, smaller values shrink it). yLift optionally raises the
@@ -161,25 +153,18 @@ const ModeIcons = (() => {
       `</g>`;
   }
 
-  /** Android: same silhouette as person() (head + shoulders, same
-   *  16-wide box, same vertical extent) so the two read as a matched
-   *  pair, but with a rounded-square head carrying two vertical "eyes"
-   *  and squared-off, flat-topped shoulders instead of the person's
-   *  round ones. The torso is inset by 0.8 (half the stroke width) so
-   *  its vertical sides aren't clipped by the viewBox edge. Bounding
-   *  box spans [x, x + ANDROID_WIDTH]. */
-  function android(x) {
-    return `<g transform="translate(${x} 0)">` +
-      `<rect x="3.2" y="3.4" width="9.6" height="9" rx="3.2"/>` +
-      `<line x1="6.2" y1="7" x2="6.2" y2="8.6"/>` +
-      `<line x1="9.8" y1="7" x2="9.8" y2="8.6"/>` +
-      `<path d="M0.8 21v-3a3 3 0 0 1 3-3h8.4a3 3 0 0 1 3 3v3"/>` +
-      `</g>`;
+  /** Tower with two drive-slot lines and a power button. Bounding box
+   *  spans [x, x + TOWER_WIDTH]. */
+  function tower(x) {
+    return `<rect x="${x}" y="2.5" width="${TOWER_WIDTH}" height="19" rx="1.2"/>` +
+      `<line x1="${x + 2.3}" y1="7" x2="${x + 6.7}" y2="7"/>` +
+      `<line x1="${x + 2.3}" y1="10.2" x2="${x + 6.7}" y2="10.2"/>` +
+      `<circle cx="${x + 4.5}" cy="17" r="1.1"/>`;
   }
 
   const GLYPH = {
     person: { draw: (x) => person(x, 1.0), width: PERSON_WIDTH },
-    android: { draw: android, width: ANDROID_WIDTH },
+    tower: { draw: tower, width: TOWER_WIDTH },
   };
 
   // The distance (in svg units) between the two glyphs, per mode —
@@ -187,8 +172,8 @@ const ModeIcons = (() => {
   const GAP = {
     local2p: 4,
     online2p: 13,
-    vscomputer: 6,
-    computerself: 8,
+    vscomputer: 8,
+    computerself: 12,
   };
 
   // online2p's right-hand person is drawn smaller and lifted up a touch
@@ -198,8 +183,8 @@ const ModeIcons = (() => {
   // Which two glyphs each mode's icon is made of, left to right.
   const COMPOSITION = {
     local2p: ["person", "person"],
-    vscomputer: ["person", "android"],
-    computerself: ["android", "android"],
+    vscomputer: ["person", "tower"],
+    computerself: ["tower", "tower"],
   };
 
   /** Builds { viewBox, markup } for one mode's icon: places the left
@@ -242,7 +227,7 @@ const ModeIcons = (() => {
     });
   }
 
-  /** A single glyph (person or android) for one side of a mode's icon,
+  /** A single glyph (person or tower) for one side of a mode's icon,
    *  standalone in its own small viewBox at x=0 — used by the minimalist
    *  players strip (#compactIconLeft/#compactIconRight, see
    *  updateCompactBar()) to show each half of the same icon the mode
@@ -265,76 +250,6 @@ const ModeIcons = (() => {
   return { renderAll, buildSideIcon };
 })();
 ModeIcons.renderAll();
-
-// ---------------------------------------------------------------------
-// Support heart
-// ---------------------------------------------------------------------
-// Every so often the heart in the top bar's support link turns red and
-// beats like a pulse (the look itself lives in style.css, .beating), then
-// goes back to normal. Meant to catch the eye now and then, so it must
-// not be predictable: the wait before each episode, the length of each
-// episode, and the tempo and strength of its beat are all drawn at random
-// each time. Waits are skewed toward the short end (many short pauses, the
-// occasional long one) so there's no rhythm to learn either.
-const SupportHeart = (() => {
-  const icon = document.querySelector("#supportLink .icon-wire");
-  if (!icon) return null;
-
-  const REST_MS   = [3000, 45000]; // pause between episodes
-  const BEAT_MS   = [3000, 11000]; // how long one episode lasts
-  const PERIOD_S  = [0.65, 1.15];  // seconds per heartbeat (lub-dub)
-  const PEAK      = [1.18, 1.4];   // scale at the strongest point of a beat
-
-  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
-  // Same as rand() but bunched toward `lo`.
-  const randLow = (lo, hi) => lo + Math.pow(Math.random(), 1.6) * (hi - lo);
-
-  let timer = null;       // pending start or end of an episode
-  let safetyTimer = null; // backstop for finishBeating(), see endBeating()
-
-  function scheduleRest() {
-    clearTimeout(timer);
-    timer = setTimeout(startBeating, randLow(REST_MS[0], REST_MS[1]));
-  }
-
-  function startBeating() {
-    if (icon.classList.contains("beating")) return;
-    icon.style.setProperty("--beat-period", rand(PERIOD_S[0], PERIOD_S[1]).toFixed(2) + "s");
-    icon.style.setProperty("--beat-peak", rand(PEAK[0], PEAK[1]).toFixed(2));
-    icon.classList.add("beating");
-    clearTimeout(timer);
-    timer = setTimeout(endBeating, rand(BEAT_MS[0], BEAT_MS[1]));
-  }
-
-  // Doesn't cut a beat off half-way: waits for the one in progress to
-  // complete its cycle, then stops. With no animation running (the user
-  // prefers reduced motion — the heart just stays red for the episode) or
-  // in a background tab (animations pause there), there's no cycle
-  // boundary to wait for, so it stops at once / after a short backstop.
-  function endBeating() {
-    if (!icon.classList.contains("beating")) return;
-    if (getComputedStyle(icon).animationName === "none") { finishBeating(); return; }
-    icon.addEventListener("animationiteration", finishBeating, { once: true });
-    const periodMs = parseFloat(icon.style.getPropertyValue("--beat-period")) * 1000;
-    safetyTimer = setTimeout(finishBeating, periodMs * 1.5 + 200);
-  }
-
-  function finishBeating() {
-    clearTimeout(safetyTimer);
-    icon.removeEventListener("animationiteration", finishBeating);
-    if (!icon.classList.contains("beating")) return;
-    icon.classList.remove("beating");
-    scheduleRest();
-  }
-
-  // First episode after a random delay too, so even the opening seconds
-  // of a visit aren't predictable.
-  timer = setTimeout(startBeating, rand(3000, 25000));
-
-  // beatNow(): start an episode right away (handy from the console to see
-  // what it looks like without waiting for the dice).
-  return { beatNow: startBeating };
-})();
 
 // ---------------------------------------------------------------------
 // DOM references
@@ -705,27 +620,36 @@ function pieceRangeForRadius(radius) {
  * board's radius (radius 4 -> at most 4 same-color pieces already
  * touching each other) — see placeColorWithGroupLimit.
  *
- * Two checks can each force a retry of the whole scatter (both colors,
- * fresh random placement):
- *   - MoveRules.hasEnclosedPiece: no piece may start the game already
- *     walled in by the opponent. This is a property of the STARTING
- *     position, not of which moves are legal from it, so it's checked
- *     unconditionally — even with enclosureAllowed true (enclosing moves
- *     permitted once play begins), the position the game actually opens
- *     with must never already have one.
- *   - MoveRules.hasAnyLegalMove: specific to the "No enclosure" setup
- *     toggle (see FeatureConfig.no_enclosure in config.js — callers pass
- *     `!Game.noEnclosure` as enclosureAllowed). Only checked when
- *     enclosureAllowed is false: a random-but-valid layout on a small,
- *     densely-packed board can leave a color with *zero* legal moves at
- *     all, because every empty cell it could step into would trap some
- *     piece — that failure mode only exists because "No enclosure" is
- *     blocking those moves in the first place, so it has nothing to
- *     check when enclosure is allowed.
- * Either failure retries the placement until one clears the relevant
- * checks, or MAX_LAYOUT_ATTEMPTS is reached — at which point the last
- * attempt is used anyway rather than never finishing setup. The layout
- * is re-randomized every game regardless.
+ * `enclosureAllowed` is the inverse of the "No enclosure" setup toggle
+ * (see FeatureConfig.no_enclosure in config.js — callers pass
+ * `!Game.noEnclosure`). When enclosure is NOT allowed, a random-but-valid
+ * layout on a small, densely-packed board can fail in two different ways
+ * that both have to be checked separately:
+ *   - a color can end up with *zero* legal moves at all (every empty cell
+ *     it could step into would trap some piece) — checked with
+ *     MoveRules.hasAnyLegalMove.
+ *   - a color can still have *some* legal moves available through its
+ *     other pieces while one specific piece is already sitting enclosed
+ *     right from the initial scatter — checked separately with
+ *     MoveRules.hasEnclosedPiece, since hasAnyLegalMove being true says
+ *     nothing about any *individual* piece's situation. Skipping this
+ *     check was a real bug: "No enclosure" is supposed to guarantee no
+ *     piece is ever trapped, and an initial layout could quietly violate
+ *     that from move one.
+ * Either failure makes the whole placement (both colors, fresh random
+ * scatter) retried until one clears both checks, or MAX_LAYOUT_ATTEMPTS is
+ * reached — at which point the last attempt is used anyway rather than
+ * never finishing setup. The layout is re-randomized every game regardless.
+ *
+ * One further, unconditional check applies whether or not enclosure is
+ * allowed: black always moves first (see Game.turn in
+ * beginSetupPreview()), so a layout can't be allowed to hand black a
+ * win on that very first move — see blackHasImmediateWin(). That would
+ * make the whole game pointless before white ever gets a turn, and with
+ * small pieces-per-color counts on a small board (this scatter already
+ * allows same-color pieces to land pre-connected, up to `radius` pieces
+ * per group — see maxGroupSize below) it's a real, reachable case, not
+ * just a hypothetical one.
  */
 function buildBoard(radius, piecesPerColor, enclosureAllowed) {
   const MAX_LAYOUT_ATTEMPTS = 25;
@@ -745,16 +669,13 @@ function buildBoard(radius, piecesPerColor, enclosureAllowed) {
     for (const k of whiteCells) cells.get(k).color = "white";
 
     result = { cells, neighborKeys };
-
-    const noPieceAlreadyEnclosed = !MoveRules.hasEnclosedPiece(cells, neighborKeys, "black") &&
-      !MoveRules.hasEnclosedPiece(cells, neighborKeys, "white");
-    if (!noPieceAlreadyEnclosed) continue; // never start the game with a trapped piece
-
-    if (enclosureAllowed) break; // no further restriction to validate
-
+    if (blackHasImmediateWin(cells, neighborKeys, enclosureAllowed)) continue; // re-roll: see the comment above
+    if (enclosureAllowed) break; // nothing else to validate against
     const bothColorsCanMove = MoveRules.hasAnyLegalMove(cells, neighborKeys, "black", enclosureAllowed) &&
       MoveRules.hasAnyLegalMove(cells, neighborKeys, "white", enclosureAllowed);
-    if (bothColorsCanMove) break;
+    const noPieceAlreadyEnclosed = !MoveRules.hasEnclosedPiece(cells, neighborKeys, "black") &&
+      !MoveRules.hasEnclosedPiece(cells, neighborKeys, "white");
+    if (bothColorsCanMove && noPieceAlreadyEnclosed) break;
   }
   return result;
 }
@@ -764,10 +685,15 @@ function buildBoard(radius, piecesPerColor, enclosureAllowed) {
 // =======================================================================
 
 /** True if every piece of `color` can reach every other piece of `color`
- *  through adjacent same-color cells (i.e. they form a single group). */
-function isFullyConnected(color) {
+ *  through adjacent same-color cells (i.e. they form a single group).
+ *  `cells`/`neighborKeys` default to the live game's own, so the one
+ *  other call site (performMove()) is unaffected — buildBoard() is the
+ *  one place that passes a standalone layout in, to test a hypothetical
+ *  position (a candidate initial setup, or one move into it) before it's
+ *  ever assigned to Game.cells at all. */
+function isFullyConnected(color, cells = Game.cells, neighborKeys = Game.neighborKeys) {
   const ownKeys = [];
-  for (const [k, cell] of Game.cells) {
+  for (const [k, cell] of cells) {
     if (cell.color === color) ownKeys.push(k);
   }
   if (ownKeys.length <= 1) return ownKeys.length === 1; // 0 pieces = trivially not a win
@@ -776,9 +702,9 @@ function isFullyConnected(color) {
   const stack = [start];
   while (stack.length) {
     const k = stack.pop();
-    for (const nk of Game.neighborKeys.get(k)) {
+    for (const nk of neighborKeys.get(k)) {
       if (visited.has(nk)) continue;
-      const nCell = Game.cells.get(nk);
+      const nCell = cells.get(nk);
       if (nCell.color === color) {
         visited.add(nk);
         stack.push(nk);
@@ -786,6 +712,34 @@ function isFullyConnected(color) {
     }
   }
   return visited.size === ownKeys.length;
+}
+
+/** True if "black" (who always moves first — see Game.turn in
+ *  beginSetupPreview()) could win outright on the very first move from
+ *  this starting layout: one legal move connecting every black piece
+ *  into a single group before white has had any turn at all. Used by
+ *  buildBoard() to reject such layouts and re-roll, the same way it
+ *  already re-rolls layouts that leave a color with no legal move at
+ *  all or an already-enclosed piece — see the comment there. Mutates
+ *  `cells` while trying each candidate move and always restores it
+ *  before moving on, so the layout passed in comes back unchanged. */
+function blackHasImmediateWin(cells, neighborKeys, enclosureAllowed) {
+  const blackKeys = [];
+  for (const [k, cell] of cells) {
+    if (cell.color === "black") blackKeys.push(k);
+  }
+  for (const fromKey of blackKeys) {
+    const targets = MoveRules.legalMoveTargets(cells, neighborKeys, fromKey, enclosureAllowed);
+    for (const toKey of targets) {
+      cells.get(fromKey).color = null;
+      cells.get(toKey).color = "black";
+      const wins = isFullyConnected("black", cells, neighborKeys);
+      cells.get(toKey).color = null;
+      cells.get(fromKey).color = "black";
+      if (wins) return true;
+    }
+  }
+  return false;
 }
 
 // =======================================================================
@@ -1651,10 +1605,6 @@ function swapColors() {
   Game.turn = "white";
   // minimalist players strip only — see updateCompactBar()
   Game.compactSwapped = !Game.compactSwapped;
-  // the seats just changed hands, so what the CPU concluded about "its"
-  // color no longer describes the color it now plays — its next search
-  // will set it again
-  Game.cpuLost = { black: false, white: false };
 
   if (Game.mode === "online2p") {
     // Either side can be the one whose turn it is when the pie-rule
@@ -1775,9 +1725,8 @@ function ensureCpuWorker() {
 }
 
 function onCpuWorkerMessage(e) {
-  const { requestId, ok, move, error, nodesEvaluated, depthReached,
-           forcedWinInPlies, forcedLossInPlies } = e.data || {};
-  if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return;
+  const { requestId, ok, move, error, nodesEvaluated, depthReached } = e.data || {};
+  if (!cpuPendingRequest || requestId !== cpuPendingRequest.requestId) return; // stale reply
   const color = cpuPendingRequest.color;
   const strategyName = cpuPendingRequest.strategyName;
   cpuPendingRequest = null;
@@ -1787,14 +1736,14 @@ function onCpuWorkerMessage(e) {
     showMessage("The computer player hit an error \u2014 check the console.");
     return;
   }
-  applyCpuResult(color, move, { nodesEvaluated, depthReached, strategyName,
-                                 forcedWinInPlies, forcedLossInPlies });
+  applyCpuResult(color, move, { nodesEvaluated, depthReached, strategyName });
 }
 
-/** The Worker script itself failed to load/run (e.g. blocked under
- *  file://); falls back to running the search on the main thread for the
- *  rest of the session and, if a request was in flight, retries it there. */
 function onCpuWorkerError(err) {
+  // The Worker script itself failed to load/run (e.g. blocked under
+  // file://, or a restrictive Content-Security-Policy). Stop trying to
+  // use Workers for the rest of the session and, if a request was in
+  // flight, run it locally instead of leaving the CPU stuck.
   console.warn("Web Worker failed \u2014 blocked by the browser (often happens under file://); falling back to running the search on the main thread. Serve the page over http(s) to avoid this.", err);
   cpuWorkerUnavailable = true;
   if (cpuWorker) {
@@ -1820,11 +1769,7 @@ function runCpuSearchLocally(req) {
     cpuPendingRequest = null;
     try {
       const result = AiStrategies.pickMove(req.state, req.options, req.strategyName);
-      applyCpuResult(req.color, result.move, {
-        nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached,
-        strategyName: req.strategyName,
-        forcedWinInPlies: result.forcedWinInPlies, forcedLossInPlies: result.forcedLossInPlies,
-      });
+      applyCpuResult(req.color, result.move, { nodesEvaluated: result.nodesEvaluated, depthReached: result.depthReached, strategyName: req.strategyName });
     } catch (err) {
       console.error("CPU local search failed:", err);
       showMessage("The computer player hit an error \u2014 check the console.");
@@ -1843,11 +1788,6 @@ function runCpuSearchLocally(req) {
 function applyCpuResult(color, move, stats) {
   if (Game.phase !== "playing" || Game.turn !== color) return; // state moved on
   logCpuSearch(color, stats);
-  // Set before the move below, so the very UI refresh that shows the
-  // CPU's move also shows the android lying down (or standing back up).
-  // `!= null` (not truthiness): a forced loss "in 0" plies is still a loss,
-  // and strategies that don't report it at all (undefined) count as "not lost".
-  Game.cpuLost[color] = !!stats && stats.forcedLossInPlies != null;
   if (move) {
     performMove(move.from, move.to);
   } else {
@@ -1883,10 +1823,7 @@ function logCpuSearch(color, stats) {
   const text = document.createElement("span");
   text.className = "cpu-log-text";
   const suffix = stats.strategyName ? ` (${stats.strategyName})` : "";
-  const forced = stats.forcedWinInPlies != null ? ` \u2014 forced win in ${stats.forcedWinInPlies}`
-    : stats.forcedLossInPlies != null ? ` \u2014 forced loss in ${stats.forcedLossInPlies}`
-    : "";
-  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated${suffix}${forced}`;
+  text.textContent = `depth ${stats.depthReached} \u2014 ${stats.nodesEvaluated.toLocaleString()} moves evaluated${suffix}`;
   line.append(swatch, text);
   dom.cpuLog.appendChild(line);
 
@@ -2106,7 +2043,7 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactIconRight.innerHTML = rightIcon.markup;
 
   // Which color swatch sits on which side. vscomputer's left/right
-  // icons are a fixed person (human) / android (computer) composition
+  // icons are a fixed person (human) / tower (computer) composition
   // (see ModeIcons.buildSideIcon), so there the swatch colors must
   // track who's actually controlling which color right now — i.e.
   // Game.players[color].isLocal, which the pie-rule swap can change
@@ -2133,7 +2070,7 @@ function updateCompactBar(pieRuleWindow) {
   // sitting on a fully-connected, ready board waiting for black to
   // actually move. Applied to the icon only — not the swatch/"ficha"
   // beside it, so the piece color itself stays neutral and only the
-  // person/android glyph reads as "your move". Winner indicator (persists
+  // person/tower glyph reads as "your move". Winner indicator (persists
   // once Game.phase is "ended", cleared the moment the next game's setup
   // preview resets Game.winner) does still halo both swatch and icon.
   // "ended" is deliberately excluded from the turn indicator — see
@@ -2147,24 +2084,13 @@ function updateCompactBar(pieRuleWindow) {
   dom.compactIconLeft.classList.toggle("winner", leftColor === winnerColor);
   dom.compactIconRight.classList.toggle("winner", rightColor === winnerColor);
 
-  // Android lying down (head to the left) while its engine has proven the
-  // position lost — see Game.cpuLost. Only the android glyphs ever do it:
-  // vscomputer's right icon, both icons in computerself, never a person.
-  // A color that has actually won stays upright regardless.
-  const leftIsAndroid = Game.mode === "computerself";
-  const rightIsAndroid = Game.mode === "vscomputer" || Game.mode === "computerself";
-  dom.compactIconLeft.classList.toggle("lost",
-    leftIsAndroid && Game.cpuLost[leftColor] && leftColor !== winnerColor);
-  dom.compactIconRight.classList.toggle("lost",
-    rightIsAndroid && Game.cpuLost[rightColor] && rightColor !== winnerColor);
-
   // "Play online" only: mark whichever icon is *this browser's* player
   // (Game.localColor — never itself sent over the wire, so this is a
   // purely local, per-screen decision) with a small glowing underline,
   // since host and guest otherwise look like two identical person
   // icons with no way to tell "which one is me" apart. Every other mode
   // gets neither mark — local2p is played by both people on one screen,
-  // and vscomputer/computerself already distinguish person vs. android.
+  // and vscomputer/computerself already distinguish person vs. tower.
   const youColor = Game.mode === "online2p" ? Game.localColor : null;
   dom.compactYouMarkLeft.classList.toggle("shown", youColor !== null && leftColor === youColor);
   dom.compactYouMarkRight.classList.toggle("shown", youColor !== null && rightColor === youColor);
@@ -2721,7 +2647,6 @@ function beginSetupPreview() {
   Game.turn = "black";
   Game.pieRuleAvailable = true;
   Game.compactSwapped = false;
-  Game.cpuLost = { black: false, white: false };
   Game.selectedKey = null;
   Game.lastMove = null;
   Game.enclosedCells = null;
