@@ -279,31 +279,79 @@ const AiStrategies = (() => {
     return visited.size === ownKeys.length;
   }
 
+  /** Straight hex distance between two cells (cube coordinates, s = -q-r —
+   *  same formula as Fitness.cubeDistance, repeated here so the search
+   *  doesn't depend on fitness.js, which the Worker doesn't load). */
+  function hexDistance(a, b) {
+    const dq = a.q - b.q;
+    const dr = a.r - b.r;
+    return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
+  }
+
   /** Size of the largest connected group of `color`, plus a cohesion bonus
    *  counting each ally-ally adjacency once (pairs of touching same-color
-   *  pieces) — used to reward clustering even before a full connection. */
+   *  pieces) — used to reward clustering even before a full connection —
+   *  plus `looseGap`: how far the color's OTHER groups still are from its
+   *  largest one.
+   *
+   *  looseGap, per loose group: (hex distance from that group to the
+   *  largest group) - 1, i.e. how many empty cells still have to be
+   *  bridged (two separate groups are never adjacent, so this is >= 1);
+   *  summed over every loose group, and 0 when the color is already one
+   *  group. Group size and adjacency only change when a piece actually
+   *  touches the group, so on their own they can't tell "one stray piece
+   *  three cells away" from "one stray piece three cells away, one step
+   *  closer": every quiet move scores the same and the search has nothing
+   *  to steer by — it can shuffle pieces inside the group indefinitely
+   *  instead of bringing the last one in. This term is that missing
+   *  slope. It is plain geometric distance (ignores pieces in the way,
+   *  like Fitness's "geometric" mode) and costs nothing when there are no
+   *  loose groups, the usual case for a color that's close to winning. */
   function analyzeColor(cells, neighborKeys, color) {
     const visited = new Set();
     let largestGroup = 0;
+    let largestStart = 0;
     let allyAdjacencyPairs = 0;
+    const pieces = [];       // the color's pieces, one connected group after another
+    const groupStarts = [];  // where each group begins in `pieces`
 
     for (const [k, cell] of cells) {
       if (cell.color !== color || visited.has(k)) continue;
-      let size = 0;
+      const start = pieces.length;
+      groupStarts.push(start);
       const stack = [k];
       visited.add(k);
       while (stack.length) {
         const ck = stack.pop();
-        size++;
+        pieces.push(cells.get(ck));
         for (const nk of neighborKeys.get(ck)) {
           if (cells.get(nk).color !== color) continue;
           allyAdjacencyPairs += 0.5; // each pair is seen from both sides
           if (!visited.has(nk)) { visited.add(nk); stack.push(nk); }
         }
       }
-      if (size > largestGroup) largestGroup = size;
+      const size = pieces.length - start;
+      if (size > largestGroup) { largestGroup = size; largestStart = start; }
     }
-    return { largestGroup, allyAdjacencyPairs };
+
+    let looseGap = 0;
+    if (groupStarts.length > 1) {
+      const largestEnd = largestStart + largestGroup;
+      for (let g = 0; g < groupStarts.length; g++) {
+        const from = groupStarts[g];
+        if (from === largestStart) continue;
+        const to = g + 1 < groupStarts.length ? groupStarts[g + 1] : pieces.length;
+        let nearest = Infinity;
+        for (let i = from; i < to && nearest > 2; i++) {
+          for (let j = largestStart; j < largestEnd; j++) {
+            const d = hexDistance(pieces[i], pieces[j]);
+            if (d < nearest) nearest = d;
+          }
+        }
+        looseGap += nearest - 1; // (2 is the closest two separate groups can be)
+      }
+    }
+    return { largestGroup, allyAdjacencyPairs, looseGap };
   }
 
   /** Effective depth cap used when maxDepth is left at 0/unspecified (see
@@ -331,30 +379,52 @@ const AiStrategies = (() => {
    *  "Choosing among LOST root moves" comment. */
   const MAX_TIE_CONFIRMATIONS = 6;
 
+  /** How many plies deep the search must have completed before it may stop
+   *  because the position merely looks good (SCORE.GOOD_ENOUGH) or
+   *  provably lost. 3 = its own move, the reply, its next move: enough to
+   *  see any win that is one or two of its own moves away (and to find
+   *  the most stubborn defense when losing), while still being a tiny
+   *  fraction of the cost of a full-depth search. */
+  const MIN_DEPTH_BEFORE_EARLY_EXIT = 3;
+
   // Weights for the static evaluation (tunable without touching the search).
   const SCORE = {
     WIN: 10000,
     GROUP_SIZE_WEIGHT: 100,
     ADJACENCY_WEIGHT: 5,
-    // "Good enough, stop searching and just play it" threshold — see
-    // minimaxAlphaBetaID()/searchAtDepth()'s early-exit checks below.
+    // Per empty cell still to bridge between a color's loose groups and its
+    // largest group — see analyzeColor()'s looseGap. Deliberately above
+    // ADJACENCY_WEIGHT so that bringing a stray piece a step closer beats
+    // shuffling pieces around inside the group (which can only ever move
+    // the adjacency count), and far below GROUP_SIZE_WEIGHT so that
+    // actually joining the group (+100 per piece) always outweighs it.
+    PROXIMITY_WEIGHT: 15,
+    // "Confidently ahead, stop searching and just play it" threshold — see
+    // minimaxAlphaBetaID()'s early-exit checks below.
     // Exists specifically for cpuDepth left at "Auto" (see
     // GAME_PARAM_RANGES.cpuDepth in config.js): without it, a
     // time-governed search with no depth cap would always spend the
     // *entire* cpuTime budget every single move, even once the position
     // is already clearly decided — which is exactly the slow, sluggish
-    // feel a low/predictable response time is meant to avoid. A forced
-    // win (score >= SCORE.WIN) always already clears this threshold,
-    // since it's set well below WIN — this is the *softer*,
-    // "confidently ahead, not just technically winning" bar.
+    // feel a low/predictable response time is meant to avoid.
+    // It is only ever applied AFTER the search has looked at least
+    // MIN_DEPTH_BEFORE_EARLY_EXIT moves deep, and only ever ends the
+    // *iterative deepening*, never the comparison of root moves inside one
+    // depth (see searchAtDepth()). Applied any earlier or any looser, it
+    // makes the CPU play the first "fine-looking" move it generates: with
+    // a nearly-connected group almost every quiet move scores above this
+    // bar, so it would shuffle a piece back and forth inside the group
+    // forever — and even walk past a win one step away — because it never
+    // got as far as looking at the winning move.
     // A rough sense of scale: colorScore() is (largest connected group)
     // * GROUP_SIZE_WEIGHT (100) + (adjacent-ally pairs) * ADJACENCY_WEIGHT
-    // (5), and evaluatePosition() is that minus the opponent's own score
-    // — so this threshold corresponds to roughly a 4-piece larger
-    // connected group than the opponent's, with some cohesion bonus on
-    // top. Tune this constant directly if actual play shows it stopping
-    // too eagerly (weak moves accepted) or not eagerly enough (still
-    // burning the full time budget on already-decided positions).
+    // (5) - (gap to loose groups) * PROXIMITY_WEIGHT (15), and
+    // evaluatePosition() is that minus the opponent's own score — so this
+    // threshold corresponds to roughly a 4-piece larger connected group
+    // than the opponent's, with some cohesion bonus on top. Tune this
+    // constant directly if actual play shows it stopping too eagerly
+    // (weak moves accepted) or not eagerly enough (still burning the full
+    // time budget on already-decided positions).
     GOOD_ENOUGH: 450,
   };
 
@@ -405,12 +475,16 @@ const AiStrategies = (() => {
     return stored;
   }
 
-  /** Static value of a color's position: group-size + adjacency-cohesion,
-   *  weighted. Does NOT check for a win — callers check that separately
-   *  so a win can short-circuit the search at any depth, not just depth 0. */
+  /** Static value of a color's position: group-size + adjacency-cohesion
+   *  minus how far its loose groups still are from the main one (see
+   *  analyzeColor()), weighted. Does NOT check for a win — callers check
+   *  that separately so a win can short-circuit the search at any depth,
+   *  not just depth 0. */
   function colorScore(cells, neighborKeys, color) {
-    const { largestGroup, allyAdjacencyPairs } = analyzeColor(cells, neighborKeys, color);
-    return largestGroup * SCORE.GROUP_SIZE_WEIGHT + allyAdjacencyPairs * SCORE.ADJACENCY_WEIGHT;
+    const { largestGroup, allyAdjacencyPairs, looseGap } = analyzeColor(cells, neighborKeys, color);
+    return largestGroup * SCORE.GROUP_SIZE_WEIGHT
+      + allyAdjacencyPairs * SCORE.ADJACENCY_WEIGHT
+      - looseGap * SCORE.PROXIMITY_WEIGHT;
   }
 
   /** Relative evaluation: own score minus the opponent's — positive favors
@@ -648,15 +722,17 @@ const AiStrategies = (() => {
    *  must say so, or a later, larger-window probe could wrongly trust an
    *  incomplete comparison as if every root move had been checked.
    *
-   *  Stops checking the *remaining* root moves early, without finishing
-   *  this depth's full-width comparison, the moment one root move's
-   *  fully-searched score already clears SCORE.GOOD_ENOUGH (see its own
-   *  comment) — the chosen move is provably good, even if not
-   *  provably *the best* among every root option, which is the right
-   *  trade for keeping response time low (see minimaxAlphaBetaID()'s doc
-   *  comment on why depth is normally left uncapped). A genuine forced
-   *  win always clears this same bar first, so no separate check is
-   *  needed for that case specifically.
+   *  Every root move is compared at every depth: the move returned is the
+   *  best of them all, not the first one that looks good enough. The one
+   *  exception is a win in ONE move (score SCORE.WIN - 1) — nothing can
+   *  beat that, so the remaining root moves are skipped. (A forced win
+   *  further away is still compared against the rest: a faster win, if
+   *  there is one, has to win the comparison — and since iterative
+   *  deepening stops at the first depth that finds any win, the winning
+   *  move it returns is the fastest one there is.) An earlier version
+   *  stopped at the first root move to clear SCORE.GOOD_ENOUGH, which
+   *  handed the move to whichever quiet move came first in the ordering —
+   *  see that constant's comment for what that looked like in play.
    *
    *  Choosing among LOST root moves. Once the best root score found is a
    *  proven loss (<= -MATE_THRESHOLD), the move played is picked in two
@@ -733,7 +809,7 @@ const AiStrategies = (() => {
         lostCandidates.push({ move, moveEval, exact: false }); // "might tie" — confirmed below
       }
       if (bestScore > alpha) alpha = bestScore;
-      if (bestScore >= SCORE.GOOD_ENOUGH) { brokeEarly = true; break; } // good enough — see doc comment above
+      if (bestScore >= SCORE.WIN - 1) { brokeEarly = true; break; } // a win in one move can't be beaten — see doc comment above
     }
 
     // Tie-break among equally-lost moves — see "Choosing among LOST root moves".
@@ -787,20 +863,23 @@ const AiStrategies = (() => {
    * Three conditions end the search early, before either the depth cap
    * (if any) or the time budget is actually exhausted:
    *   - SCORE.GOOD_ENOUGH (see its own comment) on the winning side — not
-   *     a proven win, but confidently ahead. Continuing to search (deeper,
-   *     or through the rest of the current depth's root moves — see
-   *     searchAtDepth()) would mostly just spend time budget confirming
-   *     what's already a clearly fine choice.
-   *   - a forced win (score magnitude >= SCORE.WIN, technically covered
-   *     by the GOOD_ENOUGH check above since WIN is always above it) —
-   *     deeper search literally cannot change a proven outcome.
+   *     a proven win, but confidently ahead. Continuing to deepen would
+   *     mostly just spend time budget confirming what's already a clearly
+   *     fine choice. Only once MIN_DEPTH_BEFORE_EARLY_EXIT plies have been
+   *     searched, so the wins that are a move or two away have been
+   *     looked for first — and note that the depth just finished has
+   *     already compared every root move (see searchAtDepth()).
+   *   - a forced win (score >= MATE_THRESHOLD, at any depth) — deeper
+   *     search literally cannot change a proven outcome, and because that
+   *     depth compared every root move, the move returned is the fastest
+   *     win available.
    *   - a *forced loss* (score <= -MATE_THRESHOLD, i.e. the search has
    *     proven every line loses — see MATE_THRESHOLD/toTT/fromTT above):
    *     the CPU still plays the position out (it does not resign — see
    *     script.js's applyCpuResult()), but there is no reason to spend
    *     the rest of the time budget confirming a loss that's already
    *     certain, so this shortens the wait the same way the
-   *     GOOD_ENOUGH break does for a win. Gated on `depthReached >= 3` so
+   *     GOOD_ENOUGH break does for a win. Gated on MIN_DEPTH_BEFORE_EARLY_EXIT so
    *     the search has had a genuine chance to find the *most resistant*
    *     losing line rather than latching onto the first one seen at a
    *     shallow depth — deeper search, when there's time for it, finds a
@@ -874,8 +953,9 @@ const AiStrategies = (() => {
         throw err;
       }
       if (result.move) { best = result; depthReached = depth; }
-      if (best.score >= SCORE.GOOD_ENOUGH) break; // forced win, or just confidently ahead — see doc comment above
-      if (best.score <= -MATE_THRESHOLD && depthReached >= 3) break; // proven forced loss — see doc comment above
+      if (best.score >= MATE_THRESHOLD) break; // forced win — see doc comment above
+      if (best.score >= SCORE.GOOD_ENOUGH && depthReached >= MIN_DEPTH_BEFORE_EARLY_EXIT) break; // confidently ahead — see doc comment above
+      if (best.score <= -MATE_THRESHOLD && depthReached >= MIN_DEPTH_BEFORE_EARLY_EXIT) break; // proven forced loss — see doc comment above
       if (nowMs() > deadline) break;
     }
 
