@@ -130,7 +130,6 @@ const Game = {
   // not persisted across reloads — every fresh visit starts the ladder
   // over from the easiest level, same as difficulty already does.
   classicMode: false, // ?classicMode=true — see applyUrlConfig(); reveals the mode/difficulty icons and disables this whole ladder
-  singleGame: false, // true when the URL itself specified a game setup (mode/radius/pieces/noEnclosure/color/cpuTime/cpuDepth — see applyUrlConfig()): one plain game with those settings, so the ladder is off — no challenge bar, no level changes — without revealing any of the classic controls
   challengeLevelIndex: 0, // index into FeatureConfig.difficulty_levels (config.js)
   challengeMarkerPos: 0, // placeholder — corrected in boot() to challengeWinsForLevel(0), once level 0's own challengeWins (config.js) is actually known
 };
@@ -1483,8 +1482,8 @@ function renderChallengeBar() {
  *  actual winner — called from endGame() (never endGameDraw(): a draw
  *  moves the marker neither way, per the ladder's own "gana el
  *  ordenador"/"gana el humano" rule). No-op outside the default
- *  minimalist mode, outside vscomputer, or when the URL named a specific
- *  game (Game.singleGame) — the ladder doesn't apply at all there.
+ *  minimalist mode or outside vscomputer, where the ladder doesn't apply
+ *  at all.
  *
  *  Which side "won" is read from Game.players[winnerColor].isLocal, not
  *  Game.humanColor — isLocal is what actually tracks a pie-rule color
@@ -1511,7 +1510,7 @@ function renderChallengeBar() {
  *  position, no accent; endGame()'s own scheduleEndedAutoRestart() already
  *  handles starting the next game on its normal short delay either way. */
 function applyChallengeOutcome(winnerColor) {
-  if (Game.classicMode || Game.singleGame || Game.mode !== "vscomputer" || !winnerColor) return;
+  if (Game.classicMode || Game.mode !== "vscomputer" || !winnerColor) return;
 
   const humanWon = !!(Game.players[winnerColor] && Game.players[winnerColor].isLocal);
   Game.challengeMarkerPos += humanWon ? -1 : 1;
@@ -2078,7 +2077,7 @@ function updateSetupVisibility() {
   // neither flag changes mid session) by additionally requiring
   // vscomputer specifically, in case neither flag is set but some other
   // mode still ends up selected.
-  dom.challengeBar.hidden = Game.classicMode || Game.singleGame || Game.showAdvanced || Game.mode !== "vscomputer";
+  dom.challengeBar.hidden = Game.classicMode || Game.showAdvanced || Game.mode !== "vscomputer";
 
   // a guest doesn't control the host's board — visible (fixed position),
   // just inert
@@ -3403,16 +3402,6 @@ dom.downloadBtn.addEventListener("click", () => {
 //
 // Example: ?mode=vscomputer&color=white&radius=4&cpuDepth=4&noEnclosure=true
 //
-// Naming any of mode/radius/pieces/noEnclosure/color/cpuTime/cpuDepth
-// (with a value that's accepted) asks for one specific game rather than
-// the default challenge ladder: it is played with exactly those settings,
-// every setting not named keeping its default, against the computer unless
-// mode= says otherwise, in whichever interface the page would otherwise
-// show (minimalist unless ?showAdvanced=true / ?classicMode=true) — just
-// without the ladder: no challenge bar, and winning or losing never moves
-// the difficulty level. See Game.singleGame. name= and join= don't count:
-// they don't say what game to play.
-//
 // This is also how "Copy link" builds its URL for non-online modes (see
 // buildSetupUrl()) — the round trip is: configure the panel, copy the
 // link, and reopening it reproduces the same setup.
@@ -3452,26 +3441,14 @@ function applyUrlConfig() {
   dom.modeMenuWrap.hidden = !(Game.classicMode || showAdvanced);
   dom.difficultyMenuWrap.hidden = !(Game.classicMode || showAdvanced);
 
-  // Set to true by every parameter below that names part of the game's
-  // setup AND has a usable value — see Game.singleGame and the "web API"
-  // comment above.
-  let setupNamed = false;
-
   const mode = params.get("mode");
   if (["local2p", "online2p", "vscomputer", "computerself"].includes(mode)) {
     Game.mode = mode;
-    setupNamed = true;
-  } else if (!Game.classicMode) {
-    // Minimalist interface: no mode picker to choose one, so the default
-    // is against the computer — a link only gets another mode by naming
-    // it (mode=).
-    Game.mode = "vscomputer";
   }
 
   const radius = parseInt(params.get("radius"), 10);
   const radiusOverridden = Number.isFinite(radius) && radius >= CONFIG.MIN_RADIUS && radius <= CONFIG.MAX_RADIUS;
   if (radiusOverridden) {
-    setupNamed = true;
     dom.radiusRange.value = String(radius);
     dom.radiusValue.textContent = String(radius);
     // Radius actually changed, so pieces' valid range changed with it —
@@ -3494,7 +3471,6 @@ function applyUrlConfig() {
 
   const pieces = parseInt(params.get("pieces"), 10);
   if (Number.isFinite(pieces)) {
-    setupNamed = true;
     const { min, max } = pieceRangeForRadius(Number(dom.radiusRange.value));
     const clamped = Math.min(max, Math.max(min, pieces));
     dom.piecesRange.value = String(clamped);
@@ -3509,27 +3485,21 @@ function applyUrlConfig() {
   if (FeatureConfig.no_enclosure[0] && (noEnclosureParam === "true" || noEnclosureParam === "false")) {
     Game.noEnclosure = noEnclosureParam === "true";
     dom.noEnclosureCheckbox.checked = Game.noEnclosure;
-    setupNamed = true;
   }
 
   const color = params.get("color");
-  if (color === "black" || color === "white") {
-    Game.humanColor = color;
-    setupNamed = true;
-  }
+  if (color === "black" || color === "white") Game.humanColor = color;
 
   const cpuTime = parseInt(params.get("cpuTime"), 10);
   if (Number.isFinite(cpuTime) && cpuTime >= GAME_PARAM_RANGES.cpuTime.min && cpuTime <= GAME_PARAM_RANGES.cpuTime.max) {
     dom.cpuTimeRange.value = String(cpuTime);
     dom.cpuTimeValue.textContent = String(cpuTime);
-    setupNamed = true;
   }
 
   const cpuDepth = parseInt(params.get("cpuDepth"), 10);
   if (Number.isFinite(cpuDepth) && cpuDepth >= GAME_PARAM_RANGES.cpuDepth.min && cpuDepth <= GAME_PARAM_RANGES.cpuDepth.max) {
     dom.cpuDepthRange.value = String(cpuDepth);
     dom.cpuDepthValue.textContent = formatCpuDepthLabel(cpuDepth);
-    setupNamed = true;
   }
 
   const name = (params.get("name") || "").trim().slice(0, 18);
@@ -3546,8 +3516,6 @@ function applyUrlConfig() {
   const joinCode = params.get("join");
   if (joinCode) Game.mode = "online2p";
 
-  Game.singleGame = setupNamed;
-
   return joinCode;
 }
 
@@ -3555,8 +3523,8 @@ function applyUrlConfig() {
  *  "Copy link" outside online2p (which instead copies a room-join link;
  *  see its click handler). */
 function buildSetupUrl() {
-  if (!Game.classicMode && !Game.singleGame) {
-    // Minimalist ladder: no query string at all — the ladder always starts
+  if (!Game.classicMode) {
+    // Minimalist mode: no query string at all — the ladder always starts
     // from the same place (easiest level, vscomputer) for whoever opens
     // it, so there's nothing meaningful to encode. See
     // applyChallengeOutcome() for how the ladder itself progresses.
@@ -3583,13 +3551,10 @@ function boot() {
   resetAllRangeInputs();
   Game.mode = CONFIG.DEFAULT_MODE;
   const joinCode = applyUrlConfig(); // may override mode/radius/pieces/color/cpu params/name from the URL
-  if (!Game.classicMode && !Game.singleGame) {
+  if (!Game.classicMode) {
     // The challenge ladder only makes sense against a computer — force
-    // it, since there's no UI to pick a different one anyway (see
-    // dom.modeMenuWrap being hidden just above). Not when the URL named a
-    // specific game (Game.singleGame): that has no ladder, and its mode
-    // is already resolved in applyUrlConfig() — the computer by default,
-    // another mode only if mode= asked for it.
+    // it regardless of any ?mode= above, since there's no UI to pick a
+    // different one anyway (see dom.modeMenuWrap being hidden just above).
     Game.mode = "vscomputer";
   }
   syncModeButtonsSelection();

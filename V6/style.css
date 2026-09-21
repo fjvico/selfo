@@ -1,0 +1,1388 @@
+/* =================================================================
+   SELFO — futuristic metallic theme
+   ================================================================= */
+
+:root {
+  /* metallic base palette */
+  --bg-deep: #0b0d10;
+  --bg-panel: linear-gradient(180deg, #1b1f24 0%, #14171a 100%);
+  --metal-light: #d7dde2;
+  --metal-mid: #9aa3ab;
+  --metal-dark: #4c5359;
+  --metal-line: #2c3136;
+
+  /* board tones, as specified */
+  --cell-fill: #808080;      /* 50% gray */
+  --cell-fill-hover: #8f8f8f;
+  /* Mirrors config.js's BOARD_COLORS.cellEdge — see the comment there.
+     Kept here too, matching literally, purely so the very first paint
+     (before script.js's applyBoardColors() runs) already shows the right
+     color instead of flashing to it. */
+  --cell-edge: #7b7b7b;
+
+  /* accent (cool cyan, "energy" glow) */
+  --accent: #35e0ff;
+  --accent-dim: #1c8ea6;
+  --accent-glow: rgba(53, 224, 255, 0.55);
+
+  --danger: #ff5c6c;
+  --danger-glow: rgba(255, 92, 108, 0.5);
+  --heart-red: #ff3d54;         /* the support heart while it beats */
+  --heart-red-fill: rgba(255, 61, 84, 0.42);
+  --heart-red-glow: rgba(255, 61, 84, 0.75);
+
+  --start-glow: rgba(110, 255, 150, 0.55); /* green — distinct from the cyan end-of-game flash */
+
+  --piece-black-a: #3a3f45;
+  --piece-black-b: #06070a;
+  --piece-white-a: #ffffff;
+  --piece-white-b: #b9c2c9;
+
+  --font-display: "Orbitron", "Segoe UI", sans-serif;
+  --font-body: "Rajdhani", "Segoe UI", sans-serif;
+
+  --radius-panel: 10px;
+
+  /* Players strip under the board (see .compact-players): the mode icon
+     and the piece-color swatch next to it. Variables so the mobile
+     query at the bottom of this file can enlarge both from one place. */
+  --compact-icon-h: 22px;
+  --compact-swatch: 18px;
+}
+
+* { box-sizing: border-box; }
+
+@font-face {
+  font-family: "Orbitron";
+  src: local("Orbitron");
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: radial-gradient(ellipse at 50% -10%, #1a2024 0%, var(--bg-deep) 55%);
+  color: var(--metal-light);
+  font-family: var(--font-body), sans-serif;
+  overflow: hidden;
+  /* No pull-to-refresh, no overscroll glow/bounce chaining out to the
+     browser, and no swipe-sideways back/forward navigation: a stray
+     downward or sideways drag (easy to do while playing on a phone)
+     must never reload the page or leave the game. This doesn't stop
+     normal scrolling — the mobile layout below still scrolls as usual;
+     it only stops a scroll that has already hit its end from being
+     handed to the browser. Set on both html and body because on mobile
+     (see the max-width: 900px query) body is the actual scroll
+     container, not the viewport. */
+  overscroll-behavior: none;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse at 50% -10%, #1a2024 0%, var(--bg-deep) 55%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+}
+
+/* ---------------------------------------------------------------
+   Top bar
+   --------------------------------------------------------------- */
+.topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+  border-bottom: 1px solid var(--metal-line);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: 2px;
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.brand-hex {
+  color: var(--accent);
+  text-shadow: 0 0 10px var(--accent-glow);
+  font-size: 20px;
+  line-height: 1;
+  /* The ⬢ glyph sits low in its own font's line box relative to the
+     "SELFO" text next to it, even with align-items: center on .brand —
+     nudge it up to actually line up with the text visually. */
+  transform: translateY(-2px);
+}
+.brand-text { color: var(--metal-light); }
+.brand-accent { color: var(--accent); }
+
+.game-id-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------
+   Layout: options | board | setup  (desktop = row)
+   --------------------------------------------------------------- */
+.layout {
+  height: calc(100% - 56px);
+  display: grid;
+  grid-template-columns: 280px 1fr 250px;
+  gap: 14px;
+  padding: 14px;
+}
+/* Mode selection lives in the top bar now, so in the default minimalist
+   setup (local2p, no ?showAdvanced=true) the left setup panel has nothing
+   left to show at all — see updateSetupPanelVisibility() in script.js,
+   which hides the panel and adds this class together, so the grid
+   doesn't keep reserving a column for empty space. */
+.layout.no-setup-panel {
+  grid-template-columns: 1fr 250px;
+}
+/* Minimalist mode (no ?showAdvanced=true) also drops the right-hand
+   options panel entirely (see updateSetupVisibility() in script.js,
+   which toggles .panel-options[hidden] and this class together) — the
+   compact players/swap strip below the board replaces it, so there's no
+   250px column left to reserve either. In practice this always lands
+   together with .no-setup-panel (every setup-panel block is itself
+   showAdvanced-gated), but each combination is covered here in case
+   that ever changes. */
+.layout.no-options-panel {
+  grid-template-columns: 280px 1fr;
+}
+.layout.no-setup-panel.no-options-panel {
+  grid-template-columns: 1fr;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--metal-line);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.panel-board {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px;
+  position: relative;
+}
+
+/* Non-blocking "game over" cue: a brief glow across the board itself
+   instead of a dialog that covers it. Triggered by adding/removing the
+   .flashing class (see script.js's flashBoardEnd()). A second variant,
+   .flashing-start (green instead of cyan), marks the moment a game
+   actually begins — see flashBoardStart(). */
+.board-flash-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  opacity: 0;
+}
+.board-flash-overlay.flashing {
+  animation: boardEndFlash 2.6s ease-out;
+  background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
+}
+.board-flash-overlay.flashing-draw {
+  animation: boardEndFlash 2.6s ease-out;
+  background: radial-gradient(ellipse at center, var(--danger-glow) 0%, transparent 70%);
+}
+.board-flash-overlay.flashing-start {
+  animation: boardEndFlash 0.8s ease-out;
+  background: radial-gradient(ellipse at center, var(--start-glow) 0%, transparent 70%);
+}
+@keyframes boardEndFlash {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Fade-to-black transition between a finished game and the next one.
+   Opacity is driven by toggling .active from script.js (fadeToBlackThenRestart()),
+   which swaps the board's contents at the exact moment the fade-in
+   finishes (via the transitionend event), then removes .active to fade
+   back in on the fresh board — see the CONFIG.BOARD_FADE_MS comment. */
+.board-fade-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  background: #000;
+  opacity: 0;
+  z-index: 5;
+  transition: opacity 450ms ease;
+}
+.board-fade-overlay.active { opacity: 1; }
+
+.board-scroll {
+  width: 100%;
+  /* flex (not a fixed height:100%) so the compact players/swap strip
+     below it (see .compact-players) still gets room to lay out under
+     ?showAdvanced=false — see .panel-board's column flex-direction. */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.board-svg {
+  display: block;
+  /* Board pixel size scales with radius (CONFIG.CELL_SIZE is constant —
+     see script.js), so without this a bigger board would render at its
+     literal larger size instead of shrinking to fit .board-scroll. Since
+     the SVG already carries a matching viewBox (see renderBoard()), this
+     is enough for the browser to scale it down (preserving aspect ratio)
+     to whatever box actually contains it — keeping .board-scroll's own
+     height constant across radii, which in turn keeps .compact-players
+     right after it at a fixed position instead of getting pushed down by
+     a physically taller board. */
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
+/* ---------------------------------------------------------------
+   Minimalist players/swap strip (no ?showAdvanced=true) — replaces
+   the options panel's players box + button stack (see index.html's
+   #compactPlayers and updateCompactBar() in script.js).
+   --------------------------------------------------------------- */
+/* Centered flex row with fixed (not container-width-dependent) gaps
+   between the three groups, so the icons sit close together under
+   the board at the same distance on a wide desktop panel as on a
+   narrow mobile one — rather than the previous 1fr/1fr grid, which
+   pinned them to the *panel's* edges and pulled them far apart on
+   wide screens. The swap button's own box always stays in the flow
+   (see .compact-swap-btn.compact-swap-hidden below) instead of being
+   removed via the [hidden] attribute, so its appearing/disappearing
+   never changes the fixed gap on either side of it. */
+.compact-players {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0 12px;
+}
+.compact-players[hidden] { display: none; }
+.compact-side {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.compact-side-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0 14px;
+  /* Fixed slot width — matches the button's old footprint back when it
+     still showed the "Swap colors" label, so the icon-only button (see
+     .compact-swap-btn below) can be visually smaller without the two
+     player groups on either side drifting inward to fill the freed-up
+     space. The icon just centers within this unchanged-size slot. */
+  width: 120px;
+}
+.compact-swatch {
+  width: var(--compact-swatch); height: var(--compact-swatch); border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid var(--metal-line);
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  /* .compact-side aligns to flex-start (not center) so the icon lines up
+     by its own height, not the taller .compact-icon-col box that also
+     reserves space for the "you" marker underneath it (see below) — this
+     margin re-centers the swatch against just the icon itself:
+     (icon height - swatch size) / 2. */
+  margin-top: calc((var(--compact-icon-h) - var(--compact-swatch)) / 2);
+}
+.compact-mode-icon {
+  /* fixed height, auto width — keeps each glyph (see
+     ModeIcons.buildSideIcon) undistorted instead of stretching to a
+     fixed box */
+  height: var(--compact-icon-h); width: auto;
+  color: var(--metal-mid);
+  flex-shrink: 0;
+  /* the transform part is the android getting back up (see .lost below):
+     quick start, gentle settle. transform-origin only snaps back to the
+     default once that is over (0.5s delay), so the rise pivots about the
+     same corner the fall did instead of jumping mid-motion. */
+  transition: color 0.2s, filter 0.2s,
+              transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              transform-origin 0s linear 0.5s;
+}
+/* The android knows it has lost (Game.cpuLost — see updateCompactBar()):
+   it topples to the left, head pointing left, like a figure that has
+   given up. It pivots about its bottom-left corner (its left foot), so
+   the fall is a real tip-over — a swinging arc that sweeps to the left
+   and ends resting on the same baseline it stood on — rather than a
+   spin in place. Pivoting about the foot alone would land it a whole
+   5h/6 to the left of where it stood; the translateX pulls it back so
+   it ends up only --lost-shift (default h/3) left of its standing
+   position: 5h/6 - h/3 = h/2 of it. The fall accelerates into the floor
+   (ease-in) instead of easing out like a controlled move.
+   Its left end sticks out --lost-shift + h/6 past its standing box; the
+   right-hand icon has the wide swap slot there, while a left-hand icon
+   (computerself) has its swatch only 10px away, so that one gets a
+   smaller shift that leaves ~4px clear of it. */
+.compact-mode-icon.lost {
+  --lost-shift: calc(var(--compact-icon-h) / 3);
+  transform-origin: 0 100%;
+  transform: translateX(calc(var(--compact-icon-h) * 5 / 6 - var(--lost-shift))) rotate(-90deg);
+  transition: color 0.2s, filter 0.2s,
+              transform 0.55s cubic-bezier(0.55, 0.055, 0.675, 0.19),
+              transform-origin 0s;
+}
+.compact-side-left .compact-mode-icon.lost {
+  --lost-shift: calc(6px - var(--compact-icon-h) / 6);
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-mode-icon,
+  .compact-mode-icon.lost { transition: color 0.2s, filter 0.2s; }
+}
+/* Wraps just the icon (not the swatch beside it) so the "this is you"
+   marker below can sit centered under the icon alone, in its own row,
+   without disturbing the swatch+icon's horizontal alignment. */
+.compact-icon-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+/* "Play online" only — identifies which of the two identical-looking
+   person icons is *this browser's* player (host and guest otherwise
+   can't tell each other apart at a glance). A little glowing underline
+   "tab" rather than plain text: reads as "you are here" without adding
+   a word, and doubles as a tiny brand accent rather than a dry UI
+   label. Empty/invisible by default (both sides render the element,
+   see index.html, so its layout space is always reserved and nothing
+   shifts when it turns on) — .shown is added by updateCompactBar() in
+   script.js to exactly one side, only in online2p. */
+.compact-you-mark {
+  display: block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transform: scaleX(0.3);
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+.compact-you-mark.shown {
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  box-shadow: 0 0 6px var(--accent-glow);
+  transform: scaleX(1);
+  opacity: 1;
+}
+/* Turn indicator: icon only (not the swatch/"ficha" next to it, which
+   stays a plain color swatch) — a blue tint + drop-shadow on whichever
+   side's person/tower glyph currently has the move. See
+   updateCompactBar(). */
+.compact-mode-icon.active-turn {
+  color: var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+}
+/* Winner indicator: a blinking halo on the winning side's swatch, and
+   a little celebratory bounce on its icon, both looping until the
+   next game starts (see Game.winner reset in beginSetupPreview()) —
+   no trophy or other icon, just this animated glow/motion. Kept as
+   two separate keyframe sets (glow vs. transform) so they can run at
+   different speeds without interfering with each other. */
+.compact-swatch.winner {
+  animation: compact-winner-halo 1.4s ease-in-out infinite;
+}
+.compact-mode-icon.winner {
+  color: var(--accent);
+  animation: compact-winner-bounce 1.6s ease-in-out infinite;
+}
+@keyframes compact-winner-halo {
+  0%, 100% { border-color: var(--accent-dim); box-shadow: 0 0 6px 1px var(--accent-glow); }
+  50% { border-color: var(--accent); box-shadow: 0 0 16px 4px var(--accent-glow); }
+}
+/* A proper "jump for joy" rather than a gentle bob: a beat of rest, a
+   big hop with a squash-and-stretch takeoff/landing, a smaller second
+   hop, then rest again before repeating — the held rest at 0%/20% and
+   80%/100% is what reads as discrete little jumps instead of continuous
+   swaying. */
+@keyframes compact-winner-bounce {
+  0%, 20%, 100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 4px var(--accent-glow));
+  }
+  28% { transform: translateY(2px) scaleX(1.18) scaleY(0.82); }
+  45% {
+    transform: translateY(-11px) scale(1);
+    filter: drop-shadow(0 0 11px var(--accent-glow));
+  }
+  58% { transform: translateY(1px) scaleX(1.1) scaleY(0.9); }
+  68% {
+    transform: translateY(-5px) scale(1);
+    filter: drop-shadow(0 0 8px var(--accent-glow));
+  }
+  80% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 4px var(--accent-glow)); }
+}
+
+/* Win/loss "challenge ladder" bar — see the HTML comment on #challengeBar
+   and applyChallengeOutcome()/renderChallengeBar() in script.js, which
+   build the segments and position the marker; nothing about the segment
+   count is hardcoded here. A plain divided track (segments alternate
+   subtle shading purely to make individual steps countable at a glance,
+   not to distinguish "sides") with a small diamond marker that slides
+   along it — deliberately understated compared to the winner-halo/bounce
+   above, since this is a persistent, always-visible progress indicator,
+   not a one-off celebration. */
+.challenge-bar {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  /* A bit more side padding than the bar's own edge would otherwise need,
+     specifically so the marker — wider than the track's own rounded-strip
+     visuals, on purpose, so it's easy to see — has room to sit fully
+     inside this padding at either extreme instead of visually crowding
+     the panel's own edge right where it lands most often (a level just
+     changed). */
+  padding: 0 11px;
+}
+.challenge-bar[hidden] { display: none; }
+/* Unclipped, and exactly as wide as .challenge-segments-wrap below —
+   .challenge-marker/.challenge-marker-fx are positioned against *this*
+   element (their nearest positioned ancestor), not the wrap, precisely so
+   they aren't clipped by the wrap's own overflow:hidden (needed there
+   only for the segments' rounded corners) — without this split, the
+   marker was rendering half cut-off right at the two ends, since its own
+   box is wider than an exact 0%/100% track position leaves room for. */
+.challenge-track {
+  position: relative;
+  height: 10px;
+}
+.challenge-segments-wrap {
+  display: flex;
+  height: 8px;
+  margin-top: 1px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--metal-line);
+  background: #14171a;
+}
+.challenge-segment {
+  flex: 1 1 0;
+  height: 100%;
+  border-right: 1px solid var(--metal-line);
+}
+.challenge-segment:last-child { border-right: none; }
+.challenge-segment:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
+.challenge-marker {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 18px;
+  height: 6px;
+  margin-left: -9px;
+  transform: translateY(-50%);
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  border-radius: 3px;
+  transition: left 0.4s ease;
+}
+/* Small "leveled up"/"leveled down" accent, separate from
+   .celebration-overlay's full-screen one for beating the whole ladder —
+   see playLevelChangeAnimation() in script.js, which positions this to
+   match the marker's own `left` and spawns .challenge-fx-piece children
+   into it (styled further down, after .celebration-piece, whose base
+   rules those overrides need to win against). Not nested inside
+   .challenge-marker itself so its rotate() transform doesn't rotate the
+   burst directions along with it. */
+.challenge-marker-fx {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Challenge-complete celebration (beating the hardest level) — a burst of
+   accent-colored particles, no text, no icon shapes tied to any game
+   meaning (see applyChallengeOutcome()/playChallengeCompleteCelebration()
+   in script.js, which generates .celebration-piece elements here with
+   randomized angle/distance/delay so the burst never looks identical
+   twice). Sits on the shared .overlay backdrop but without a card —
+   the particles themselves are the whole content. */
+.celebration-overlay { background: rgba(4, 6, 8, 0.55); }
+.celebration-burst {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.celebration-piece {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  opacity: 0;
+  animation-name: celebration-piece-burst;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+/* Smaller variant used for the in-bar level-up/down accents (see
+   .challenge-marker-fx above and playLevelChangeAnimation() in
+   script.js) — comes after .celebration-piece on purpose, so these
+   width/height overrides win the cascade against it. */
+.challenge-fx-piece {
+  width: 4px;
+  height: 4px;
+}
+/* "Leveled down" variant: muted/dim instead of accent-glowing.
+   playLevelChangeAnimation() also biases these particles' motion toward
+   drifting downward rather than radiating outward — the combination is
+   what reads as deflating/sad rather than celebratory, reusing
+   celebration-piece-burst's same keyframe with very different
+   --celebration-dx/dy/rot values rather than a whole second animation. */
+.challenge-fx-piece.sad {
+  background: var(--metal-mid);
+  box-shadow: none;
+}
+@keyframes celebration-piece-burst {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(0deg) scale(0.4); }
+  12% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform:
+      translate(calc(-50% + var(--celebration-dx)), calc(-50% + var(--celebration-dy)))
+      rotate(var(--celebration-rot))
+      scale(1);
+  }
+}
+
+.compact-swap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Icon-only, no label — padding shrunk just enough to offset the
+     larger icon below (17px vs. the original 13px) so the button's own
+     outer box stays the same overall size, just with a bigger, more
+     legible pair of arrows inside it. */
+  padding: 4px;
+}
+/* Replaces the [hidden] attribute for this one button: visibility
+   (not display) so the button keeps its layout box — see the comment
+   on .compact-players above for why that matters — while still being
+   untabbable/unclickable when the pie-rule window isn't open. */
+.compact-swap-btn.compact-swap-inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------
+   Options panel
+   --------------------------------------------------------------- */
+.players-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #3a4046;
+  border: 1px solid var(--metal-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.player-row.active-turn,
+.player-row.winner {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.player-swatch {
+  width: 16px; height: 16px; border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid var(--metal-line);
+}
+.swatch-black {
+  background: radial-gradient(circle at 35% 30%, var(--piece-black-a), var(--piece-black-b));
+  border: 1px solid var(--metal-mid);
+}
+.swatch-white { background: radial-gradient(circle at 35% 30%, var(--piece-white-a), var(--piece-white-b)); }
+.player-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-name[contenteditable="true"] {
+  cursor: text;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-bottom: 1px dashed var(--accent-dim);
+}
+.player-name[contenteditable="true"]:hover {
+  background: rgba(53, 224, 255, 0.08);
+}
+.player-name[contenteditable="true"]:focus {
+  outline: none;
+  background: rgba(53, 224, 255, 0.12);
+  border-bottom-color: var(--accent);
+}
+.edit-icon {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--metal-mid);
+  flex-shrink: 0;
+  cursor: pointer;
+  display: inline-block;
+  transform: scaleX(-1);
+}
+.edit-icon[hidden] { display: none; }
+.edit-icon:hover { color: var(--accent); }
+.player-you { font-size: 11px; color: var(--accent); }
+.player-badge {
+  font-family: var(--font-display), sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #04222a;
+  background: var(--accent);
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+.player-badge:empty { display: none; }
+.player-badge.badge-icon {
+  background: none;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+/* Draw badge: red instead of the default accent (blue/cyan), so a draw
+   reads visually distinct from a win at a glance. */
+.player-badge.badge-draw {
+  background: var(--danger);
+  color: #330006;
+}
+
+.btn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.message-box {
+  font-size: 13px;
+  color: var(--metal-mid);
+  min-height: 40px;
+  line-height: 1.4;
+}
+
+/* CPU search log (?showAdvanced=true, vscomputer/computerself only — see
+   updateSetupVisibility()/logCpuSearch() in script.js). Styled like a
+   little terminal/log tail: monospace, dark inset well, fixed height
+   that scrolls rather than pushing the rest of the panel around as
+   entries pile up over a long game. */
+.cpu-log-block { margin-bottom: 16px; }
+.cpu-log {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #0a0d10;
+  border: 1px solid var(--metal-line);
+  border-radius: 8px;
+  padding: 8px;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.cpu-log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.cpu-log-swatch {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--metal-line);
+}
+.cpu-log-text { color: var(--metal-light); white-space: nowrap; }
+
+/* Shared "halo" hover glow — originally only on the support link, now
+   also used by the mode-menu toggle and the share button (see index.html)
+   so all three read as the same family of icon actions in the top bar. */
+.icon-halo:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Support heart — every so often it turns red and beats like a pulse
+   (script.js's SupportHeart adds/removes .beating at random times and sets
+   --beat-period / --beat-peak per episode, so no two look quite alike).
+   Red on its own color, not the link's, so hovering the chip (cyan halo)
+   doesn't wash the heart out mid-beat. The fill is transparent-red rather
+   than `none` so it can fade in: `none` can't be transitioned. */
+#supportLink .icon-wire {
+  fill: rgba(255, 61, 84, 0);
+  transition: color 0.35s ease, fill 0.35s ease;
+}
+#supportLink .icon-wire.beating {
+  color: var(--heart-red);
+  fill: var(--heart-red-fill);
+  animation: support-heartbeat var(--beat-period, 0.9s) ease-in-out infinite;
+}
+/* lub-dub: a strong beat, a short rest, a weaker second beat, a longer
+   rest. The glow swells with each beat. */
+@keyframes support-heartbeat {
+  0%, 56%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(255, 61, 84, 0));
+  }
+  14% {
+    transform: scale(var(--beat-peak, 1.3));
+    filter: drop-shadow(0 0 3px var(--heart-red-glow));
+  }
+  28% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(255, 61, 84, 0));
+  }
+  42% {
+    transform: scale(calc(1 + (var(--beat-peak, 1.3) - 1) * 0.6));
+    filter: drop-shadow(0 0 2px var(--heart-red-glow));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* still turns red for the episode, just without the pulsing */
+  #supportLink .icon-wire.beating { animation: none; }
+}
+
+/* ---------------------------------------------------------------
+   Buttons
+   --------------------------------------------------------------- */
+.btn {
+  font-family: var(--font-body), sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--metal-line);
+  color: var(--metal-light);
+  background: linear-gradient(180deg, #3a4046 0%, #23272b 100%);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+  transition: transform 0.08s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.15); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+
+.btn-metal-accent {
+  color: #04222a;
+  background: linear-gradient(180deg, #6df0ff 0%, var(--accent) 100%);
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 14px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.btn-danger {
+  color: #2a0508;
+  background: linear-gradient(180deg, #ff8b96 0%, var(--danger) 100%);
+  border-color: #a33641;
+  box-shadow: 0 0 10px var(--danger-glow);
+}
+.btn-metal-sm {
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.chip-btn {
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 5px 9px;
+  border-radius: 14px;
+  border: 1px solid var(--metal-line);
+  background: #1c2024;
+  color: var(--metal-mid);
+  cursor: pointer;
+}
+.chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+.chip-btn.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Fixed square box (not sized from padding+icon) so all four topbar
+     icon buttons (support, mode, difficulty, share) end up exactly the
+     same size regardless of how big or "inky" each one's own SVG is —
+     see the icon-specific width/height on each <svg> in index.html for
+     why those differ while this stays constant. */
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* The gauge/speedometer glyph's ink (arc + needle) sits in the lower
+   half of its own 24x24 viewBox, so at the same box size it reads
+   smaller and lower than the other topbar icons (mode's grid, share's
+   nodes, the heart) — nudged up a couple px so it looks centered like
+   they do. */
+.difficulty-toggle-icon { transform: translateY(-2px); }
+
+/* wireframe icons: stroke only, no fill, inherit color from the palette */
+.icon-wire {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  display: block;
+}
+
+.share-wrap { position: relative; display: inline-flex; }
+.share-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  background: var(--bg-panel);
+  border: 1px solid var(--metal-line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  padding: 6px;
+  gap: 2px;
+}
+.share-menu[hidden] { display: none; }
+.share-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--metal-light);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.share-menu-item:hover { background: rgba(53, 224, 255, 0.1); color: var(--accent); }
+
+/* ---------------------------------------------------------------
+   Setup panel
+   --------------------------------------------------------------- */
+.setup-block { margin-bottom: 18px; }
+
+.setup-label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: var(--metal-mid);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.value-pill {
+  display: inline-block;
+  background: #0e1114;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+/* Mode selector: a single toggle button opens this vertical dropdown of
+   icon-only mode buttons (title shown as a native tooltip on hover, same
+   as before — this only changes the container layout, .mode-btn itself
+   is untouched since .color-btn below shares that same base class). */
+.mode-menu-wrap { position: relative; display: inline-block; }
+.mode-menu-wrap[hidden] { display: none; }
+.mode-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+  border: 1px solid var(--metal-line);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+  z-index: 20;
+}
+.mode-menu[hidden] { display: none; }
+.mode-btn {
+  font-family: var(--font-body), sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--metal-light);
+  background: linear-gradient(180deg, #2c3238 0%, #1a1e22 100%);
+  border: 1px solid var(--metal-line);
+  border-radius: 8px;
+  padding: 12px 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.mode-icon { height: 19px; width: auto; }
+.mode-btn small { font-weight: 400; color: var(--metal-mid); }
+.mode-btn:hover:not(:disabled) { border-color: var(--accent-dim); box-shadow: 0 0 10px var(--accent-glow); }
+.mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
+.mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Difficulty picker: same dropdown chrome as .mode-menu right next to
+   it (reused directly, just column layout + centered content instead
+   of a row of cards), holding one continuous vertical range slider
+   (#difficultyRange, see initDifficultyControl()/applyDifficultyLevel()
+   in script.js) rather than a button per level — so it looks and works
+   the same regardless of how many entries FeatureConfig.difficulty_levels
+   (config.js) ends up with. "Hard"/"Easy" text labels mark the two ends;
+   the actual r/f values behind each step are never shown anywhere here.
+   (.difficulty-range itself is styled further down, right after
+   .range-input, so its overrides of .range-input's width/margin win —
+   see the comment there.) */
+.difficulty-menu {
+  align-items: center;
+  /* No gap from .mode-menu's default top: calc(100% + 8px) — that gap is
+     a real dead zone the pointer briefly leaves both the button and this
+     panel while crossing, which fires the mouseleave the whole group
+     closes on (see dom.difficultyMenuWrap's listener in script.js). Sits
+     flush against the button instead, with the same visual breathing
+     room recreated as top padding (hoverable, part of this element),
+     so the pointer never actually leaves the group while moving from
+     one to the other. */
+  top: 100%;
+  padding: 18px 10px 12px;
+}
+.difficulty-end-icon {
+  color: var(--metal-mid);
+  flex-shrink: 0;
+}
+.difficulty-end-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  /* Firefox (notably on Android) keeps its own native button chrome —
+     a light/white background and border — unless appearance is reset
+     explicitly; background:transparent/border:none alone (below) isn't
+     enough there, even though it is in Chrome. */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: inherit;
+  cursor: pointer;
+}
+.difficulty-end-btn:hover:not(:disabled) { background: rgba(53, 224, 255, 0.1); }
+.difficulty-end-btn:hover:not(:disabled) .difficulty-end-icon { color: var(--accent); }
+.difficulty-end-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.difficulty-range-track {
+  position: relative;
+  width: 28px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
+.join-code-wrap { display: flex; gap: 8px; margin-top: 6px; }
+.join-code-wrap[hidden] { display: none; }
+.online-status { font-size: 12px; color: var(--metal-mid); margin-top: 8px; min-height: 18px; }
+.online-status.ok { color: var(--accent); }
+.online-status.err { color: var(--danger); }
+
+.text-input {
+  flex: 1;
+  background: #0e1114;
+  border: 1px solid var(--metal-line);
+  border-radius: 6px;
+  color: var(--metal-light);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: "Courier New", monospace;
+}
+.text-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+
+.range-input {
+  width: 100%;
+  accent-color: var(--accent);
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+/* Standard rotated-<input type=range> vertical-slider technique: the
+   input keeps its normal horizontal layout box (100px x its native
+   thickness) in the flow and is only rotated visually, so the
+   flex-centered .difficulty-range-track (above) ends up centering it
+   correctly with no extra offset math. Comes after .range-input, whose
+   base rules it's overriding here (width/margin), so it wins the
+   cascade despite equal selector specificity. */
+.difficulty-range {
+  width: 160px;
+  margin: 0;
+  transform: rotate(-90deg);
+}
+.difficulty-range:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.cpu-params {
+  border: 1px dashed var(--metal-line);
+  border-radius: 8px;
+  padding: 10px 10px 0 10px;
+  margin-top: 6px;
+}
+.cpu-params legend {
+  font-size: 11px;
+  color: var(--metal-mid);
+  letter-spacing: 1px;
+  padding: 0 6px;
+}
+.cpu-params:disabled, .cpu-params[disabled] { opacity: 0.4; }
+
+/* ---------------------------------------------------------------
+   Board cells / pieces (SVG)
+   --------------------------------------------------------------- */
+/* Sits behind .hex-cell, same gray, no stroke — see renderBoard() for how
+   its size is computed (minimal enclosing hexagon + a touch of padding).
+   It only shows through the small notches along the board's outer edge,
+   making the whole silhouette read as one clean hexagon; a light blur
+   just softens that outer edge instead of leaving it razor-sharp. */
+.board-bg-hex { fill: var(--cell-fill); filter: blur(2.5px); }
+
+.hex-cell {
+  fill: var(--cell-fill);
+  stroke: var(--cell-edge);
+  stroke-width: 0.5;
+  transition: fill 0.15s ease;
+}
+.hex-cell.selectable { cursor: pointer; }
+.hex-cell.selectable:hover { fill: var(--cell-fill-hover); }
+.hex-cell.selected {
+  stroke: var(--accent);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+.hex-cell.move-target {
+  fill: #8f9598; /* a touch lighter than the normal cell fill; edges stay untouched */
+}
+.hex-cell.last-move {
+  stroke: rgba(255, 208, 96, 0.65);
+  stroke-width: 2;
+}
+.piece { cursor: grab; }
+.piece.draggable { cursor: grab; }
+.piece.dragging { cursor: grabbing; opacity: 0.85; }
+.piece-black { fill: url(#pieceBlackGrad); stroke: #000; stroke-width: 1; }
+.piece-white { fill: url(#pieceWhiteGrad); stroke: #7c848a; stroke-width: 1; }
+.piece.own-piece { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
+.piece.selected-piece { filter: drop-shadow(0 0 8px var(--accent-glow)); }
+/* Red halo marking a trapped piece at the end of a mutual-enclosure
+   draw — a glow on the piece itself now, rather than tinting the cell
+   underneath it (see Game.enclosedCells / applyHighlights() /
+   endGameDraw()). Stays applied for as long as the finished board is on
+   screen, not tied to the shorter end-of-game flash timing at all. */
+.piece.enclosed-piece { filter: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
+/* Blue halo marking the winning color's pieces once the game ends (see
+   Game.winner / applyHighlights()) — stays until the next game starts
+   (Game.winner is reset in beginSetupPreview()). Doubled drop-shadow
+   (same trick as .enclosed-piece above) for a visibly stronger glow
+   than the single-shadow .selected-piece/.own-piece treatments. */
+.piece.winning-piece { filter: drop-shadow(0 0 7px var(--accent-glow)) drop-shadow(0 0 7px var(--accent-glow)); }
+
+/* ---------------------------------------------------------------
+   Overlays (winner announcement, first-run onboarding, help panel)
+   --------------------------------------------------------------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 8, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(3px);
+}
+.overlay[hidden] { display: none; }
+.overlay-card {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent-dim);
+  box-shadow: 0 0 40px var(--accent-glow);
+  border-radius: 14px;
+  padding: 32px 40px;
+  text-align: center;
+  min-width: 280px;
+}
+.overlay-card h2 {
+  font-family: var(--font-display), sans-serif;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin: 0 0 10px 0;
+}
+.overlay-card p { color: var(--metal-light); margin: 0 0 20px 0; }
+.onboarding-sub {
+  font-size: 13px;
+  color: var(--metal-mid);
+  line-height: 1.5;
+  max-width: 340px;
+}
+.onboarding-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--metal-mid);
+  margin-bottom: 18px;
+  cursor: pointer;
+}
+.onboarding-check input { accent-color: var(--accent); cursor: pointer; }
+
+/* "?" help panel: reuses .overlay/.overlay-card wholesale (see above),
+   just left-aligned and scrollable instead of the short, centered
+   onboarding/winner cards — this one can hold a param-by-param list of
+   arbitrary length (see URL_PARAMS in config.js / buildHelpParamsList()
+   in script.js) plus the current game's CPU sliders. */
+.overlay-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--metal-mid);
+  cursor: pointer;
+}
+.overlay-close-btn:hover { color: var(--accent); background: rgba(53, 224, 255, 0.1); }
+.help-card {
+  text-align: left;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 32px 32px 24px;
+}
+.help-intro {
+  font-size: 13px;
+  color: var(--metal-mid);
+  line-height: 1.6;
+}
+.help-url-example {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #0e1114;
+  border: 1px solid var(--metal-line);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  word-break: break-all;
+}
+.help-params-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.help-param-row { display: flex; flex-direction: column; gap: 2px; }
+.help-param-name {
+  align-self: flex-start;
+  background: #0e1114;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.help-param-desc { font-size: 12.5px; color: var(--metal-light); line-height: 1.5; }
+.help-cpu-params {
+  margin-top: 6px;
+  margin-bottom: 0;
+  border-style: solid;
+}
+
+.setup-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: var(--metal-mid);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.setup-check input { accent-color: var(--accent); cursor: pointer; }
+
+/* ---------------------------------------------------------------
+   Responsive: mobile layout — setup on top, board middle, options bottom
+   --------------------------------------------------------------- */
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+
+  /* Bigger players strip on phones: the fixed desktop sizes (22px icon,
+     18px swatch) read as tiny next to a board that fills the screen. */
+  :root {
+    --compact-icon-h: 31px;
+    --compact-swatch: 25px;
+  }
+
+  .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px; }
+  .topbar-left { gap: 10px; flex-wrap: wrap; row-gap: 6px; }
+  .game-id-wrap { gap: 6px; }
+  .chip-btn { padding: 4px 7px; font-size: 9px; letter-spacing: 0.5px; }
+
+  .layout,
+  .layout.no-setup-panel,
+  .layout.no-options-panel,
+  .layout.no-setup-panel.no-options-panel {
+    /* Each of these (one or two classes) is more specific than the
+       plain `.layout` rule above and would otherwise keep winning here
+       (desktop's row-of-columns grid), even inside this mobile query,
+       whenever the setup and/or options panel is hidden — which, for
+       the options panel, is every non-?showAdvanced session. Repeating
+       every combination with the same specificity, later in the source,
+       is what actually forces mobile's single-column stack in those
+       (very common) cases. Without this, mobile got squeezed into a
+       multi-column grid wider than the screen — Chrome overflowed it
+       (board visible but other panels shoved off to the side), Firefox
+       collapsed the board's 1fr track to ~0 and showed nothing. */
+    grid-template-columns: 1fr;
+    /* The board panel gets the 1fr row so it stretches to fill whatever
+       vertical space the setup/options panels (auto-sized, and usually
+       hidden entirely in the default minimalist mode) don't need — see
+       .panel-board's explicit grid-row below for why this alone isn't
+       enough to guarantee it lands in *this* row. */
+    grid-template-rows: auto 1fr auto;
+    height: auto;
+    min-height: calc(100% - 56px);
+    /* Desktop's 14px was eating a chunk of an already-narrow phone
+       screen on every side; down to a minimal edge margin so the board
+       (see .panel-board's own horizontal padding below) gets as much of
+       the screen's width as it reasonably can. */
+    padding: 6px 4px;
+    gap: 8px;
+  }
+
+  /* Explicit grid-row (rather than relying on source order + the 1fr
+     track being "whichever row is left") so .panel-board always lands
+     in the middle, 1fr row even when panel-setup and/or panel-options
+     are hidden — which, in the default minimalist mode (no
+     ?showAdvanced=true), is the usual case. Without this, an
+     auto-placed .panel-board would slide into row 1 (an "auto" track)
+     whenever panel-setup isn't there ahead of it, and the 1fr row would
+     sit empty at the bottom instead of the board panel using it. */
+  .panel-setup { order: 1; grid-row: 1; }
+  .panel-board { order: 2; grid-row: 2; }
+  .panel-options { order: 3; grid-row: 3; }
+
+  /* Fills the full 1fr row (see grid-template-rows above) instead of a
+     fixed 60vh guess, so the panel's gray background actually reaches
+     the bottom of the screen instead of leaving a blank strip below it.
+     justify-content: space-evenly then shares out whatever vertical
+     room that leaves between the panel's three stacked children (board,
+     compact players strip, challenge/progress bar) proportionally —
+     board-scroll, compactPlayers and challengeBar aren't flex-grown
+     (see .board-scroll below), so this space becomes visible gaps
+     rather than being swallowed by one of them stretching to fill it:
+     one gap above the board (pushing it down off the panel's top edge),
+     one between the board and the icon strip, and a third — since it's
+     the last gap before the panel's bottom edge, plus the icon strip's
+     own margin below (see .compact-players below) — between the icon
+     strip and the progress bar, which is what actually pushes the bar
+     down away from the icons rather than sitting right under them.
+     Horizontal padding stays minimal (not desktop's 10px each side) so
+     the board itself spans essentially the full screen width, per the
+     same reasoning as .layout's padding above. */
+  .panel-board {
+    height: 100%;
+    justify-content: space-evenly;
+    padding: 10px 4px;
+  }
+  /* Desktop's flex:1 1 auto (see .board-scroll's own rule) would absorb
+     all of .panel-board's leftover vertical space itself, leaving none
+     for justify-content: space-evenly above to share out as gaps —
+     shrink-to-content instead, sized purely by the board's own width
+     (100%, see .board-svg below) and its aspect ratio. */
+  .board-scroll { flex: 0 0 auto; }
+  /* .compact-players sits directly under the board; giving it its own
+     bottom margin (on top of the space-evenly gap after it) is what
+     actually separates it from the progress bar below more than from
+     the board above it — otherwise both gaps would come out equal. */
+  .compact-players { margin-bottom: 10px; }
+
+  .panel { max-height: none; }
+
+  /* .board-svg's desktop rule (max-width/max-height with width/height:
+     auto) only ever lets the SVG shrink to fit — its intrinsic pixel
+     size is fixed by the board's radius (see renderBoard()'s explicit
+     width/height attributes), so a small radius (the default is 2)
+     renders far narrower than the phone screen, leaving empty space on
+     both sides instead of filling it. Switching to width:100% makes it
+     scale UP to the full width of .board-scroll too; height:auto keeps
+     the board's own aspect ratio (from its viewBox) intact, and
+     max-height:100% is kept as a safety net for landscape phones,
+     where .panel-board's available height could be narrower than the
+     screen is wide — there, the browser falls back to sizing by
+     max-height instead, so the board still can't overflow
+     .board-scroll vertically. */
+  .board-svg {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+}
