@@ -20,6 +20,28 @@ const BOARD_COLORS = {
 };
 
 /**
+ * TOUCH_LONG_PRESS_MS
+ * --------------------
+ * How long, in milliseconds, a finger has to stay pressed still on a
+ * piece before the drag is "armed" — the piece is considered picked up
+ * and ready to move, and page panning locks so the rest of the gesture
+ * doesn't scroll the page instead. Read once at boot into script.js's
+ * own `CONFIG.TOUCH_LONG_PRESS_MS` (see its own comment there for the
+ * exact setTimeout call this feeds), so this is the one place to tune
+ * it without touching script.js.
+ *
+ * Lower = picking up a piece feels snappier, but a quick tap-and-drag
+ * meant as a page scroll is more likely to get mistaken for arming a
+ * piece. Higher = safer against that, but the player has to hold a
+ * piece noticeably longer before it responds.
+ *
+ * Only affects touch (finger) interaction. Desktop mouse dwell-to-click
+ * timing is a separate constant, `CONFIG.MOUSE_HOVER_MOVE_MS` in
+ * script.js, not moved here since it isn't a touch-hold time.
+ */
+const TOUCH_LONG_PRESS_MS = 100;
+
+/**
  * GAME_PARAM_RANGES
  * -----------------
  * Min/max/default for every numeric game parameter that actually has a
