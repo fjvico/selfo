@@ -3212,30 +3212,59 @@ function copyTextToClipboard(text) {
   });
 }
 
+/** True when the OS/browser-native share sheet (navigator.share()) can be
+ *  trusted to actually deliver our text alongside the link, rather than
+ *  silently dropping it. Two browsers are known NOT to, so this is a
+ *  deny-list rather than an allow-list — everything else (Chrome/Samsung
+ *  Internet on Android, desktop browsers that support navigator.share(),
+ *  etc.) is assumed reliable:
+ *    - Firefox (desktop or Android) shows its own custom share sheet
+ *      instead of the OS one, which re-parses the shared text, detects
+ *      the URL inside it, and forwards *only* that URL to the target
+ *      app, dropping the emoji right beside it.
+ *    - iOS hands every browser's navigator.share() call off to the same
+ *      OS share sheet, which is documented to prefer the "url" field
+ *      over "text" for some targets — WhatsApp among them — dropping
+ *      the text field entirely even when both are given as one combined
+ *      string (https://bugs.webkit.org/show_bug.cgi?id=203221). Since
+ *      it's the OS sheet at fault, this applies to every browser on
+ *      iOS, not just Safari.
+ *  Both are UA-sniffed rather than feature-detected because there's no
+ *  capability to test for here — navigator.share() itself exists and
+ *  "succeeds" in both cases, it just hands the target app the wrong
+ *  string. */
+function nativeShareIsReliable() {
+  const ua = navigator.userAgent || "";
+  if (/Firefox/i.test(ua)) return false;
+  if (/iPad|iPhone|iPod/.test(ua)) return false;
+  return true;
+}
+
 dom.shareLinkBtn.addEventListener("click", () => {
   const url = currentShareUrl();
   // No wording, on purpose — just the emoji invite (👋🎲) ahead of the
   // link, same for every mode (online invite or a shared setup alike).
   const emoji = "👋🎲";
 
-  // This always opens our own menu now, rather than trying
-  // navigator.share() first (the OS/browser-native share sheet) and
-  // falling back to this menu only when unsupported or cancelled, as
-  // it used to. navigator.share() hands the title/text/url fields over
-  // to whichever share target the person picks, and re-combining them
-  // into the actual shared message turns out to be unreliable in ways
-  // outside this app's control: Safari on iOS is documented to prefer
-  // the "url" field over "text" for some targets — WhatsApp among them
-  // — dropping the text entirely even when both are given as one
-  // combined string (https://bugs.webkit.org/show_bug.cgi?id=203221);
-  // Firefox for Android shows its own custom share sheet instead of
-  // the OS one, which re-parses the shared text, detects the URL
-  // inside it, and forwards *only* that URL to the target app,
-  // dropping the emoji right beside it — same symptom, unrelated cause,
-  // and equally out of reach here. Building the WhatsApp/Telegram/email
-  // links ourselves (below) means this app controls the exact string
-  // each one receives, so the emoji can't get silently dropped no
-  // matter which browser or OS is sharing it.
+  // Native share sheet first where it's known reliable (see
+  // nativeShareIsReliable()) — this is what actually shows the OS-level
+  // "share to any installed app" bottom sheet, including a direct
+  // WhatsApp hand-off, instead of this app's own four-option menu.
+  // Falls back to that in-app menu (openShareMenu(), below) on a
+  // known-unreliable browser, when navigator.share() itself isn't
+  // available, or when the native sheet fails for any reason other than
+  // the person just dismissing it (AbortError). Only the combined `text`
+  // field is passed to navigator.share() — no separate `url` field — so
+  // there's nothing for a share target to prefer one field over the
+  // other even on a browser this app otherwise trusts.
+  if (navigator.share && nativeShareIsReliable()) {
+    navigator.share({ text: `${emoji} ${url}` }).catch((err) => {
+      if (err && err.name === "AbortError") return; // person closed the sheet without picking anything
+      openShareMenu(url, emoji);
+    });
+    return;
+  }
+
   openShareMenu(url, emoji);
 });
 

@@ -11,7 +11,7 @@ plugs into. It's not a player-facing document.
 | `index.html` | Markup + `<script>` load order. `config.js` loads **first**, before `script.js` and the supporting modules below, so everything else can read `FeatureConfig`/`URL_PARAMS`/`HELP_URL_EXAMPLE` at top-level. |
 | `style.css`  | All styling. |
 | `config.js`  | **The one file meant to be edited per-deployment.** Game-rule toggles, the difficulty presets, and the URL-parameter documentation shown in the in-app help panel. See below. |
-| `script.js`  | Application logic: game state, UI wiring, board rendering, online play (PeerJS), URL config parsing. `CONFIG` (a different object from `FeatureConfig` — see [CONFIG vs FeatureConfig](#config-vs-featureconfig)) lives here, near the top. |
+| `script.js`  | Application logic: game state, UI wiring, board rendering, online play (PeerJS), URL config parsing, plus two small self-contained UI modules (`ModeIcons` — the person/android glyphs composed into each mode button's SVG icon; `SupportHeart` — the top-bar heart's randomized pulse, see [UI flourishes](#ui-flourishes)). `CONFIG` (a different object from `FeatureConfig` — see [CONFIG vs FeatureConfig](#config-vs-featureconfig)) lives here, near the top. |
 | `hexgeometry.js`, `boardinit.js`, `moverules.js`, `fitness.js`, `aistrategies.js` | Supporting modules loaded after `config.js`/before `script.js`. Judging by what `script.js` calls on them: `HexGeometry` (hex-grid math — axial↔pixel, corners, cell keys), `BoardInit` (board/cell/neighbor-map construction), `MoveRules` (legal-move and enclosure logic), `Fitness` (position evaluation), `AiStrategies` (CPU move selection). Consult each file directly for its actual implementation — this README doesn't cover their internals. |
 
 ## `config.js`
@@ -90,7 +90,7 @@ The presets behind the vertical "Difficulty" slider in the top bar (between
 the mode selector and Share). Each entry:
 
 ```js
-{ label, r, f, cpuTime, cpuDepth, noEnclosure, cpuStrategy }
+{ label, r, f, cpuTime, cpuDepth, noEnclosure, cpuStrategy, challengeWins }
 ```
 
 | Key | Required | Meaning |
@@ -102,6 +102,7 @@ the mode selector and Share). Each entry:
 | `cpuDepth` | no | Computer's fixed ply cap. 0 (default) means no cap — see [CPU search performance](#cpudepth-is-time-governed-by-default-not-a-second-dial) below for why. 1–5 sets an explicit cap. |
 | `noEnclosure` | no | Boolean. Unlike `cpuTime`/`cpuDepth`, omitting this **resets** it to the `no_enclosure` default rather than leaving it as-is — see below. Still subject to `no_enclosure` above existing as a rule at all — this can't turn it on if the `show_in_ui` chain means the rule isn't in play. |
 | `cpuStrategy` | no | Name of an `AiStrategies.strategies` entry (`aistrategies.js`) — see [CPU search performance](#cpu-search-performance-aistrategiesjs) below. Same override-if-present behavior as `cpuTime`/`cpuDepth`. |
+| `challengeWins` | **yes** — the one required field besides `label`/`r`/`f` | Only meaningful in the default minimalist win/loss "challenge ladder" (see [The default minimalist mode](#the-default-minimalist-mode-winloss-challenge-ladder) below): net wins over the computer needed at this level before moving up (or net losses before moving down). Also doubles that level's progress-bar segment count. Every shipped level sets this explicitly; a level that omits it falls back to `3` in `script.js` (`challengeWinsForLevel()`) purely as a defensive fallback, not a value meant to be relied on. |
 
 **`cpuTime`/`cpuDepth` are override-if-present, not override-always.**
 Omitting one of them leaves whatever was already in effect (session
@@ -299,7 +300,7 @@ encode.
 
 `minimaxAlphaBetaID()` is a fairly standard alpha-beta minimax with
 iterative deepening (see its own doc comment for the algorithm itself).
-Four optimizations are already in place; two more are identified but
+Several optimizations are already in place; two more are identified but
 deliberately not attempted yet (see "Not done" for why). Both lists exist
 so a future pass doesn't have to re-derive them from scratch.
 
@@ -325,20 +326,49 @@ so a future pass doesn't have to re-derive them from scratch.
   `connState[color]` instead of re-scanning. Still an O(n) BFS per move
   (not O(1) incremental — see "Not done" below), just one of them instead
   of two.
-- **Transposition table.** A `Map` keyed by an incrementally-maintained
-  Zobrist hash (see `zobristFor()`/`computeHash()`/`hashState` in
-  `makeMove()`) of `{ depth, score, move, flag }`, standard fail-soft
-  alpha-beta semantics (`TT_EXACT`/`TT_LOWER`/`TT_UPPER`). Two effects:
-  a deep-enough cached entry can resolve or tighten a node immediately,
-  and — even when it can't — that position's previously-best move gets
-  tried first (see the next point). Deliberately scoped fresh to one
-  `minimaxAlphaBetaID()` call (a new `Map` every time, not a module-level
-  one reused across separate CPU moves): the board, the no-enclosure rule,
-  and even which color is thinking can all differ between moves, and a
-  stale cross-call entry being subtly wrong is a worse failure mode than
-  rebuilding the table once per move. It *is* shared across all of one
-  call's iterative-deepening depths, which is exactly where most of the
-  value is — a shallow depth's results inform the next depth immediately.
+- **Transposition table.** A fixed-size, two-slot-per-bucket array
+  (`TT_SIZE = 2^16` buckets, `ttCreate()`/`ttGet()`/`ttSet()`) instead of
+  an unbounded `Map` — bucket index is the low 16 bits of an
+  incrementally-maintained 32-bit Zobrist hash (see
+  `zobristFor()`/`computeHash()`/`hashState` in `makeMove()`), and each
+  bucket keeps two entries: slot `[0]` under depth-preferred replacement
+  (only overwritten by an entry at least as deep, so a shallow probe
+  can't evict a hard-won deep result within the same iterative-deepening
+  call) and slot `[1]` always-replace, so a busy bucket still tracks
+  whatever was seen most recently. Every stored entry (`{ depth, score,
+  move, flag, key }`) carries its own full 32-bit hash and `ttGet()`
+  checks it before trusting the entry, so two different positions
+  landing in the same bucket — a certainty at this table size, not a rare
+  accident — are never confused for one another; correctness comes from
+  that full-key check, not from the bucket index alone. Standard
+  fail-soft alpha-beta semantics (`TT_EXACT`/`TT_LOWER`/`TT_UPPER`). Two
+  effects: a deep-enough cached entry can resolve or tighten a node
+  immediately, and — even when it can't — that position's previously-best
+  move gets tried first (see the next point). Deliberately allocated
+  fresh (`ttCreate()`) for one `minimaxAlphaBetaID()` call, not a
+  module-level table reused across separate CPU moves: the board, the
+  no-enclosure rule, and even which color is thinking can all differ
+  between moves, and a stale cross-call entry being subtly wrong is a
+  worse failure mode than rebuilding the table once per move. It *is*
+  shared across all of one call's iterative-deepening depths, which is
+  exactly where most of the value is — a shallow depth's results inform
+  the next depth immediately.
+- **Mate-distance-aware TT scores, and a same-quality tie-break among
+  lost moves.** A win/loss score is stored as `SCORE.WIN`/`-SCORE.WIN`
+  offset by plies-from-root, so a faster forced win (or a slower, less
+  bad forced loss) always outscores the alternative — but that framing
+  is only safe to *store* in the TT once converted to plies-from-*node*
+  (`toTT()`/`fromTT()`, gated by `MATE_THRESHOLD`), since transposition
+  can reach the same position at a different depth from the root. On top
+  of that, once the best root score is a proven loss, `searchAtDepth()`
+  doesn't just take whichever losing move the search order happened to
+  try first: among moves that lose equally late, it picks the one
+  leaving the CPU the best static position, confirming ties (up to
+  `MAX_TIE_CONFIRMATIONS`) with a cheap narrowed-window re-search. This
+  is what makes a lost CPU look like it's still playing for a mistake
+  instead of handing the game over, at effectively no extra time cost —
+  see `searchAtDepth()`'s "Choosing among LOST root moves" comment for
+  the full mechanics.
 - **Move ordering seeded from the transposition table** (`putMoveFirst()`)
   rather than only the static `allyContactAfterMove` heuristic — a
   position's previously-best move (from a shallower depth, or from
@@ -348,7 +378,9 @@ so a future pass doesn't have to re-derive them from scratch.
   "remember the root's last-best-move" mechanism, since the TT already
   captures this more generally (every node, not just the root).
 
-All four were verified against the pre-optimization algorithm
+The core search optimizations (make/unmake, the halved connectivity check,
+and the transposition table with its move ordering) were verified against
+the pre-optimization algorithm
 (reconstructed/kept standalone — see `minimaxAlphaBetaCloning` — and run
 side-by-side on identical synthetic boards across several board sizes,
 piece layouts, depths, and both colors): **identical scores** at every
@@ -455,6 +487,34 @@ order by `resolveCpuStrategy()` in `script.js`:
 `computerself_strategies` wins over a level's `cpuStrategy` when both
 would apply (i.e. in computerself with both set) — it's the more specific,
 more deliberately-a-comparison setting of the two.
+
+## UI flourishes
+
+Two small, self-contained modules near the top of `script.js`, independent
+of the game-state code around them:
+
+- **`ModeIcons`** builds the SVG icon for each of the 4 mode buttons (and
+  the matching split-apart pair used in the minimalist players strip) from
+  two hand-drawn glyph functions, `person(x)` and `android(x)` — same
+  16-unit bounding box, same vertical extent, so any mode's two glyphs read
+  as a matched pair. Which two glyphs a mode uses, and how far apart they
+  sit, is entirely table-driven (`COMPOSITION`/`GAP`); `online2p` is the
+  one special case, drawing its right-hand person smaller and lifted up
+  (`ONLINE_FAR_PERSON`) so the two read as "apart" rather than a wider
+  `local2p`. The android glyph is also what lies down (head to the left)
+  in the compact players bar while `Game.cpuLost[color]` is true — see the
+  `cpuLost` field's own comment in `script.js` and `updateCompactBar()`.
+- **`SupportHeart`** makes the top-bar support-link heart turn red and
+  pulse like a heartbeat at unpredictable intervals — random rest length
+  (skewed short, via `randLow()`), random episode length, and a random
+  tempo/peak-scale per episode (`REST_MS`/`BEAT_MS`/`PERIOD_S`/`PEAK`) —
+  so there's no rhythm to learn. The animation itself lives in
+  `style.css`'s `.beating` class, driven by the `--beat-period`/`--beat-peak`
+  custom properties this module sets; `endBeating()` waits for the current
+  beat cycle to finish rather than cutting it off mid-pulse (with a
+  `setTimeout` backstop for when no animation is actually running, e.g.
+  reduced-motion or a backgrounded tab). Exposes `SupportHeart.beatNow()`
+  for triggering an episode immediately from the console.
 
 ### Not done
 
