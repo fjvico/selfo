@@ -3300,7 +3300,21 @@ dom.shareMenuEmail.addEventListener("click", (ev) => {
   closeShareMenu();
 });
 dom.shareMenuWhatsApp.addEventListener("click", closeShareMenu);
-dom.shareMenuTelegram.addEventListener("click", closeShareMenu);
+// t.me/share/url is Telegram's own *web* redirector page, not a direct
+// app deep link: it has to actually run in the browser and detect/launch
+// the Telegram app itself via its own script. On Firefox for Android, a
+// plain target="_blank" anchor click opens that page in a background tab
+// that never gets rendered/focused, so its redirect script never runs and
+// the person is just left with an inert new tab instead of the app
+// opening — same class of problem as the mailto: one just above, so it
+// gets the same fix: force it into an explicit, focused window.open()
+// call from a real user-gesture click handler instead of trusting the
+// anchor's own target attribute.
+dom.shareMenuTelegram.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  window.open(dom.shareMenuTelegram.href, "_blank", "noopener");
+  closeShareMenu();
+});
 
 // clicking anywhere outside the menu (or its button) closes it
 document.addEventListener("click", (ev) => {
