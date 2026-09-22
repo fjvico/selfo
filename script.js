@@ -56,8 +56,8 @@ const CONFIG = {
   // move after it (by either side) uses the real cpuDepth.
   CPU_FIRST_MOVE_DEPTH: 1,
   TOUCH_LONG_PRESS_MS: TOUCH_LONG_PRESS_MS, // config.js's TOUCH_LONG_PRESS_MS is now the single source of truth — read here once at load, same pattern as MIN_RADIUS/etc above
-  TOUCH_LONG_PRESS_TOLERANCE_PX: 10, // touch: movement beyond this before arming cancels the drag and lets the page scroll instead
-  MOUSE_HOVER_MOVE_MS: 550,  // desktop: dwell time hovering a piece/cell before it counts as a click
+  TOUCH_LONG_PRESS_TOLERANCE_PX: TOUCH_LONG_PRESS_TOLERANCE_PX, // config.js's TOUCH_LONG_PRESS_TOLERANCE_PX — same pattern
+  MOUSE_HOVER_MOVE_MS: MOUSE_HOVER_MOVE_MS, // config.js's MOUSE_HOVER_MOVE_MS — same pattern
   DEFAULT_MODE: "vscomputer",   // a mode (and its board preview) is always active — there's no empty/unselected state
   // Whether a move that would trap an opponent piece — directly boxing it
   // in, or sealing it inside a pocket of empty cells and/or other

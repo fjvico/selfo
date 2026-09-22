@@ -39,7 +39,37 @@ const BOARD_COLORS = {
  * timing is a separate constant, `CONFIG.MOUSE_HOVER_MOVE_MS` in
  * script.js, not moved here since it isn't a touch-hold time.
  */
-const TOUCH_LONG_PRESS_MS = 100;
+const TOUCH_LONG_PRESS_MS = 220;
+
+/**
+ * TOUCH_LONG_PRESS_TOLERANCE_PX
+ * ------------------------------
+ * Companion to TOUCH_LONG_PRESS_MS above: how far, in pixels, a finger
+ * may drift while the long-press timer is running before that drift
+ * cancels the arming attempt and lets the page scroll/pan instead — i.e.
+ * how "still" the hold has to stay to count as picking up a piece rather
+ * than the start of a scroll gesture. Read once at boot into script.js's
+ * `CONFIG.TOUCH_LONG_PRESS_TOLERANCE_PX`.
+ *
+ * Lower = stricter (must hold almost perfectly still), so a piece is
+ * less likely to get armed by accident during a scroll, but a slightly
+ * shaky hold on a genuine pick-up attempt gets cancelled more easily.
+ * Higher = more forgiving of a shaky hold, but a slow scroll gesture is
+ * more likely to get mistaken for arming a piece.
+ */
+const TOUCH_LONG_PRESS_TOLERANCE_PX = 10;
+
+/**
+ * MOUSE_HOVER_MOVE_MS
+ * --------------------
+ * Desktop-mouse equivalent of TOUCH_LONG_PRESS_MS: how long, in
+ * milliseconds, the pointer has to dwell over a piece or cell before
+ * that counts as a click/selection, rather than just passing over it on
+ * the way somewhere else. Read once at boot into script.js's own
+ * `CONFIG.MOUSE_HOVER_MOVE_MS`. Only affects mouse/desktop interaction —
+ * see TOUCH_LONG_PRESS_MS above for the touch (finger) equivalent.
+ */
+const MOUSE_HOVER_MOVE_MS = 550;
 
 /**
  * GAME_PARAM_RANGES
