@@ -69,7 +69,7 @@ const TOUCH_LONG_PRESS_TOLERANCE_PX = 10;
  * `CONFIG.MOUSE_HOVER_MOVE_MS`. Only affects mouse/desktop interaction —
  * see TOUCH_LONG_PRESS_MS above for the touch (finger) equivalent.
  */
-const MOUSE_HOVER_MOVE_MS = 550;
+const MOUSE_HOVER_MOVE_MS = 200;
 
 /**
  * GAME_PARAM_RANGES
