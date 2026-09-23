@@ -39,7 +39,7 @@ const BOARD_COLORS = {
  * timing is a separate constant, `CONFIG.MOUSE_HOVER_MOVE_MS` in
  * script.js, not moved here since it isn't a touch-hold time.
  */
-const TOUCH_LONG_PRESS_MS = 10;
+const TOUCH_LONG_PRESS_MS = 220;
 
 /**
  * TOUCH_LONG_PRESS_TOLERANCE_PX
@@ -69,7 +69,7 @@ const TOUCH_LONG_PRESS_TOLERANCE_PX = 10;
  * `CONFIG.MOUSE_HOVER_MOVE_MS`. Only affects mouse/desktop interaction —
  * see TOUCH_LONG_PRESS_MS above for the touch (finger) equivalent.
  */
-const MOUSE_HOVER_MOVE_MS = 50;
+const MOUSE_HOVER_MOVE_MS = 550;
 
 /**
  * GAME_PARAM_RANGES
