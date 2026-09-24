@@ -457,40 +457,11 @@
   <!-- peerjs cdn: only needed for online mode, loaded lazily -->
   <script src="config.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <!-- Motor en WebAssembly: wasmengine.js va SIEMPRE antes que hexgeometry/moverules/aistrategies. -->
-  <script src="wasmengine.js"></script>
-  <script>
-    (function () {
-      // Mismo orden que antes. wasmengine.js define WasmEngine; hexgeometry.js,
-      // moverules.js y aistrategies.js dependen de él.
-      var scripts = ["hexgeometry.js", "fitness.js", "boardinit.js", "moverules.js", "aistrategies.js", "script.js"];
-
-      // Caso normal (Firefox, Safari, Chrome en worker...): el wasm ya está instanciado,
-      // así que se cargan como etiquetas <script> normales, exactamente igual que antes.
-      if (WasmEngine.isReady) {
-        scripts.forEach(function (s) { document.write('<script src="' + s + '"><\/script>'); });
-        return;
-      }
-
-      // Chrome en el hilo principal: la instanciación es asíncrona. Se espera a que
-      // esté lista y se cargan los scripts EN ORDEN, para que nada llame al motor antes de tiempo.
-      WasmEngine.ready.then(function () {
-        var i = 0;
-        (function next() {
-          if (i < scripts.length) {
-            var el = document.createElement("script");
-            el.src = scripts[i++];
-            el.onload = next;
-            el.onerror = function () { console.error("No se pudo cargar " + el.src); };
-            document.body.appendChild(el);
-          } else {
-            // Si script.js espera DOMContentLoaded/load y esos eventos ya pasaron, se reemiten.
-            if (document.readyState !== "loading") document.dispatchEvent(new Event("DOMContentLoaded", { bubbles: true }));
-            if (document.readyState === "complete") window.dispatchEvent(new Event("load"));
-          }
-        })();
-      });
-    })();
-  </script>
+  <script src="hexgeometry.js"></script>
+  <script src="fitness.js"></script>
+  <script src="boardinit.js"></script>
+  <script src="moverules.js"></script>
+  <script src="aistrategies.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

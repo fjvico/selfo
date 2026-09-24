@@ -1,27 +1,25 @@
 "use strict";
 
 /**
- * HexGeometry
- * -----------
- * Pure math helpers for a flat-top hexagonal grid arranged as a big
- * hexagon-shaped board, addressed with axial coordinates (q, r).
+ * HexGeometry (WebAssembly-backed)
+ * --------------------------------
+ * Drop-in replacement for the original hexgeometry.js — same names, same
+ * signatures, same results. The numeric core (cube distance, cell counts and
+ * generation, axial<->pixel, corner points, cube rounding, ring/angle sort)
+ * runs in WebAssembly (src/engine.c). What stays in JS is only what is
+ * inherently a JS-object concern: the DIRECTIONS table, key() (returns a
+ * string), and neighbors() (six additions producing objects).
  *
- * Note on orientation: individual cells are flat-top (flat edge up/down,
- * pointed left/right). Tiling flat-top cells into an axial-range hexagon
- * of this shape makes the *board's* overall silhouette come out pointy-top
- * (narrower left-to-right than top-to-bottom) — the two are always
- * rotated 30° from each other for this kind of "hexagon of hexagons"
- * layout. Pointy-top board = flat-top cells; that's the trade this file
- * makes, chosen because a narrower board is friendlier on mobile widths.
+ * Contract note: axial coordinates and radius are INTEGERS (as everywhere in
+ * the game); they cross the boundary as i32. Everything geometric in
+ * floating point (pixels, corners, rounding) is IEEE-754 f64 and, because
+ * cos/sin/atan2 are the very same Math.* functions imported from the host,
+ * bit-for-bit identical to the JS version.
  *
- * "radius" here means "maximum axial/cube distance from the center":
- *   radius = 0  -> only the center cell (1 cell)
- *   radius = 1  -> center + 1 ring around it (7 cells)
- *   radius = 2  -> center + 2 rings (19 cells)
+ * Needs wasmengine.js to have been loaded first.
  */
 const HexGeometry = (() => {
 
-  // the 6 axial directions, in a fixed clockwise order starting at "east"
   const DIRECTIONS = [
     { q: 1, r: 0 },
     { q: 1, r: -1 },
@@ -31,10 +29,10 @@ const HexGeometry = (() => {
     { q: 0, r: 1 },
   ];
 
+  const ex = () => WasmEngine.ex();
+
   function cubeDistance(q1, r1, q2, r2) {
-    const s1 = -q1 - r1;
-    const s2 = -q2 - r2;
-    return Math.max(Math.abs(q1 - q2), Math.abs(r1 - r2), Math.abs(s1 - s2));
+    return ex().hg_cube_distance(q1, r1, q2, r2);
   }
 
   function key(q, r) {
@@ -43,20 +41,19 @@ const HexGeometry = (() => {
 
   /** Total number of cells for a given radius (max distance from center). */
   function totalCells(radius) {
-    return 3 * radius * (radius + 1) + 1;
+    return ex().hg_total_cells(radius);
   }
 
   /** Generate every axial coordinate within the given radius. */
   function generateCells(radius) {
-    const cells = [];
-    const maxDist = radius;
-    for (let q = -maxDist; q <= maxDist; q++) {
-      const rMin = Math.max(-maxDist, -q - maxDist);
-      const rMax = Math.min(maxDist, -q + maxDist);
-      for (let r = rMin; r <= rMax; r++) {
-        cells.push({ q, r });
-      }
+    const e = ex();
+    const n = e.hg_generate_cells(radius);
+    if (n < 0) {
+      if (radius < 0) return [];
+      throw new Error(`HexGeometry.generateCells: radius ${radius} is too large for the wasm engine.`);
     }
+    const cells = new Array(n);
+    for (let i = 0; i < n; i++) cells[i] = { q: e.hg_cell_q(i), r: e.hg_cell_r(i) };
     return cells;
   }
 
@@ -67,50 +64,44 @@ const HexGeometry = (() => {
 
   /** Axial -> pixel center, flat-top orientation. */
   function axialToPixel(q, r, size) {
-    const x = size * 1.5 * q;
-    const y = size * Math.sqrt(3) * (r + q / 2);
-    return { x, y };
+    const e = ex();
+    e.hg_axial_to_pixel(q, r, size);
+    return { x: e.hg_out_x(), y: e.hg_out_y() };
   }
 
   /** Corner points of a flat-top hexagon centered at (cx, cy). */
   function hexCorners(cx, cy, size) {
-    const pts = [];
-    for (let i = 0; i < 6; i++) {
-      const angleDeg = 60 * i;
-      const angleRad = (Math.PI / 180) * angleDeg;
-      pts.push([cx + size * Math.cos(angleRad), cy + size * Math.sin(angleRad)]);
-    }
+    const e = ex();
+    e.hg_hex_corners(cx, cy, size);
+    const pts = new Array(6);
+    for (let i = 0; i < 6; i++) pts[i] = [e.hg_corner_x(i), e.hg_corner_y(i)];
     return pts;
   }
 
   /** Round fractional cube coordinates (x+y+z=0) to the nearest valid hex cell. */
   function cubeRound(x, y, z) {
-    let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
-    const dx = Math.abs(rx - x), dy = Math.abs(ry - y), dz = Math.abs(rz - z);
-    if (dx > dy && dx > dz) rx = -ry - rz;
-    else if (dy > dz) ry = -rx - rz;
-    else rz = -rx - ry;
-    return { q: rx, r: rz };
+    const e = ex();
+    e.hg_cube_round(x, y, z);
+    return { q: e.hg_out_x(), r: e.hg_out_y() };
   }
 
   /** Pixel -> axial (nearest cell), flat-top orientation, inverse of axialToPixel. */
   function pixelToAxial(x, y, size) {
-    const qFrac = (2 / 3) * (x / size);
-    const rFrac = ((-1 / 3) * (x / size)) + ((Math.sqrt(3) / 3) * (y / size));
-    const sFrac = -qFrac - rFrac; // cube y-component (since q + r + s = 0)
-    return cubeRound(qFrac, sFrac, rFrac);
+    const e = ex();
+    e.hg_pixel_to_axial(x, y, size);
+    return { q: e.hg_out_x(), r: e.hg_out_y() };
   }
 
-  /** Sort cells by ring (distance from center) then by angle, for deterministic layouts. */
+  /** Sort cells by ring (distance from center) then by angle, for deterministic layouts.
+   *  Returns a new array holding the SAME cell objects (identity preserved), like the original. */
   function sortByRingThenAngle(cells) {
-    return [...cells].sort((a, b) => {
-      const da = cubeDistance(0, 0, a.q, a.r);
-      const db = cubeDistance(0, 0, b.q, b.r);
-      if (da !== db) return da - db;
-      const angA = Math.atan2(a.r, a.q);
-      const angB = Math.atan2(b.r, b.q);
-      return angA - angB;
-    });
+    const e = ex();
+    const n = cells.length;
+    for (let i = 0; i < n; i++) e.hg_sort_set(i, cells[i].q, cells[i].r);
+    e.hg_sort_run(n);
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) out[i] = cells[e.hg_sort_get(i)];
+    return out;
   }
 
   return {
