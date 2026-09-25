@@ -1,0 +1,49 @@
+{
+ "index": 6908,
+ "radius": 2,
+ "pieces": 2,
+ "enclosureAllowed": true,
+ "options": {
+  "depth": 3,
+  "time": 5,
+  "firstMoveDepth": 1,
+  "strategy": null
+ },
+ "initial": {
+  "black": [
+   "-1,2",
+   "0,-1"
+  ],
+  "white": [
+   "-1,-1",
+   "0,0"
+  ]
+ },
+ "result": {
+  "winner": "white",
+  "reason": "connection",
+  "plies": 2
+ },
+ "moves": [
+  {
+   "ply": 1,
+   "color": "black",
+   "from": "-1,2",
+   "to": "0,1",
+   "depthReached": 1,
+   "nodesEvaluated": 8,
+   "score": 0,
+   "ms": 0.1
+  },
+  {
+   "ply": 2,
+   "color": "white",
+   "from": "-1,-1",
+   "to": "-1,0",
+   "depthReached": 1,
+   "nodesEvaluated": 1,
+   "score": 9999,
+   "ms": 0.1
+  }
+ ]
+}
