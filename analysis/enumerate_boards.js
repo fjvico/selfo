@@ -285,6 +285,7 @@ function main() {
   let seen = 0, played = 0, alreadyDone = 0;
   const tally = { black: 0, white: 0, draws: 0, reasons: {} };
   const tAll = performance.now();
+  let lastT = tAll, lastPlayed = 0, lastAlreadyDone = 0;
 
   for (const board of boards) {
     if (seen < opts.skip) { seen++; continue; }
@@ -312,8 +313,13 @@ function main() {
     tally.reasons[result.reason] = (tally.reasons[result.reason] || 0) + 1;
 
     if (played % 20 === 0 || played === 1) {
-      const secs = (performance.now() - tAll) / 1000;
-      console.log(`  ${played} partidas jugadas (${idx}ª inicialización válida) — ${secs.toFixed(1)}s, ${(secs / played).toFixed(2)}s/partida`);
+      const now = performance.now();
+      const totalSecs = (now - tAll) / 1000;
+      const dSecs = (now - lastT) / 1000, dPlayed = played - lastPlayed, dNew = dPlayed - (alreadyDone - lastAlreadyDone);
+      const rate = dNew > 0 ? `${(dSecs / dNew).toFixed(2)}s/partida` : "todas ya existían (reanudación, sin jugar)";
+      console.log(`  ${played} partidas procesadas (${idx}ª inicialización válida) — ${totalSecs.toFixed(1)}s totales; ` +
+        `últimas ${dPlayed}: ${dNew} nuevas, ${dPlayed - dNew} ya existían — ${rate}`);
+      lastT = now; lastPlayed = played; lastAlreadyDone = alreadyDone;
     }
   }
 
