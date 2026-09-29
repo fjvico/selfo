@@ -458,8 +458,20 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative; 
   
   padding: 4px;
+}
+
+.compact-swap-hint {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  fill: none;
+  stroke: var(--metal-mid);
+  stroke-width: 1.4;
+  background: #1c2024;
+  border-radius: 4px;
 }
 
 .compact-swap-btn.compact-swap-inactive {
