@@ -458,20 +458,39 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  position: relative; 
   
   padding: 4px;
 }
 
-.compact-swap-hint {
+.compact-side-center { position: relative; }
+
+.compact-swap-hint-row {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  fill: none;
-  stroke: var(--metal-mid);
-  stroke-width: 1.4;
-  background: #1c2024;
-  border-radius: 4px;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+}
+.compact-swap-hint-row[hidden] { display: none; }
+.swap-hint-key {
+  width: 9px;
+  height: 9px;
+  border: 1.3px solid var(--metal-mid);
+  border-radius: 2px;
+  background: transparent;
+}
+.swap-hint-key-space {
+  width: 22px;
+  border-color: transparent;
+  animation: swapHintBlink 1.1s ease-in-out infinite;
+}
+@keyframes swapHintBlink {
+  0%, 49% { background: #ffffff; border-color: #ffffff; }
+  50%, 100% { background: #05060a; border-color: var(--metal-mid); }
 }
 
 .compact-swap-btn.compact-swap-inactive {
