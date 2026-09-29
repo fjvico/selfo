@@ -1,7 +1,9 @@
+<!-- (c) fjvico. Selfo, build ae69ee28. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Selfo &mdash; connection board game</title>
 <link rel="stylesheet" href="style.css" />
@@ -9,7 +11,6 @@
 <link rel="icon" type="image/png" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 
-<!-- Open Graph: powers the preview shown by WhatsApp, Telegram, etc. -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Selfo" />
 <meta property="og:title" content="Selfo &mdash; connection board game" />
@@ -26,9 +27,6 @@
 </head>
 <body>
 
-  <!-- ============================================================ -->
-  <!-- TOP BAR : title + persistent game id                          -->
-  <!-- ============================================================ -->
   <header class="topbar">
     <div class="topbar-left">
       <div class="brand">
@@ -41,13 +39,7 @@
         </svg>
       </a>
     </div>
-    <!-- Mode + difficulty icons start hidden — the default experience is
-         the minimalist win/loss challenge ladder (see #challengeBar
-         below and script.js's applyChallengeOutcome()), which picks the
-         mode (always vscomputer) and difficulty (via wins/losses, not a
-         manual picker) for the player. ?classicMode=true (see
-         applyUrlConfig()) reveals both again and turns the ladder off,
-         restoring the old manually-driven UI. -->
+    
     <div class="game-id-wrap">
         <div class="mode-menu-wrap" id="modeMenuWrap" hidden>
           <button id="modeMenuToggle" class="chip-btn icon-btn icon-halo" title="Mode" aria-label="Mode" aria-haspopup="true" aria-expanded="false">
@@ -81,12 +73,7 @@
               <circle cx="12" cy="19" r="1.3" fill="currentColor" stroke="none"/>
             </svg>
           </button>
-          <!-- min/max set by initDifficultyControl() in script.js from
-               FeatureConfig.difficulty_levels.length (config.js) — a
-               continuous vertical slider rather than one button per
-               level, so it reads the same regardless of how many levels
-               that list ends up holding. Tick marks (one per level) come
-               from #difficultyTicks, also built there. -->
+          
           <div class="mode-menu difficulty-menu" id="difficultyMenu" hidden>
             <button type="button" id="difficultyIncBtn" class="difficulty-end-btn" title="Increase difficulty" aria-label="Increase difficulty">
               <svg class="icon-wire difficulty-end-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
@@ -152,32 +139,10 @@
     </div>
   </header>
 
-  <!-- ============================================================ -->
-  <!-- MAIN LAYOUT : setup (left/top) | board (center) | options (right/bottom) -->
-  <!-- ============================================================ -->
-  <!-- Starts pre-collapsed to match the actual default runtime state
-       (CONFIG.DEFAULT_MODE, showAdvanced=false — see updateSetupVisibility()/
-       updateSetupPanelVisibility() in script.js, which reassert this same
-       state once they run anyway). Without this, the page briefly paints
-       the full 3-column layout with both side panels (and, worse, all
-       their showAdvanced=true-only content in panel-options) fully
-       visible before those scripts get a chance to hide them — especially
-       noticeable here since a blocking, network-loaded script
-       (peerjs.min.js) sits ahead of script.js and can delay that first
-       JS pass by a very visible amount. -->
   <main class="layout no-setup-panel no-options-panel">
 
-    <!-- ---------------- LEFT / TOP : setup ------------------------- -->
     <section class="panel panel-setup" aria-label="Game setup" hidden>
 
-
-      <!-- mode selection now lives in the top bar (see #modeMenuToggle /
-           #modeMenu) — nothing left to render here for it. -->
-
-
-      <!-- below here: whatever applies to the current mode -->
-
-      <!-- online connection block (create / join) -->
       <div class="setup-block" id="onlineBlock" hidden>
         <label class="setup-label">Connection</label>
         <div class="online-choice">
@@ -191,18 +156,8 @@
         <div id="onlineStatus" class="online-status"></div>
       </div>
 
-      <!-- CPU search parameters (vs computer / computer vs computer only).
-           The actual <fieldset id="cpuParamsBlock"> lives in the DOM only
-           once — script.js's placeCpuParamsBlock() moves it here when
-           ?showAdvanced=true (so it sits alongside the rest of the
-           advanced controls, as expected) and into #helpOverlay's
-           cpuParamsHelpSlot otherwise (so it's still reachable via the
-           "?" panel in the default minimalist UI, where adjusting it
-           never resets the game in progress — see the cpuTimeRange/
-           cpuDepthRange "input" listeners). -->
       <div id="cpuParamsSetupSlot"></div>
 
-      <!-- color choice (vs computer only) — last, so it's the final choice before play -->
       <div class="setup-block" id="colorChoiceBlock" hidden>
         <label class="setup-label">Play as</label>
         <div class="mode-grid">
@@ -212,7 +167,6 @@
       </div>
     </section>
 
-    <!-- ---------------- CENTER : the board ------------------------- -->
     <section class="panel panel-board" aria-label="Board">
       <div id="boardScroll" class="board-scroll">
         <svg id="boardSvg" class="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -220,20 +174,12 @@
       <div id="boardFlash" class="board-flash-overlay" aria-hidden="true"></div>
       <div id="boardFadeOverlay" class="board-fade-overlay" aria-hidden="true"></div>
 
-      <!-- Minimalist (non-?showAdvanced) stand-in for the players box +
-           button stack: just the two piece colors, the mode's own icon
-           split in half beside each, and (only right before white's
-           first move — the pie-rule window) a swap control. No names, no
-           edit pencil, no draw/resign/download — see updateCompactBar()
-           in script.js, which is what actually shows/hides this. -->
       <div id="compactPlayers" class="compact-players" hidden>
         <div class="compact-side compact-side-left">
           <span id="compactSwatchLeft" class="compact-swatch"></span>
           <div class="compact-icon-col">
             <svg id="compactIconLeft" class="icon-wire compact-mode-icon" viewBox="0 0 16 24" aria-hidden="true" focusable="false"></svg>
-            <!-- "Play online" only — marks which icon is *this* screen's
-                 own player, since host/guest otherwise look identical
-                 from either side. See updateCompactBar() in script.js. -->
+            
             <span id="compactYouMarkLeft" class="compact-you-mark" aria-hidden="true"></span>
           </div>
         </div>
@@ -254,47 +200,18 @@
         </div>
       </div>
 
-      <!-- Win/loss "challenge ladder" bar — the default minimalist
-           experience's difficulty progression, replacing the manual mode/
-           difficulty icons (see the topbar comment near #modeMenuWrap).
-           2 x that level's required challengeWins (config.js) segments;
-           the marker starts centered and steps toward whichever side just
-           won a game. Reaching an end triggers a level change — see
-           applyChallengeOutcome() in script.js, which is also what builds
-           the segments and positions the marker; nothing here is
-           hardcoded to a specific challenge size. Hidden outside the
-           default minimalist mode (?classicMode=true) and whenever the
-           mode isn't vscomputer. -->
       <div id="challengeBar" class="challenge-bar" hidden aria-hidden="true">
         <div class="challenge-track">
-          <!-- Segments get their own overflow:hidden wrapper (for the
-               rounded corners) separate from .challenge-track itself,
-               which stays unclipped — otherwise the marker (below, sized
-               bigger than the track for visibility) gets half cut off
-               right at the two ends, exactly where it lands most often
-               (a level just changed). -->
+          
           <div class="challenge-segments-wrap">
             <div id="challengeSegments" class="challenge-segments"></div>
           </div>
           <div id="challengeMarker" class="challenge-marker"></div>
-          <!-- Small, no-text "leveled up"/"leveled down" accent — separate
-               from #celebrationOverlay's full-screen one for beating the
-               whole ladder. Positioned by script.js to match the
-               marker's own left offset right before each burst, since it
-               deliberately isn't nested inside #challengeMarker (that
-               element's own rotate() transform would rotate these
-               particles' burst directions along with it). See
-               playLevelChangeAnimation() in script.js. -->
+          
           <div id="challengeMarkerFx" class="challenge-marker-fx" aria-hidden="true"></div>
         </div>
       </div>
 
-      <!-- Commercial builds only (BUILD_MODE, config.js) — shown by
-           showCommercialPurchasePrompt() (script.js) once the one-time
-           demo game at the first locked level has been played. Purely
-           informational: dismissible, and never blocks play at whatever
-           levels this build already unlocks. Hidden entirely, including
-           from the accessibility tree, in "development". -->
       <div id="commercialPurchaseBanner" class="commercial-purchase-banner" hidden>
         <span id="commercialPurchaseText" class="commercial-purchase-text">That was a peek at a higher level — the full game unlocks all of them.</span>
         <a id="commercialPurchaseLink" class="commercial-purchase-link" target="_blank" rel="noopener">Get the full game</a>
@@ -302,7 +219,6 @@
       </div>
     </section>
 
-    <!-- ---------------- RIGHT / BOTTOM : game options --------------- -->
     <section class="panel panel-options" aria-label="Game options" hidden>
 
       <div class="players-box">
@@ -332,76 +248,43 @@
         <button id="downloadBtn" class="btn btn-metal-accent" disabled>Download</button>
       </div>
 
-
       <div id="messageBox" class="message-box" aria-live="polite" hidden></div>
     </section>
 
   </main>
 
-
-  <!-- ============================================================ -->
-  <!-- CHALLENGE-COMPLETE CELEBRATION (beating the hardest level)     -->
-  <!-- No text on purpose, matching the rest of this minimalist mode  -->
-  <!-- — see applyChallengeOutcome()/playChallengeCompleteCelebration() -->
-  <!-- in script.js, which generates the burst's particles and clears -->
-  <!-- this overlay again once the celebration finishes.              -->
-  <!-- ============================================================ -->
   <div id="celebrationOverlay" class="overlay celebration-overlay" hidden aria-hidden="true">
     <div id="celebrationBurst" class="celebration-burst"></div>
   </div>
 
-  <!-- ============================================================ -->
-  <!-- FIRST-RUN ONBOARDING OVERLAY                                  -->
-  <!-- ============================================================ -->
   <div id="onboardingOverlay" class="overlay" hidden>
     <div class="overlay-card">
-      <h2>Welcome to Selfo</h2>
-      <p class="onboarding-sub">Connect all of your pieces into a single group to win.<br />Move one piece per turn to an empty neighboring cell.<br />Black moves first — White can swap colors (pie rule).</p>
+      
+      <div class="brand onboarding-brand">
+        <span class="brand-hex">&#x2B22;</span>
+        <span class="brand-text">SELF<span class="brand-accent">O</span></span>
+      </div>
+      
+      <div class="onboarding-demo">
+        <svg id="splashBoard" class="board-svg" aria-hidden="true"></svg>
+      </div>
+      
       <label class="onboarding-check">
         <input type="checkbox" id="onboardingDontShow" />
-        No mostrar de nuevo
+        <svg class="icon-wire" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+          <path d="M4 4l16 16" />
+          <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+          <path d="M20 4v5h-5" />
+        </svg>
       </label>
-      <button id="onboardingCloseBtn" class="btn btn-metal-accent">Got it</button>
+      <button id="onboardingCloseBtn" class="btn btn-metal-accent">
+        <svg class="icon-wire" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+          <path d="M4 12l6 6L20 6" />
+        </svg>
+      </button>
     </div>
   </div>
 
-  <!-- peerjs cdn: only needed for online mode, loaded lazily -->
-  <script src="config.js"></script>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <!-- Motor en WebAssembly: wasmengine.js va SIEMPRE antes que hexgeometry/moverules/aistrategies. -->
-  <script src="wasmengine.js"></script>
-  <script>
-    (function () {
-      // Mismo orden que antes. wasmengine.js define WasmEngine; hexgeometry.js,
-      // moverules.js y aistrategies.js dependen de él.
-      var scripts = ["hexgeometry.js", "fitness.js", "boardinit.js", "moverules.js", "aistrategies.js", "script.js"];
-
-      // Caso normal (Firefox, Safari, Chrome en worker...): el wasm ya está instanciado,
-      // así que se cargan como etiquetas <script> normales, exactamente igual que antes.
-      if (WasmEngine.isReady) {
-        scripts.forEach(function (s) { document.write('<script src="' + s + '"><\/script>'); });
-        return;
-      }
-
-      // Chrome en el hilo principal: la instanciación es asíncrona. Se espera a que
-      // esté lista y se cargan los scripts EN ORDEN, para que nada llame al motor antes de tiempo.
-      WasmEngine.ready.then(function () {
-        var i = 0;
-        (function next() {
-          if (i < scripts.length) {
-            var el = document.createElement("script");
-            el.src = scripts[i++];
-            el.onload = next;
-            el.onerror = function () { console.error("No se pudo cargar " + el.src); };
-            document.body.appendChild(el);
-          } else {
-            // Si script.js espera DOMContentLoaded/load y esos eventos ya pasaron, se reemiten.
-            if (document.readyState !== "loading") document.dispatchEvent(new Event("DOMContentLoaded", { bubbles: true }));
-            if (document.readyState === "complete") window.dispatchEvent(new Event("load"));
-          }
-        })();
-      });
-    })();
-  </script>
+  <script src="game.js"></script>
 </body>
 </html>
