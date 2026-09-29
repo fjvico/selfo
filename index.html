@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build 4f01c0b1. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 1bbfec9e. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -75,22 +75,8 @@
           </button>
           
           <div class="mode-menu difficulty-menu" id="difficultyMenu" hidden>
-            <button type="button" id="difficultyIncBtn" class="difficulty-end-btn" title="Increase difficulty" aria-label="Increase difficulty">
-              <svg class="icon-wire difficulty-end-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                <title>Hardest</title>
-                <path d="M12 5v14M5 12h14"/>
-              </svg>
-            </button>
-            <div class="difficulty-range-track">
-              <input type="range" id="difficultyRange" class="range-input difficulty-range" min="0" max="0" step="1" value="0" list="difficultyTicks" aria-label="Difficulty level" autocomplete="off" />
-              <datalist id="difficultyTicks"></datalist>
-            </div>
-            <button type="button" id="difficultyDecBtn" class="difficulty-end-btn" title="Decrease difficulty" aria-label="Decrease difficulty">
-              <svg class="icon-wire difficulty-end-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                <title>Easiest</title>
-                <path d="M5 12h14"/>
-              </svg>
-            </button>
+            <div class="difficulty-bar" id="difficultyBar" role="group" aria-label="Difficulty level"></div>
+            <input type="range" id="difficultyRange" class="difficulty-range-state" min="0" max="0" step="1" value="0" tabindex="-1" aria-hidden="true" autocomplete="off" />
           </div>
         </div>
         <div class="share-wrap">
@@ -191,10 +177,11 @@
             </svg>
           </button>
           
-          <div id="compactSwapHint" class="compact-swap-hint-row" aria-hidden="true" hidden>
-            <span class="swap-hint-key"></span>
-            <span class="swap-hint-key swap-hint-key-space"></span>
-            <span class="swap-hint-key"></span>
+          <div id="compactSwapHint" class="swap-hint-bubble" aria-hidden="true" hidden>
+            <div class="swap-hint-kb">
+              <div class="swap-hint-row"><span class="swap-hint-key"></span><span class="swap-hint-key"></span><span class="swap-hint-key"></span><span class="swap-hint-key"></span></div>
+              <div class="swap-hint-row"><span class="swap-hint-key"></span><span class="swap-hint-key swap-hint-key-space"></span><span class="swap-hint-key"></span></div>
+            </div>
           </div>
         </div>
         <div class="compact-side compact-side-right">
