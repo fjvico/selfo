@@ -850,16 +850,11 @@ body {
   flex: 1 1 0;
   min-width: 0;
   height: 100%;
-  padding: 0;
-  margin: 0;
-  border: none;
-  border-radius: 0;
-  appearance: none;
-  -webkit-appearance: none;
   background: var(--seg);
+  forced-color-adjust: none;
   cursor: pointer;
+  outline: none;
 }
-
 .difficulty-seg.current::after {
   content: "";
   position: absolute;
@@ -869,8 +864,8 @@ body {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.7);
 }
-.difficulty-seg:hover:not(:disabled) { filter: brightness(1.2); }
-.difficulty-seg:disabled { cursor: not-allowed; }
+.difficulty-seg:hover:not(.disabled) { filter: brightness(1.2); }
+.difficulty-seg.disabled { cursor: not-allowed; }
 .difficulty-bar.readonly .difficulty-seg { pointer-events: none; cursor: default; }
 
 .difficulty-buy {
