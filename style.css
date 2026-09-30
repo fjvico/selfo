@@ -870,7 +870,8 @@ body {
   width: 100%;
   max-width: 280px;
   margin: 6px auto 0;
-  padding: 0 11px;
+  --difficulty-pad: 11px; 
+  padding: 0 var(--difficulty-pad) 7px; 
   box-sizing: border-box;
 }
 .difficulty-wrap[hidden] { display: none; }
@@ -894,14 +895,18 @@ body {
   cursor: pointer;
   outline: none;
 }
-.difficulty-seg.current::after {
-  content: "";
+
+.difficulty-pointer {
   position: absolute;
-  top: 50%; left: 50%;
-  width: 2px; height: 2px;
-  margin: -1px 0 0 -1px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.7);
+  top: 11px;
+  width: 0;
+  height: 0;
+  margin-left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid rgba(255, 255, 255, 0.9);
+  transition: left 0.35s ease;
+  pointer-events: none;
 }
 .difficulty-seg:hover:not(.disabled) { filter: brightness(1.2); }
 .difficulty-seg.disabled { cursor: not-allowed; }
@@ -909,7 +914,8 @@ body {
 
 .purchase-corner {
   position: fixed;
-  right: max(14px, env(safe-area-inset-right, 0px));
+  
+  right: calc(max(0px, (100vw - var(--frame-w)) / 2) + max(14px, env(safe-area-inset-right, 0px)));
   bottom: max(14px, env(safe-area-inset-bottom, 0px));
   z-index: 30;
 }
@@ -1069,7 +1075,7 @@ body {
 }
 .piece { cursor: grab; }
 .piece.draggable { cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
-.piece.dragging { cursor: grabbing; opacity: 0.85; }
+.piece.dragging { cursor: grabbing; } 
 .piece-black { fill: url(#pieceBlackGrad); stroke: #000; stroke-width: 1; }
 .piece-white { fill: url(#pieceWhiteGrad); stroke: #7c848a; stroke-width: 1; }
 .piece.own-piece { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
@@ -1209,7 +1215,7 @@ body {
 }
 .setup-check input { accent-color: var(--accent); cursor: pointer; }
 
-@media (max-width: 900px) {
+@media all {
   html, body { overflow: auto; }
 
   :root {
@@ -1261,3 +1267,15 @@ body {
   }
 
 }
+
+:root { --frame-w: 440px; }
+html { background: #07090b; }
+body {
+  width: min(100%, var(--frame-w));
+  margin: 0 auto;
+  border-left: 1px solid var(--metal-line);
+  border-right: 1px solid var(--metal-line);
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.7);
+}
+html:has(.panel-setup:not([hidden])),
+html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
