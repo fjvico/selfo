@@ -915,6 +915,27 @@ body {
   .difficulty-buy:hover .icon-wire { color: var(--accent); }
 }
 
+.difficulty-seg.advance-glow { animation: difficulty-seg-glow 0.7s ease-out; }
+@keyframes difficulty-seg-glow {
+  0%, 100% { filter: brightness(1); }
+  40%      { filter: brightness(1.7); }
+}
+.difficulty-spark {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.25) 40%, rgba(255,255,255,0) 70%);
+  opacity: 0;
+  pointer-events: none;
+  transition: left 0.5s ease-in-out, opacity 0.2s ease;
+}
+.difficulty-spark.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .difficulty-seg.advance-glow { animation: none; }
+}
+
 .difficulty-range-state { display: none; }
 
 .online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
