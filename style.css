@@ -258,7 +258,9 @@ body {
 }
 
 .compact-side-left .compact-mode-icon.lost {
-  transform-origin: 100% 100%;
+  --lost-pivot-x: 50%;
+  --lost-lift: calc(var(--compact-icon-h) * -0.4);
+  transform-origin: var(--lost-pivot-x) 100%;
   transform: translateY(var(--lost-lift)) rotate(90deg);
 }
 @media (prefers-reduced-motion: reduce) {
