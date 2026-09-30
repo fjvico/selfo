@@ -975,6 +975,29 @@ body {
   .difficulty-seg.advance-glow { animation: none; }
 }
 
+.purchase-cart-effect {
+  position: fixed;
+  z-index: 60;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  pointer-events: none;
+  opacity: 0;
+}
+.purchase-cart-disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(12, 14, 16, 0.72);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+.purchase-cart-effect svg { position: relative; }
+
 .difficulty-range-state { display: none; }
 
 .online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
