@@ -179,49 +179,45 @@ body {
   background: #000;
   opacity: 0;
   z-index: 5;
-  overflow: hidden; 
   transition: opacity 450ms ease;
 }
 .board-fade-overlay.active { opacity: 1; }
 
-.level-interlude {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.level-interlude-glow {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 80%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--interlude-glow) 0%, rgba(0, 0, 0, 0) 66%);
-  opacity: 0;
-  animation: level-interlude-glow var(--interlude-ms, 3400ms) ease-in-out forwards;
-}
-@keyframes level-interlude-glow {
-  0%   { opacity: 0; }
-  35%  { opacity: 1; }
-  75%  { opacity: 0.65; }
-  100% { opacity: 0; }
-}
-.level-interlude-mote {
+.level-ripples {
   position: absolute;
   top: 0;
-  border-radius: 50%;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6; 
+  background: radial-gradient(circle at var(--ripple-cx) var(--ripple-cy), var(--ripple-wash) 0%, rgba(0, 0, 0, 0) 70%);
   opacity: 0;
-  animation-name: level-interlude-fall;
-  animation-timing-function: ease-in-out;
-  animation-fill-mode: forwards;
+  animation: level-ripples-wash var(--ripple-ms, 3200ms) ease-in-out forwards;
 }
-@keyframes level-interlude-fall {
-  0%   { transform: translate3d(0, -16px, 0); opacity: 0; }
-  15%  { opacity: 0.85; }
-  50%  { transform: translate3d(var(--sway), calc(var(--fall) * 0.5), 0); }
-  85%  { opacity: 0.7; }
-  100% { transform: translate3d(calc(var(--sway) * -0.5), var(--fall), 0); opacity: 0; }
+@keyframes level-ripples-wash {
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
+  70%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+.level-ripple {
+  position: absolute;
+  left: var(--ripple-cx);
+  top: var(--ripple-cy);
+  width: var(--ripple-d);
+  height: var(--ripple-d);
+  box-sizing: border-box;
+  border: 2px solid var(--ripple-color);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--ripple-color), inset 0 0 10px var(--ripple-color);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.1);
+  animation: level-ripple-expand 2.2s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+@keyframes level-ripple-expand {
+  0%   { opacity: 0;   transform: translate(-50%, -50%) scale(0.1); }
+  15%  { opacity: 0.7; }
+  100% { opacity: 0;   transform: translate(-50%, -50%) scale(1); }
 }
 
 .board-scroll {
