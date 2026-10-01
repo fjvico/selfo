@@ -474,6 +474,22 @@ body {
 .compact-side-center { display: grid; place-items: center; }
 .compact-side-center > .compact-swap-btn { grid-area: 1 / 1; }
 
+.compact-mode-icon.shiver { animation: compact-icon-shiver 0.9s ease-in-out; }
+@keyframes compact-icon-shiver {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  8%  { transform: translateX(-3px) rotate(-6deg); }
+  18% { transform: translateX(3px)  rotate(6deg); }
+  28% { transform: translateX(-3px) rotate(-6deg); }
+  38% { transform: translateX(3px)  rotate(6deg); }
+  50% { transform: translateX(-2px) rotate(-4deg); }
+  62% { transform: translateX(2px)  rotate(4deg); }
+  75% { transform: translateX(-1px) rotate(-2deg); }
+  88% { transform: translateX(1px)  rotate(2deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-mode-icon.shiver { animation: none; }
+}
+
 .compact-abandon-btn {
   color: #b58478;
   border-color: #4a3b38;
