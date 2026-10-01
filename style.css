@@ -913,15 +913,17 @@ body {
 .difficulty-seg.disabled { cursor: not-allowed; }
 .difficulty-bar.readonly .difficulty-seg { pointer-events: none; cursor: default; }
 
-.purchase-corner {
-  position: fixed;
-  
-  right: calc(max(0px, (100vw - var(--frame-w)) / 2) + max(14px, env(safe-area-inset-right, 0px)));
-  bottom: max(14px, env(safe-area-inset-bottom, 0px));
-  z-index: 30;
+.chip-btn.icon-btn.difficulty-lock {
+  position: absolute;
+  top: 5px; 
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px; 
+  z-index: 3;
+  border-color: var(--accent-dim); 
 }
-.purchase-corner[hidden] { display: none; }
-.purchase-corner.pending { visibility: hidden; pointer-events: none; }
+.chip-btn.icon-btn.difficulty-lock[hidden] { display: none; } 
+.difficulty-lock.pending { visibility: hidden; pointer-events: none; }
 #difficultyBuyLink .icon-wire { transition: color 0.35s ease; }
 #difficultyBuyLink .icon-wire.beating {
   color: var(--accent);
@@ -947,7 +949,7 @@ body {
   #difficultyBuyLink .icon-wire.beating .lock-shackle-open { opacity: 1; }
 }
 @media (hover: hover) and (pointer: fine) {
-  .purchase-corner:hover::after {
+  .difficulty-lock:hover::after {
     content: attr(data-label);
     position: absolute;
     bottom: calc(100% + 8px);
