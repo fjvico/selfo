@@ -471,6 +471,18 @@ body {
 
 .compact-side-center { position: relative; }
 
+.compact-side-center { display: grid; place-items: center; }
+.compact-side-center > .compact-swap-btn { grid-area: 1 / 1; }
+
+.compact-abandon-btn {
+  color: #b58478;
+  border-color: #4a3b38;
+}
+.compact-abandon-btn:hover:not(:disabled) {
+  color: #d29a8c;
+  border-color: #7a5a52;
+}
+
 .swap-hint-bubble {
   position: absolute;
   bottom: 100%;
