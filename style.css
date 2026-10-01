@@ -876,6 +876,8 @@ body {
   box-sizing: border-box;
 }
 .difficulty-wrap[hidden] { display: none; }
+
+.difficulty-wrap.has-lock { margin-top: 18px; padding-bottom: 24px; }
 .difficulty-bar {
   display: flex;
   flex-direction: row;
@@ -916,9 +918,9 @@ body {
 .chip-btn.icon-btn.difficulty-lock {
   position: absolute;
   top: 5px; 
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px; 
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px; 
   z-index: 3;
   border-color: var(--accent-dim); 
 }
