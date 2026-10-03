@@ -844,6 +844,11 @@ body {
 }
 
 .share-wrap { position: relative; display: inline-flex; }
+
+#fullscreenBtn[hidden] { display: none; } 
+#fullscreenBtn .fs-exit { display: none; }
+#fullscreenBtn.is-fullscreen .fs-enter { display: none; }
+#fullscreenBtn.is-fullscreen .fs-exit { display: block; }
 .share-menu {
   position: absolute;
   top: calc(100% + 6px);
