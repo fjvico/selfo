@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build efd67878. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 29149a04. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -77,9 +77,10 @@
         <stop offset="0.39" stop-color="#fff" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="cellShade" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#000" stop-opacity="0.16"/>
-        <stop offset="0.55" stop-color="#000" stop-opacity="0.02"/>
-        <stop offset="1" stop-color="#fff" stop-opacity="0.10"/>
+        
+        <stop offset="0" style="stop-color:#000;stop-opacity:calc(var(--cell-grad, 0.26) * 0.62)"/>
+        <stop offset="0.55" style="stop-color:#000;stop-opacity:calc(var(--cell-grad, 0.26) * 0.08)"/>
+        <stop offset="1" style="stop-color:#fff;stop-opacity:calc(var(--cell-grad, 0.26) * 0.38)"/>
       </linearGradient>
       
       <filter id="glassNoise" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
