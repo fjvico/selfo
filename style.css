@@ -1220,9 +1220,6 @@ body {
 #onboardingOverlay.leaving { opacity: 0; pointer-events: none; }
 
 @keyframes splashBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
-.overlay-card { visibility: hidden; }
-
-@keyframes splashBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
 .overlay-card {
   position: relative;
   background: var(--bg-panel);
