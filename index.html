@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build 2cbac3d7. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build a0ee497e. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -26,6 +26,69 @@
 <meta name="twitter:image" content="https://fjvico.github.io/selfo/og-image.png" />
 </head>
 <body>
+  
+  <svg id="gfxDefs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      
+      <radialGradient id="pieceBlackGrad" cx="40%" cy="34%" r="72%">
+        <stop offset="0" stop-color="#4d433c"/>
+        <stop offset="0.35" stop-color="#241f1b"/>
+        <stop offset="0.75" stop-color="#0c0a09"/>
+        <stop offset="1" stop-color="#020202"/>
+      </radialGradient>
+      <radialGradient id="pieceWhiteGrad" cx="40%" cy="34%" r="76%">
+        <stop offset="0" stop-color="#ffffff"/>
+        <stop offset="0.5" stop-color="#f2ede1"/>
+        <stop offset="0.88" stop-color="#cdc4b1"/>
+        <stop offset="1" stop-color="#b0a692"/>
+      </radialGradient>
+      
+      <filter id="stoneFx" x="-35%" y="-35%" width="170%" height="185%" color-interpolation-filters="sRGB">
+        <feGaussianBlur in="SourceAlpha" stdDeviation="2.4" result="sb"/>
+        <feOffset in="sb" dx="1.2" dy="4.2" result="so"/>
+        <feFlood flood-color="#000" flood-opacity="0.55" result="sc"/>
+        <feComposite in="sc" in2="so" operator="in" result="shadow"/>
+        <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="h"/>
+        <feSpecularLighting in="h" surfaceScale="6" specularConstant="0.6" specularExponent="11" lighting-color="#ffffff" result="spec">
+          <feDistantLight azimuth="232" elevation="55"/>
+        </feSpecularLighting>
+        <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn"/>
+        <feComposite in="SourceGraphic" in2="specIn" operator="arithmetic" k1="0" k2="1" k3="0.8" k4="0" result="lit"/>
+        <feMerge><feMergeNode in="shadow"/><feMergeNode in="lit"/></feMerge>
+      </filter>
+
+      <linearGradient id="slabChamferShade" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+        <stop offset="0.5" stop-color="#fff" stop-opacity="0.12"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0.5"/>
+      </linearGradient>
+      <linearGradient id="slabFaceShade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0.16"/>
+        <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0.32"/>
+      </linearGradient>
+      <radialGradient id="slabVignette" cx="50%" cy="46%" r="62%">
+        <stop offset="0.55" stop-color="#000" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0.38"/>
+      </radialGradient>
+      <linearGradient id="slabGloss" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0.2"/>
+        <stop offset="0.38" stop-color="#fff" stop-opacity="0.04"/>
+        <stop offset="0.39" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="cellShade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#000" stop-opacity="0.16"/>
+        <stop offset="0.55" stop-color="#000" stop-opacity="0.02"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0.10"/>
+      </linearGradient>
+      
+      <filter id="glassNoise" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="7" result="n"/>
+        <feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.55 -0.2"/>
+        <feComposite in2="SourceAlpha" operator="in"/>
+      </filter>
+    </defs>
+  </svg>
 
   <header class="topbar">
     <div class="topbar-left">
@@ -140,6 +203,8 @@
     </section>
 
     <section class="panel panel-board" aria-label="Board">
+      
+      <svg id="tableLattice" class="table-lattice" aria-hidden="true" focusable="false"></svg>
       <div id="boardScroll" class="board-scroll">
         <svg id="boardSvg" class="board-svg" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
