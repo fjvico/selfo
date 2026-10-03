@@ -58,13 +58,25 @@ html, body {
 }
 
 body {
-  background-color: var(--wood-base, #3a2012);
+  
+  background-color: transparent;
   background-image:
     radial-gradient(ellipse 85% 70% at 50% 38%, rgba(255, 214, 160, 0.10) 0%, rgba(0, 0, 0, 0) 60%),
-    radial-gradient(ellipse 120% 100% at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.55) 100%),
-    var(--wood-tex, linear-gradient(180deg, #4a2a16 0%, #2e180c 100%));
-  background-size: auto, auto, 512px 512px;
-  background-attachment: local, local, local;
+    radial-gradient(ellipse 120% 100% at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.55) 100%);
+  background-attachment: local, local;
+}
+
+#tableSurface {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--wood-base, #3a2012);
+  background-image:
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.13) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
+    repeating-linear-gradient(180deg, rgba(255, 205, 150, 0.06) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.10) 0 4px, rgba(0, 0, 0, 0) 4px 23px),
+    linear-gradient(180deg, #4a2a16 0%, #2e180c 100%);
 }
 
 .topbar {
@@ -1366,17 +1378,14 @@ body {
 
 :root { --frame-w: 440px; }
 
-html {
-  background-color: #0e0703;
-  background-image: linear-gradient(rgba(6, 3, 1, 0.62), rgba(6, 3, 1, 0.62)), var(--wood-tex, none);
-  background-size: auto, 512px 512px;
-}
+html { background-color: #0e0703; }
 body {
   width: min(100%, var(--frame-w));
   margin: 0 auto;
   border-left: 1px solid var(--metal-line);
   border-right: 1px solid var(--metal-line);
-  box-shadow: 0 0 60px rgba(0, 0, 0, 0.7);
+  
+  box-shadow: 0 0 0 100vmax rgba(6, 3, 1, 0.62), 0 0 60px rgba(0, 0, 0, 0.7);
 }
 html:has(.panel-setup:not([hidden])),
 html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
