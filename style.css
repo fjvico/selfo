@@ -74,7 +74,6 @@ body {
   height: 100%;
   z-index: -1;
   pointer-events: none;
-  will-change: transform; 
   background-color: var(--wood-base, #3a2012);
   background-image:
     repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.13) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
@@ -287,16 +286,16 @@ body {
   justify-content: space-between; 
   width: var(--board-w, 100%); 
   max-width: 100%;
-  padding: 0 12px;
+  padding: 0 clamp(2px, 1.5vw, 12px); 
 }
 .compact-players[hidden] { display: none; }
 .compact-side {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: clamp(6px, 2.4vw, 10px);
   flex-shrink: 0;
   
-  padding: 7px 16px 3px;
+  padding: 7px var(--compact-pad) 3px;
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(10, 4, 1, 0.62) 0%, rgba(26, 12, 5, 0.5) 100%);
   border: 1px solid rgba(0, 0, 0, 0.5);
@@ -306,10 +305,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  margin: 0 14px;
+  margin: 0 clamp(3px, 1.6vw, 14px);
   
-  width: 120px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 120px;
 }
 .compact-swatch {
   width: var(--compact-swatch); height: var(--compact-swatch); border-radius: 50%;
@@ -519,8 +519,8 @@ body {
 
 .compact-side-center { position: relative; }
 
-.compact-side-left { padding-right: calc(16px + var(--compact-icon-h) * 0.5); }
-.compact-side-right { padding-left: calc(16px + var(--compact-icon-h) * 0.5); }
+.compact-side-left { padding-right: calc(var(--compact-pad) + var(--compact-icon-h) * 0.5); }
+.compact-side-right { padding-left: calc(var(--compact-pad) + var(--compact-icon-h) * 0.5); }
 
 .compact-side-center { display: grid; place-items: center; }
 .compact-side-center > .compact-swap-btn { grid-area: 1 / 1; }
@@ -1409,12 +1409,14 @@ html:has(.panel-setup:not([hidden])),
 html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
 
 :root {
-  --compact-icon-h: 34px;
-  --compact-swatch: 28px;
+  
+  --compact-icon-h: clamp(27px, 8vw, 34px);
+  --compact-swatch: clamp(22px, 6.6vw, 28px);
+  --compact-pad: clamp(9px, 3.6vw, 16px); 
 }
 @supports (-moz-appearance: none) {
   :root {
-    --compact-icon-h: 29px;
-    --compact-swatch: 23px;
+    --compact-icon-h: clamp(24px, 7vw, 29px);
+    --compact-swatch: clamp(19px, 5.7vw, 23px);
   }
 }
