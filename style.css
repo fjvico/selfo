@@ -500,8 +500,8 @@ body {
 
 .compact-side-center { position: relative; }
 
-.compact-side-left { padding-right: calc(16px + var(--compact-icon-h) * 0.85); }
-.compact-side-right { padding-left: calc(16px + var(--compact-icon-h) * 0.85); }
+.compact-side-left { padding-right: calc(16px + var(--compact-icon-h) * 0.5); }
+.compact-side-right { padding-left: calc(16px + var(--compact-icon-h) * 0.5); }
 
 .compact-side-center { display: grid; place-items: center; }
 .compact-side-center > .compact-swap-btn { grid-area: 1 / 1; }
