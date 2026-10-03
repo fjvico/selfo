@@ -66,6 +66,20 @@ body {
   background-attachment: local, local;
 }
 
+#bootCover {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0604;
+  transition: opacity 0.35s ease;
+  animation: bootCoverFailsafe 0s linear 12s forwards;
+}
+#bootCover.done { opacity: 0; pointer-events: none; }
+@keyframes bootCoverFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+
 #tableSurface {
   position: fixed;
   inset: 0;
