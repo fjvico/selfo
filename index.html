@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build dc94d5d1. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 0bff6d9b. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,6 +7,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Selfo &mdash; connection board game</title>
 <link rel="stylesheet" href="style.css" />
+
+<script>
+  try { if (localStorage.getItem("selfo_hide_onboarding") === "1") document.documentElement.classList.add("no-splash"); } catch (e) {}
+</script>
 
 <link rel="icon" type="image/png" href="favicon.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
@@ -27,14 +31,7 @@
 </head>
 <body>
   
-  <div id="bootCover" aria-hidden="true">
-    <div class="brand onboarding-brand">
-      <span class="brand-hex">&#x2B22;</span>
-      <span class="brand-text">SELF<span class="brand-accent">O</span></span>
-    </div>
-  </div>
-  
-  <div id="tableSurface" aria-hidden="true"></div>
+  <canvas id="tableSurface" aria-hidden="true"></canvas>
   
   <svg id="gfxDefs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <defs>
@@ -316,7 +313,7 @@
     <div id="celebrationBurst" class="celebration-burst"></div>
   </div>
 
-  <div id="onboardingOverlay" class="overlay" hidden>
+  <div id="onboardingOverlay" class="overlay boot">
     <div class="overlay-card">
       
       <div class="brand onboarding-brand">
