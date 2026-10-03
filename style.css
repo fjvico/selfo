@@ -197,12 +197,15 @@ body {
   inset: 0;
   pointer-events: none;
   border-radius: var(--radius-panel);
-  background: #181c20; 
+  background: none; 
   opacity: 0;
   z-index: 5;
   transition: opacity 450ms ease;
 }
 .board-fade-overlay.active { opacity: 1; }
+
+.board-svg { transition: opacity 450ms ease; }
+.panel-board:has(.board-fade-overlay.active) #boardSvg { opacity: 0; }
 
 .level-ripples {
   position: absolute;
@@ -933,7 +936,7 @@ body {
   margin: 6px auto 0;
   --difficulty-pad: 10px; 
   
-  padding: 14px var(--difficulty-pad);
+  padding: 7px var(--difficulty-pad);
   box-sizing: border-box;
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(10, 4, 1, 0.62) 0%, rgba(26, 12, 5, 0.5) 100%);
@@ -942,14 +945,14 @@ body {
 }
 .difficulty-wrap[hidden] { display: none; }
 
-.difficulty-wrap.has-lock { margin-top: 10px; margin-bottom: 4px; } 
+.difficulty-wrap.has-lock { margin-top: 16px; margin-bottom: 10px; } 
 .difficulty-bar {
   display: flex;
   flex-direction: row;
   gap: 1px;
   height: 8px;
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible; 
   border: 1px solid rgba(0, 0, 0, 0.55);
   background: #0c0603;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 205, 150, 0.13);
@@ -966,17 +969,12 @@ body {
   outline: none;
 }
 
-.difficulty-pointer {
-  position: absolute;
-  top: 27px; 
-  width: 0;
-  height: 0;
-  margin-left: -4px;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-bottom: 5px solid rgba(255, 255, 255, 0.9);
-  transition: left 0.35s ease;
-  pointer-events: none;
+.difficulty-seg:first-child { border-radius: 3px 0 0 3px; }
+.difficulty-seg:last-child { border-radius: 0 3px 3px 0; }
+
+.difficulty-seg.current {
+  z-index: 2;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.95), 0 0 10px 2px rgba(255, 255, 255, 0.45);
 }
 .difficulty-seg:hover:not(.disabled) { filter: brightness(1.2); }
 .difficulty-seg.disabled { cursor: not-allowed; }
@@ -984,7 +982,7 @@ body {
 
 .chip-btn.icon-btn.difficulty-lock {
   position: absolute;
-  top: 19px; 
+  top: 12px; 
   width: 44px;
   height: 44px;
   margin: -22px 0 0 -22px; 
