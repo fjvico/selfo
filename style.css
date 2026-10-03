@@ -1211,15 +1211,16 @@ body {
 
 #onboardingOverlay {
   z-index: 100; 
+  background: #0a0604;
   backdrop-filter: none;
-  transition: background-color 0.4s ease, opacity 0.3s ease;
+  transition: opacity 0.3s ease;
 }
-#onboardingOverlay.boot { background: #0a0604; animation: splashBootFailsafe 0s linear 12s forwards; }
-#onboardingOverlay.boot #onboardingCloseBtn,
-#onboardingOverlay.boot .onboarding-check { pointer-events: none; opacity: 0.45; }
+#onboardingOverlay.loading { animation: splashBootFailsafe 0s linear 12s forwards; }
+#onboardingOverlay.loading #onboardingCloseBtn { pointer-events: none; opacity: 0.45; }
 #onboardingOverlay.leaving { opacity: 0; pointer-events: none; }
 
-html.no-splash #onboardingOverlay.boot .overlay-card { visibility: hidden; }
+@keyframes splashBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+.overlay-card { visibility: hidden; }
 
 @keyframes splashBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
 .overlay-card {
@@ -1250,21 +1251,6 @@ html.no-splash #onboardingOverlay.boot .overlay-card { visibility: hidden; }
 .onboarding-demo .board-svg { width: 100%; height: auto; display: block; aspect-ratio: 1 / 1;  }
 
 .onboarding-brand { justify-content: center; margin: 0 auto 10px; font-size: 26px; }
-
-.onboarding-check .icon-wire { color: var(--metal-mid); }
-.onboarding-check:hover .icon-wire { color: var(--accent); }
-
-.onboarding-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--metal-mid);
-  margin-bottom: 18px;
-  cursor: pointer;
-}
-.onboarding-check input { accent-color: var(--accent); cursor: pointer; }
 
 .overlay-close-btn {
   position: absolute;
