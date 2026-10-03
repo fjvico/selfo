@@ -1190,7 +1190,6 @@ body {
 .piece.dragging { cursor: grabbing; } 
 .piece-black { fill: url(#pieceBlackGrad); stroke: rgba(0, 0, 0, 0.7); stroke-width: 0.8; }
 .piece-white { fill: url(#pieceWhiteGrad); stroke: rgba(120, 108, 88, 0.55); stroke-width: 0.8; }
-.piece.own-piece { --piece-glow: drop-shadow(0 0 5px var(--accent-glow)) drop-shadow(0 0 12px rgba(53, 224, 255, 0.28)); }
 .piece.selected-piece { --piece-glow: drop-shadow(0 0 8px var(--accent-glow)); }
 
 .piece.enclosed-piece { --piece-glow: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
@@ -1244,8 +1243,8 @@ body {
   max-width: 340px;
 }
 
-.onboarding-demo { margin: 4px auto 20px; max-width: 220px; }
-.onboarding-demo .board-svg { width: 100%; height: auto; display: block; aspect-ratio: 1 / 1;  }
+.onboarding-demo { margin: 4px auto 20px; width: 220px; max-width: 100%; aspect-ratio: 1 / 1; }
+.onboarding-demo .board-svg { width: 100%; height: 100%; max-width: none; max-height: none; display: block; }
 
 .onboarding-brand { justify-content: center; margin: 0 auto 10px; font-size: 26px; }
 
