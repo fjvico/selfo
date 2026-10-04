@@ -61,7 +61,7 @@ body {
   
   background-color: transparent;
   background-image:
-    radial-gradient(ellipse 85% 70% at 50% 38%, rgba(255, 214, 160, 0.10) 0%, rgba(0, 0, 0, 0) 60%),
+    radial-gradient(ellipse 85% 70% at 50% 38%, rgba(var(--table-line-rgb, 53, 224, 255), 0.09) 0%, rgba(0, 0, 0, 0) 60%),
     radial-gradient(ellipse 120% 100% at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.55) 100%);
   background-attachment: local, local;
 }
@@ -74,12 +74,7 @@ body {
   height: 100%;
   z-index: -1;
   pointer-events: none;
-  background-color: var(--wood-base, #3a2012);
-  background-image:
-    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.13) 0 1px, rgba(0, 0, 0, 0) 1px 5px),
-    repeating-linear-gradient(180deg, rgba(255, 205, 150, 0.06) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
-    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.10) 0 4px, rgba(0, 0, 0, 0) 4px 23px),
-    linear-gradient(180deg, #4a2a16 0%, #2e180c 100%);
+  background: linear-gradient(180deg, var(--table-top, #050a14) 0%, var(--table-bottom, #0a1a2b) 100%);
 }
 
 .topbar {
@@ -179,8 +174,8 @@ body {
   z-index: -1; 
 }
 .table-lattice path, .table-lattice circle { fill: none; stroke-linejoin: round; }
-.table-lattice .groove-lo { stroke: rgba(16, 7, 2, 0.5); stroke-width: 1.1; }
-.table-lattice .groove-hi { stroke: rgba(255, 205, 150, 0.12); stroke-width: 1; }
+.table-lattice .grid-line { stroke: rgba(var(--table-line-rgb, 53, 224, 255), 0.14); stroke-width: 1; }
+.table-lattice .grid-ring { stroke: rgba(var(--table-line-rgb, 53, 224, 255), 0.26); stroke-width: 1.4; }
 
 .board-flash-overlay {
   position: absolute;
@@ -297,9 +292,9 @@ body {
   
   padding: 7px var(--compact-pad) 3px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(10, 4, 1, 0.62) 0%, rgba(26, 12, 5, 0.5) 100%);
+  background: linear-gradient(180deg, rgba(2, 6, 12, 0.62) 0%, rgba(8, 16, 26, 0.5) 100%);
   border: 1px solid rgba(0, 0, 0, 0.5);
-  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(255, 205, 150, 0.12);
+  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.14);
 }
 .compact-side-center {
   display: flex;
@@ -434,13 +429,13 @@ body {
   overflow: hidden;
   
   border: 1px solid rgba(0, 0, 0, 0.55);
-  background: #0c0603;
-  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 205, 150, 0.13);
+  background: #04080e;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.15);
 }
 .challenge-segment {
   flex: 1 1 0;
   height: 100%;
-  border-right: 1px solid rgba(255, 205, 150, 0.05);
+  border-right: 1px solid rgba(var(--table-line-rgb, 53, 224, 255), 0.06);
 }
 .challenge-segment:last-child { border-right: none; }
 .challenge-segment:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
@@ -960,9 +955,9 @@ body {
   padding: 7px var(--difficulty-pad);
   box-sizing: border-box;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(10, 4, 1, 0.62) 0%, rgba(26, 12, 5, 0.5) 100%);
+  background: linear-gradient(180deg, rgba(2, 6, 12, 0.62) 0%, rgba(8, 16, 26, 0.5) 100%);
   border: 1px solid rgba(0, 0, 0, 0.5);
-  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(255, 205, 150, 0.12);
+  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.14);
 }
 .difficulty-wrap[hidden] { display: none; }
 
@@ -975,8 +970,8 @@ body {
   border-radius: 4px;
   overflow: visible; 
   border: 1px solid rgba(0, 0, 0, 0.55);
-  background: #0c0603;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 205, 150, 0.13);
+  background: #04080e;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.15);
 }
 .difficulty-seg {
   position: relative;
@@ -1144,7 +1139,11 @@ body {
 
 .board-svg { overflow: visible; }
 .slab { pointer-events: none; }
-.slab-shadow { fill: #000; opacity: 0.55; filter: blur(9px); transform: translate(0, 12px); }
+
+.slab-shadow { fill: #000; stroke: #000; stroke-linejoin: round; transform: translate(0, 12px); }
+.slab-shadow.s1 { stroke-width: 22; opacity: 0.05; }
+.slab-shadow.s2 { stroke-width: 12; opacity: 0.09; }
+.slab-shadow.s3 { stroke-width: 4; opacity: 0.16; }
 .slab-rim { fill: #08110f; }
 .slab-chamfer { fill: var(--cell-fill); }
 .slab-chamfer-shade { fill: url(#slabChamferShade); }
@@ -1162,9 +1161,8 @@ body {
   .board-svg.edge-win .slab-face, .board-svg.edge-draw .slab-face, .board-svg.edge-start .slab-face { animation: none; stroke: var(--edge-color); stroke-width: 2.6; }
 }
 .slab-vignette { fill: url(#slabVignette); }
-.slab-noise { fill: #fff; opacity: 0.5; filter: url(#glassNoise); mix-blend-mode: soft-light; }
 .slab-gloss { fill: url(#slabGloss); }
-.slab-edge-light { fill: none; stroke: rgba(255, 255, 255, 0.42); stroke-width: 2.2; filter: blur(1.1px); }
+.slab-edge-light { fill: none; stroke: rgba(255, 255, 255, 0.34); stroke-width: 2; }
 
 .hex-cell {
   fill: url(#cellShade);
@@ -1190,16 +1188,16 @@ body {
   stroke-width: 2;
 }
 
-.piece { cursor: grab; --piece-glow: drop-shadow(0 0 0 transparent); filter: url(#stoneFx) var(--piece-glow); }
+.piece { cursor: grab; paint-order: stroke fill; stroke-width: 14; pointer-events: fill; }
 .piece.draggable { cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
 .piece.dragging { cursor: grabbing; } 
-.piece-black { fill: url(#pieceBlackGrad); stroke: rgba(0, 0, 0, 0.7); stroke-width: 0.8; }
-.piece-white { fill: url(#pieceWhiteGrad); stroke: rgba(120, 108, 88, 0.55); stroke-width: 0.8; }
-.piece.selected-piece { --piece-glow: drop-shadow(0 0 8px var(--accent-glow)); }
+.piece-black { fill: url(#pieceBlackGrad) #171a20; stroke: url(#pieceShadowGrad); }
+.piece-white { fill: url(#pieceWhiteGrad) #d9d3c6; stroke: url(#pieceShadowGrad); }
+.piece.selected-piece { stroke: none; filter: drop-shadow(0 0 8px var(--accent-glow)); }
 
-.piece.enclosed-piece { --piece-glow: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
+.piece.enclosed-piece { stroke: none; filter: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
 
-.piece.winning-piece { --piece-glow: drop-shadow(0 0 7px var(--accent-glow)) drop-shadow(0 0 7px var(--accent-glow)); }
+.piece.winning-piece { stroke: none; filter: drop-shadow(0 0 7px var(--accent-glow)) drop-shadow(0 0 7px var(--accent-glow)); }
 
 .overlay {
   position: fixed;
@@ -1383,14 +1381,14 @@ body {
 
 :root { --frame-w: 440px; }
 
-html { background-color: #0e0703; }
+html { background-color: var(--table-top, #050a14); }
 body {
   width: min(100%, var(--frame-w));
   margin: 0 auto;
   border-left: 1px solid var(--metal-line);
   border-right: 1px solid var(--metal-line);
   
-  box-shadow: 0 0 0 100vmax rgba(6, 3, 1, 0.62), 0 0 60px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 0 100vmax rgba(0, 2, 6, 0.62), 0 0 60px rgba(0, 0, 0, 0.7);
 }
 html:has(.panel-setup:not([hidden])),
 html:has(.panel-options:not([hidden])) { --frame-w: 900px; }

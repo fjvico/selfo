@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build b4255890. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 43a26085. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,32 +31,29 @@
   <svg id="gfxDefs" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <defs>
       
-      <radialGradient id="pieceBlackGrad" cx="40%" cy="34%" r="72%">
-        <stop offset="0" stop-color="#4d433c"/>
-        <stop offset="0.35" stop-color="#241f1b"/>
-        <stop offset="0.75" stop-color="#0c0a09"/>
-        <stop offset="1" stop-color="#020202"/>
+      <radialGradient id="pieceBlackGrad" cx="50%" cy="50%" r="50%" fx="36%" fy="30%">
+        <stop offset="0" stop-color="#aab0ba"/>
+        <stop offset="0.07" stop-color="#626872"/>
+        <stop offset="0.28" stop-color="#2f343c"/>
+        <stop offset="0.62" stop-color="#171a20"/>
+        <stop offset="0.9" stop-color="#08090c"/>
+        <stop offset="1" stop-color="#000"/>
       </radialGradient>
-      <radialGradient id="pieceWhiteGrad" cx="40%" cy="34%" r="76%">
+      <radialGradient id="pieceWhiteGrad" cx="50%" cy="50%" r="50%" fx="36%" fy="30%">
         <stop offset="0" stop-color="#ffffff"/>
-        <stop offset="0.5" stop-color="#f2ede1"/>
-        <stop offset="0.88" stop-color="#cdc4b1"/>
-        <stop offset="1" stop-color="#b0a692"/>
+        <stop offset="0.35" stop-color="#f4f1ea"/>
+        <stop offset="0.7" stop-color="#d9d3c6"/>
+        <stop offset="0.92" stop-color="#b9b1a1"/>
+        <stop offset="1" stop-color="#9d9482"/>
       </radialGradient>
       
-      <filter id="stoneFx" x="-35%" y="-35%" width="170%" height="185%" color-interpolation-filters="sRGB">
-        <feGaussianBlur in="SourceAlpha" stdDeviation="2.4" result="sb"/>
-        <feOffset in="sb" dx="1.2" dy="4.2" result="so"/>
-        <feFlood flood-color="#000" flood-opacity="0.55" result="sc"/>
-        <feComposite in="sc" in2="so" operator="in" result="shadow"/>
-        <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="h"/>
-        <feSpecularLighting in="h" surfaceScale="6" specularConstant="0.6" specularExponent="11" lighting-color="#ffffff" result="spec">
-          <feDistantLight azimuth="232" elevation="55"/>
-        </feSpecularLighting>
-        <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn"/>
-        <feComposite in="SourceGraphic" in2="specIn" operator="arithmetic" k1="0" k2="1" k3="0.8" k4="0" result="lit"/>
-        <feMerge><feMergeNode in="shadow"/><feMergeNode in="lit"/></feMerge>
-      </filter>
+      <radialGradient id="pieceShadowGrad" cx="53%" cy="61%" r="66%">
+        <stop offset="0" stop-color="#000" stop-opacity="0.55"/>
+        <stop offset="0.55" stop-color="#000" stop-opacity="0.55"/>
+        <stop offset="0.62" stop-color="#000" stop-opacity="0.42"/>
+        <stop offset="0.8" stop-color="#000" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000" stop-opacity="0"/>
+      </radialGradient>
 
       <linearGradient id="slabChamferShade" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
@@ -83,12 +80,6 @@
         <stop offset="0.55" style="stop-color:#000;stop-opacity:calc(var(--cell-grad, 0.26) * 0.08)"/>
         <stop offset="1" style="stop-color:#fff;stop-opacity:calc(var(--cell-grad, 0.26) * 0.38)"/>
       </linearGradient>
-      
-      <filter id="glassNoise" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="7" result="n"/>
-        <feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.55 -0.2"/>
-        <feComposite in2="SourceAlpha" operator="in"/>
-      </filter>
     </defs>
   </svg>
 
