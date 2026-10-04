@@ -598,7 +598,8 @@ body {
 .compact-draw-btn { color: #aeb5bb; border-color: #3d4348; }
 .compact-draw-btn:hover:not(:disabled) { color: #d7dde2; border-color: #6a737a; }
 .compact-side-center > .compact-draw-btn { grid-area: 1 / 1; }
-.onboarding-skip { margin: 0 auto 12px; }
+
+.chip-btn.icon-btn.onboarding-skip { display: flex; margin: 0 auto 12px; }
 .onboarding-skip[aria-checked="true"] { color: var(--accent); border-color: var(--accent-dim); box-shadow: 0 0 10px var(--accent-glow); }
 
 .compact-swap-btn.compact-swap-inactive {
