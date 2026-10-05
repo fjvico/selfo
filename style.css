@@ -1429,3 +1429,13 @@ html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
 .onboarding-skip .icon-wire { width: 22px; height: 22px; }
 
 html.skip-splash #onboardingOverlay { visibility: hidden; transition: none; animation: none; }
+
+@media (hover: hover) and (pointer: fine) {
+  :root { --board-reserve: 250px; }
+  .panel-board { justify-content: space-between; padding-top: 0; }
+}
+.share-menu-item[hidden] { display: none; }
+
+.winner-rest .compact-mode-icon.winner { animation: none; }
+
+.table-only #boardScroll, .table-only #compactPlayers, .table-only #challengeBar, .table-only #difficultyWrap { visibility: hidden; }
