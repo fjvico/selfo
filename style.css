@@ -1424,3 +1424,5 @@ html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
 .chip-btn.icon-btn.onboarding-skip { width: 40px; height: 40px; }
 .compact-swap-btn .icon-wire { width: 23px; height: 23px; }
 .onboarding-skip .icon-wire { width: 22px; height: 22px; }
+
+html.skip-splash #onboardingOverlay { visibility: hidden; transition: none; animation: none; }

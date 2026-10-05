@@ -1,7 +1,11 @@
-<!-- (c) fjvico. Selfo, build f00b7730. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 104eefea. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+  // "Don't show again" splash choice: hide the splash from the very first paint (see markSplashReady() in script.js).
+  try { if (localStorage.getItem("selfo.skipSplash") === "1" && new URLSearchParams(location.search).get("splash") !== "true") document.documentElement.classList.add("skip-splash"); } catch (e) {}
+</script>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src https://asus01.tailfff808.ts.net; base-uri 'none'; form-action 'none'; object-src 'none'" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
