@@ -555,7 +555,7 @@ body {
   margin-bottom: 9px;
   padding: 6px 7px;
   background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
-  border: 1px solid #4f565d;
+  border: 1px solid #646c74;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   pointer-events: none;
@@ -582,7 +582,7 @@ body {
 .swap-hint-key {
   width: 9px;
   height: 9px;
-  border: 1.3px solid #4f565d;
+  border: 1.3px solid #646c74;
   border-radius: 2px;
   background: transparent;
   box-sizing: border-box;
@@ -592,8 +592,8 @@ body {
   animation: swapHintBlink 1.1s ease-in-out infinite;
 }
 @keyframes swapHintBlink {
-  0%, 49% { background: #ffffff; border-color: #ffffff; }
-  50%, 100% { background: #4f565d; border-color: #4f565d; }
+  0%, 49% { background: #747c83; border-color: #747c83; }
+  50%, 100% { background: #646c74; border-color: #646c74; }
 }
 
 .compact-draw-btn { color: #aeb5bb; border-color: #3d4348; }
