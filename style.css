@@ -592,8 +592,8 @@ body {
   animation: swapHintBlink 1.1s ease-in-out infinite;
 }
 @keyframes swapHintBlink {
-  0%, 49% { background: #7d858c; border-color: #7d858c; }
-  50%, 100% { background: #05060a; border-color: #4f565d; }
+  0%, 49% { background: #ffffff; border-color: #ffffff; }
+  50%, 100% { background: #4f565d; border-color: #4f565d; }
 }
 
 .compact-draw-btn { color: #aeb5bb; border-color: #3d4348; }
@@ -1381,7 +1381,8 @@ body {
   .panel { max-height: none; }
 
   .board-svg {
-    width: 100%;
+    
+    width: min(100%, calc((100dvh - var(--board-reserve, 290px)) * var(--board-aspect, 1)));
     height: auto;
     max-width: 100%;
     max-height: 100%;
@@ -1419,6 +1420,7 @@ html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
   }
 }
 
-.compact-swap-btn { padding: 3px; }
+.compact-swap-btn { padding: 0; width: 40px; height: 40px; }
+.chip-btn.icon-btn.onboarding-skip { width: 40px; height: 40px; }
 .compact-swap-btn .icon-wire { width: 23px; height: 23px; }
 .onboarding-skip .icon-wire { width: 22px; height: 22px; }
