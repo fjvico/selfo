@@ -178,7 +178,6 @@ body {
 }
 .table-lattice path, .table-lattice circle { fill: none; stroke-linejoin: round; }
 .table-lattice .grid-line { stroke: rgba(var(--table-line-rgb, 53, 224, 255), 0.14); stroke-width: 1; }
-.table-lattice .grid-ring { stroke: rgba(var(--table-line-rgb, 53, 224, 255), 0.26); stroke-width: 1.4; }
 
 .board-flash-overlay {
   position: absolute;
