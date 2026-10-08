@@ -466,11 +466,14 @@ body {
   pointer-events: none;
 }
 
-.celebration-overlay { background: rgba(4, 6, 8, 0.55); }
+.celebration-overlay { background: rgba(4, 6, 8, 0.55); backdrop-filter: none; -webkit-backdrop-filter: none; }
+
 .celebration-burst {
-  position: relative;
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none;
 }
 .celebration-piece {
   position: absolute;
