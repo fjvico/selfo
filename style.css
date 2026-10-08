@@ -738,7 +738,14 @@ body {
 }
 .cpu-log-text { color: var(--metal-light); white-space: nowrap; }
 
-.icon-halo:hover {
+@media (hover: hover) {
+  .icon-halo:hover {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+}
+.icon-halo:active:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent-dim);
   box-shadow: 0 0 10px var(--accent-glow);
@@ -826,7 +833,10 @@ body {
   color: var(--metal-mid);
   cursor: pointer;
 }
-.chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+@media (hover: hover) {
+  .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+}
+.chip-btn:active:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
 .chip-btn.icon-btn {
   display: inline-flex;
   align-items: center;
