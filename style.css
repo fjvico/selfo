@@ -1198,23 +1198,13 @@ body {
 }
 .hex-cell.selectable { cursor: pointer; }
 .hex-cell.selectable:hover { fill: rgba(255, 255, 255, 0.14); }
-.hex-cell.selected {
-  stroke: var(--accent);
-  stroke-opacity: 1;
-  stroke-width: 3;
-  filter: drop-shadow(0 0 6px var(--accent-glow));
-}
+
 .hex-cell.move-target {
   fill: rgba(255, 255, 255, 0.16); 
 }
 
 .hex-cell.blocked-target {
   fill: rgba(0, 0, 0, 0.32);
-}
-.hex-cell.last-move {
-  stroke: rgba(255, 208, 96, 0.7);
-  stroke-opacity: 1;
-  stroke-width: 2;
 }
 
 .piece { cursor: grab; paint-order: stroke fill; stroke-width: 14; pointer-events: fill; }
