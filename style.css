@@ -1207,6 +1207,10 @@ body {
 .hex-cell.move-target {
   fill: rgba(255, 255, 255, 0.16); 
 }
+
+.hex-cell.blocked-target {
+  fill: rgba(0, 0, 0, 0.32);
+}
 .hex-cell.last-move {
   stroke: rgba(255, 208, 96, 0.7);
   stroke-opacity: 1;
