@@ -1212,7 +1212,7 @@ body {
 .piece.dragging { cursor: grabbing; } 
 .piece-black { fill: url(#pieceBlackGrad) #171a20; stroke: url(#pieceShadowGrad); }
 .piece-white { fill: url(#pieceWhiteGrad) #d9d3c6; stroke: url(#pieceShadowGrad); }
-.piece.selected-piece { stroke: none; filter: drop-shadow(0 0 8px var(--accent-glow)); }
+.piece.selected-piece { stroke: none; filter: drop-shadow(0 0 8px var(--start-glow)); } 
 
 .piece.enclosed-piece { stroke: none; filter: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
 
