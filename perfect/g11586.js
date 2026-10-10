@@ -1,0 +1,1 @@
+(window.__SELFO_PERFECT=window.__SELFO_PERFECT||{})["g11586"]={"index":"11586","radius":2,"pieces":3,"enclosureAllowed":true,"result":"white","plies":2,"black":["-2,0","-2,1","-2,2"],"white":["-1,-1","-1,0","-1,1"],"table":"t2n3"};
