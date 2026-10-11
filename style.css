@@ -851,7 +851,7 @@ body {
 }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-.difficulty-toggle-icon { transform: translateY(-2px); }
+.difficulty-toggle-icon { transform: translateY(-3px); }
 
 .init-level-toggle .init-needle {
   transform-box: view-box;
@@ -861,7 +861,18 @@ body {
 .init-level-toggle[data-level="0"] .init-needle { transform: rotate(-60deg); }
 .init-level-toggle[data-level="2"] .init-needle { transform: rotate(60deg); }
 @media (prefers-reduced-motion: reduce) { .init-level-toggle .init-needle { transition: none; } }
-#initLevelMenu .mode-icon { height: 18px; width: auto; }
+
+#initLevelWrap { --init-icon-k: calc(28 / 24); }
+.icon-wire.difficulty-toggle-icon { 
+  width: calc(24 * var(--init-icon-k) * 1px);
+  height: calc(24 * var(--init-icon-k) * 1px);
+  stroke-width: calc(1 / var(--init-icon-k));
+}
+#initLevelMenu .mode-icon {
+  height: calc(14 * var(--init-icon-k) * 1px);
+  width: auto;
+  stroke-width: calc(1 / var(--init-icon-k));
+}
 
 .icon-wire {
   fill: none;

@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build be8aa065. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 8c0578c9. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -126,9 +126,37 @@
           </div>
         </div>
         
+        <button id="fullscreenBtn" class="chip-btn icon-btn icon-halo" title="Full screen" aria-label="Full screen" aria-pressed="false">
+          <svg class="icon-wire fs-enter" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" style="stroke-width:1.1">
+            <path d="M4 9V4h5"/>
+            <path d="M20 9V4h-5"/>
+            <path d="M4 15v5h5"/>
+            <path d="M20 15v5h-5"/>
+          </svg>
+          <svg class="icon-wire fs-exit" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" style="stroke-width:1.1">
+            <path d="M9 4v5H4"/>
+            <path d="M15 4v5h5"/>
+            <path d="M9 20v-5H4"/>
+            <path d="M15 20v-5h5"/>
+          </svg>
+        </button>
+        
+        <button id="soundBtn" class="chip-btn icon-btn icon-halo" title="Sound off" aria-label="Sound off" aria-pressed="false">
+          <svg class="icon-wire snd-on" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" style="display:none;stroke-width:1">
+            <path d="M4 9.5v5h3.5l4.5 4V5.5l-4.5 4z"/>
+            <path d="M15.5 9a4 4 0 0 1 0 6"/>
+            <path d="M18 6.5a8 8 0 0 1 0 11"/>
+          </svg>
+          <svg class="icon-wire snd-off" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" style="stroke-width:1">
+            <path d="M4 9.5v5h3.5l4.5 4V5.5l-4.5 4z"/>
+            <path d="M16 9.5l5 5"/>
+            <path d="M21 9.5l-5 5"/>
+          </svg>
+        </button>
+        
         <div class="mode-menu-wrap" id="initLevelWrap" hidden>
           <button id="initLevelToggle" class="chip-btn icon-btn icon-halo init-level-toggle" data-level="1" title="Difficulty" aria-label="Difficulty" aria-haspopup="true" aria-expanded="false">
-            <svg class="icon-wire difficulty-toggle-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <svg class="icon-wire difficulty-toggle-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false">
               <path d="M3.5 18a8.5 8.5 0 0 1 17 0"/>
               <path class="init-needle" d="M12 18V10.5"/>
               <circle cx="12" cy="18" r="1.1"/>
@@ -146,34 +174,6 @@
             </button>
           </div>
         </div>
-        
-        <button id="soundBtn" class="chip-btn icon-btn icon-halo" title="Sound off" aria-label="Sound off" aria-pressed="false">
-          <svg class="icon-wire snd-on" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" style="display:none;stroke-width:1">
-            <path d="M4 9.5v5h3.5l4.5 4V5.5l-4.5 4z"/>
-            <path d="M15.5 9a4 4 0 0 1 0 6"/>
-            <path d="M18 6.5a8 8 0 0 1 0 11"/>
-          </svg>
-          <svg class="icon-wire snd-off" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" style="stroke-width:1">
-            <path d="M4 9.5v5h3.5l4.5 4V5.5l-4.5 4z"/>
-            <path d="M16 9.5l5 5"/>
-            <path d="M21 9.5l-5 5"/>
-          </svg>
-        </button>
-        
-        <button id="fullscreenBtn" class="chip-btn icon-btn icon-halo" title="Full screen" aria-label="Full screen" aria-pressed="false">
-          <svg class="icon-wire fs-enter" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" style="stroke-width:1.1">
-            <path d="M4 9V4h5"/>
-            <path d="M20 9V4h-5"/>
-            <path d="M4 15v5h5"/>
-            <path d="M20 15v5h-5"/>
-          </svg>
-          <svg class="icon-wire fs-exit" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" style="stroke-width:1.1">
-            <path d="M9 4v5H4"/>
-            <path d="M15 4v5h5"/>
-            <path d="M9 20v-5H4"/>
-            <path d="M15 20v-5h5"/>
-          </svg>
-        </button>
         <div class="share-wrap">
           <button id="shareLinkBtn" class="chip-btn icon-btn icon-halo" disabled title="Share this setup" aria-label="Share this setup">
             <svg class="icon-wire" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" style="stroke-width:1.2">
