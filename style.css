@@ -868,6 +868,12 @@ body {
   height: calc(24 * var(--init-icon-k) * 1px);
   stroke-width: calc(1 / var(--init-icon-k));
 }
+
+#initLevelMenu {
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
 #initLevelMenu .mode-icon {
   height: calc(14 * var(--init-icon-k) * 1px);
   width: auto;
