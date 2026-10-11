@@ -1,4 +1,4 @@
-<!-- (c) fjvico. Selfo, build 7786e875. All rights reserved. -->
+<!-- (c) fjvico. Selfo, build 15dd546c. All rights reserved. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -122,6 +122,27 @@
             </button>
             <button class="mode-btn" data-mode="computerself" title="AI vs AI" aria-label="Two computers">
               <svg class="icon-wire mode-icon" aria-hidden="true" focusable="false"></svg>
+            </button>
+          </div>
+        </div>
+        
+        <div class="mode-menu-wrap" id="initLevelWrap" hidden>
+          <button id="initLevelToggle" class="chip-btn icon-btn icon-halo init-level-toggle" data-level="1" title="Difficulty" aria-label="Difficulty" aria-haspopup="true" aria-expanded="false">
+            <svg class="icon-wire difficulty-toggle-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+              <path d="M3.5 18a8.5 8.5 0 0 1 17 0"/>
+              <path class="init-needle" d="M12 18V10.5"/>
+              <circle cx="12" cy="18" r="1.1"/>
+            </svg>
+          </button>
+          <div class="mode-menu" id="initLevelMenu" hidden>
+            <button class="mode-btn" data-level="0" title="Easy" aria-label="Easy" aria-pressed="false">
+              <svg class="icon-wire mode-icon" viewBox="2 7 20 14" aria-hidden="true" focusable="false"><path d="M3.5 18a8.5 8.5 0 0 1 17 0"/><path d="M12 18V10.5" transform="rotate(-60 12 18)"/><circle cx="12" cy="18" r="1.1"/></svg>
+            </button>
+            <button class="mode-btn" data-level="1" title="Medium" aria-label="Medium" aria-pressed="false">
+              <svg class="icon-wire mode-icon" viewBox="2 7 20 14" aria-hidden="true" focusable="false"><path d="M3.5 18a8.5 8.5 0 0 1 17 0"/><path d="M12 18V10.5"/><circle cx="12" cy="18" r="1.1"/></svg>
+            </button>
+            <button class="mode-btn" data-level="2" title="Hard" aria-label="Hard" aria-pressed="false">
+              <svg class="icon-wire mode-icon" viewBox="2 7 20 14" aria-hidden="true" focusable="false"><path d="M3.5 18a8.5 8.5 0 0 1 17 0"/><path d="M12 18V10.5" transform="rotate(60 12 18)"/><circle cx="12" cy="18" r="1.1"/></svg>
             </button>
           </div>
         </div>
@@ -377,6 +398,8 @@
     </div>
   </div>
 
+  <script src="initlists.js"></script>
+  
   <script src="game.js"></script>
 </body>
 </html>

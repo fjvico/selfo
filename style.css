@@ -853,6 +853,16 @@ body {
 
 .difficulty-toggle-icon { transform: translateY(-2px); }
 
+.init-level-toggle .init-needle {
+  transform-box: view-box;
+  transform-origin: 12px 18px;
+  transition: transform 0.25s ease;
+}
+.init-level-toggle[data-level="0"] .init-needle { transform: rotate(-60deg); }
+.init-level-toggle[data-level="2"] .init-needle { transform: rotate(60deg); }
+@media (prefers-reduced-motion: reduce) { .init-level-toggle .init-needle { transition: none; } }
+#initLevelMenu .mode-icon { height: 18px; width: auto; }
+
 .icon-wire {
   fill: none;
   stroke: currentColor;
