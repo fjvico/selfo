@@ -601,6 +601,29 @@ body {
   50%, 100% { background: #646c74; border-color: #646c74; }
 }
 
+.pk-hint {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  padding: 6px 7px;
+  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+  border: 1px solid #646c74;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0;
+  animation: pkHintLife 6.5s ease-in-out 1 forwards;
+}
+@keyframes pkHintLife {
+  0%   { opacity: 0; }
+  6%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .pk-hint { animation-duration: 6.5s; } }
 .pk-kb {
   display: grid;
   grid-template-columns: 19px 11px 11px 11px;
