@@ -1,9 +1,5 @@
-/* =================================================================
-   SELFO — futuristic metallic theme
-   ================================================================= */
-
 :root {
-  /* metallic base palette */
+  
   --bg-deep: #0b0d10;
   --bg-panel: linear-gradient(180deg, #1b1f24 0%, #14171a 100%);
   --metal-light: #d7dde2;
@@ -11,27 +7,23 @@
   --metal-dark: #4c5359;
   --metal-line: #2c3136;
 
-  /* board tones, as specified */
-  --cell-fill: #808080;      /* 50% gray */
+  --cell-fill: #808080;      
   --cell-fill-hover: #8f8f8f;
-  /* Mirrors config.js's BOARD_COLORS.cellEdge — see the comment there.
-     Kept here too, matching literally, purely so the very first paint
-     (before script.js's applyBoardColors() runs) already shows the right
-     color instead of flashing to it. */
+  --cell-fill-target: #8f9598; 
+  
   --cell-edge: #7b7b7b;
 
-  /* accent (cool cyan, "energy" glow) */
   --accent: #35e0ff;
   --accent-dim: #1c8ea6;
   --accent-glow: rgba(53, 224, 255, 0.55);
 
   --danger: #ff5c6c;
   --danger-glow: rgba(255, 92, 108, 0.5);
-  --heart-red: #ff3d54;         /* the support heart while it beats */
+  --heart-red: #ff3d54;         
   --heart-red-fill: rgba(255, 61, 84, 0.42);
   --heart-red-glow: rgba(255, 61, 84, 0.75);
 
-  --start-glow: rgba(110, 255, 150, 0.55); /* green — distinct from the cyan end-of-game flash */
+  --start-glow: rgba(110, 255, 150, 0.55); 
 
   --piece-black-a: #3a3f45;
   --piece-black-b: #06070a;
@@ -43,9 +35,6 @@
 
   --radius-panel: 10px;
 
-  /* Players strip under the board (see .compact-players): the mode icon
-     and the piece-color swatch next to it. Variables so the mobile
-     query at the bottom of this file can enlarge both from one place. */
   --compact-icon-h: 22px;
   --compact-swatch: 18px;
 }
@@ -60,40 +49,43 @@
 html, body {
   height: 100%;
   margin: 0;
-  background: radial-gradient(ellipse at 50% -10%, #1a2024 0%, var(--bg-deep) 55%);
+  background: #140b06;
   color: var(--metal-light);
   font-family: var(--font-body), sans-serif;
   overflow: hidden;
-  /* No pull-to-refresh, no overscroll glow/bounce chaining out to the
-     browser, and no swipe-sideways back/forward navigation: a stray
-     downward or sideways drag (easy to do while playing on a phone)
-     must never reload the page or leave the game. This doesn't stop
-     normal scrolling — the mobile layout below still scrolls as usual;
-     it only stops a scroll that has already hit its end from being
-     handed to the browser. Set on both html and body because on mobile
-     (see the max-width: 900px query) body is the actual scroll
-     container, not the viewport. */
+  
   overscroll-behavior: none;
 }
 
 body {
+  
+  background-color: transparent;
   background-image:
-    radial-gradient(ellipse at 50% -10%, #1a2024 0%, var(--bg-deep) 55%),
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+    radial-gradient(ellipse 85% 70% at 50% 38%, rgba(var(--table-line-rgb, 53, 224, 255), 0.09) 0%, rgba(0, 0, 0, 0) 60%),
+    radial-gradient(ellipse 120% 100% at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.55) 100%);
+  background-attachment: local, local;
 }
 
-/* ---------------------------------------------------------------
-   Top bar
-   --------------------------------------------------------------- */
+#tableSurface {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--table-top, #050a14) 0%, var(--table-bottom, #0a1a2b) 100%);
+}
+
 .topbar {
   height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 18px;
-  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
-  border-bottom: 1px solid var(--metal-line);
-  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  background: linear-gradient(180deg, rgba(34, 18, 9, 0.88) 0%, rgba(16, 8, 3, 0.9) 100%);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.55), inset 0 -1px 0 rgba(255, 210, 160, 0.08);
 }
 
 .topbar-left {
@@ -117,9 +109,7 @@ body {
   text-shadow: 0 0 10px var(--accent-glow);
   font-size: 20px;
   line-height: 1;
-  /* The ⬢ glyph sits low in its own font's line box relative to the
-     "SELFO" text next to it, even with align-items: center on .brand —
-     nudge it up to actually line up with the text visually. */
+  
   transform: translateY(-2px);
 }
 .brand-text { color: var(--metal-light); }
@@ -132,9 +122,6 @@ body {
   font-size: 13px;
 }
 
-/* ---------------------------------------------------------------
-   Layout: options | board | setup  (desktop = row)
-   --------------------------------------------------------------- */
 .layout {
   height: calc(100% - 56px);
   display: grid;
@@ -142,22 +129,11 @@ body {
   gap: 14px;
   padding: 14px;
 }
-/* Mode selection lives in the top bar now, so in the default minimalist
-   setup (local2p, no ?showAdvanced=true) the left setup panel has nothing
-   left to show at all — see updateSetupPanelVisibility() in script.js,
-   which hides the panel and adds this class together, so the grid
-   doesn't keep reserving a column for empty space. */
+
 .layout.no-setup-panel {
   grid-template-columns: 1fr 250px;
 }
-/* Minimalist mode (no ?showAdvanced=true) also drops the right-hand
-   options panel entirely (see updateSetupVisibility() in script.js,
-   which toggles .panel-options[hidden] and this class together) — the
-   compact players/swap strip below the board replaces it, so there's no
-   250px column left to reserve either. In practice this always lands
-   together with .no-setup-panel (every setup-panel block is itself
-   showAdvanced-gated), but each combination is covered here in case
-   that ever changes. */
+
 .layout.no-options-panel {
   grid-template-columns: 280px 1fr;
 }
@@ -182,13 +158,27 @@ body {
   gap: 14px;
   padding: 10px;
   position: relative;
+  isolation: isolate;
+  
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
 }
 
-/* Non-blocking "game over" cue: a brief glow across the board itself
-   instead of a dialog that covers it. Triggered by adding/removing the
-   .flashing class (see script.js's flashBoardEnd()). A second variant,
-   .flashing-start (green instead of cyan), marks the moment a game
-   actually begins — see flashBoardStart(). */
+.table-lattice {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 82%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 82%);
+  z-index: -1; 
+}
+.table-lattice path, .table-lattice circle { fill: none; stroke-linejoin: round; }
+.table-lattice .grid-line { stroke: rgba(var(--table-line-rgb, 53, 224, 255), 0.14); stroke-width: 1; }
+
 .board-flash-overlay {
   position: absolute;
   inset: 0;
@@ -214,28 +204,61 @@ body {
   100% { opacity: 0; }
 }
 
-/* Fade-to-black transition between a finished game and the next one.
-   Opacity is driven by toggling .active from script.js (fadeToBlackThenRestart()),
-   which swaps the board's contents at the exact moment the fade-in
-   finishes (via the transitionend event), then removes .active to fade
-   back in on the fresh board — see the CONFIG.BOARD_FADE_MS comment. */
 .board-fade-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
   border-radius: var(--radius-panel);
-  background: #000;
+  background: none; 
   opacity: 0;
   z-index: 5;
   transition: opacity 450ms ease;
 }
 .board-fade-overlay.active { opacity: 1; }
 
+.board-svg { transition: opacity 450ms ease; }
+.panel-board:has(.board-fade-overlay.active) #boardSvg { opacity: 0; }
+
+.level-ripples {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6; 
+  background: radial-gradient(circle at var(--ripple-cx) var(--ripple-cy), var(--ripple-wash) 0%, rgba(0, 0, 0, 0) 70%);
+  opacity: 0;
+  animation: level-ripples-wash var(--ripple-ms, 3200ms) ease-in-out forwards;
+}
+@keyframes level-ripples-wash {
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
+  70%  { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+.level-ripple {
+  position: absolute;
+  left: var(--ripple-cx);
+  top: var(--ripple-cy);
+  width: var(--ripple-d);
+  height: var(--ripple-d);
+  box-sizing: border-box;
+  border: 2px solid var(--ripple-color);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--ripple-color), inset 0 0 10px var(--ripple-color);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.1);
+  animation: level-ripple-expand 2.2s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+@keyframes level-ripple-expand {
+  0%   { opacity: 0;   transform: translate(-50%, -50%) scale(0.1); }
+  15%  { opacity: 0.7; }
+  100% { opacity: 0;   transform: translate(-50%, -50%) scale(1); }
+}
+
 .board-scroll {
   width: 100%;
-  /* flex (not a fixed height:100%) so the compact players/swap strip
-     below it (see .compact-players) still gets room to lay out under
-     ?showAdvanced=false — see .panel-board's column flex-direction. */
+  
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -246,62 +269,44 @@ body {
 
 .board-svg {
   display: block;
-  /* Board pixel size scales with radius (CONFIG.CELL_SIZE is constant —
-     see script.js), so without this a bigger board would render at its
-     literal larger size instead of shrinking to fit .board-scroll. Since
-     the SVG already carries a matching viewBox (see renderBoard()), this
-     is enough for the browser to scale it down (preserving aspect ratio)
-     to whatever box actually contains it — keeping .board-scroll's own
-     height constant across radii, which in turn keeps .compact-players
-     right after it at a fixed position instead of getting pushed down by
-     a physically taller board. */
+  
   max-width: 100%;
   max-height: 100%;
   width: auto;
   height: auto;
 }
 
-/* ---------------------------------------------------------------
-   Minimalist players/swap strip (no ?showAdvanced=true) — replaces
-   the options panel's players box + button stack (see index.html's
-   #compactPlayers and updateCompactBar() in script.js).
-   --------------------------------------------------------------- */
-/* Centered flex row with fixed (not container-width-dependent) gaps
-   between the three groups, so the icons sit close together under
-   the board at the same distance on a wide desktop panel as on a
-   narrow mobile one — rather than the previous 1fr/1fr grid, which
-   pinned them to the *panel's* edges and pulled them far apart on
-   wide screens. The swap button's own box always stays in the flow
-   (see .compact-swap-btn.compact-swap-hidden below) instead of being
-   removed via the [hidden] attribute, so its appearing/disappearing
-   never changes the fixed gap on either side of it. */
 .compact-players {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0 12px;
+  justify-content: space-between; 
+  width: var(--board-w, 100%); 
+  max-width: 100%;
+  padding: 0 clamp(2px, 1.5vw, 12px); 
 }
 .compact-players[hidden] { display: none; }
 .compact-side {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: clamp(6px, 2.4vw, 10px);
   flex-shrink: 0;
+  
+  padding: 7px var(--compact-pad) 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(2, 6, 12, 0.62) 0%, rgba(8, 16, 26, 0.5) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.14);
 }
 .compact-side-center {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  margin: 0 14px;
-  /* Fixed slot width — matches the button's old footprint back when it
-     still showed the "Swap colors" label, so the icon-only button (see
-     .compact-swap-btn below) can be visually smaller without the two
-     player groups on either side drifting inward to fill the freed-up
-     space. The icon just centers within this unchanged-size slot. */
-  width: 120px;
+  margin: 0 clamp(3px, 1.6vw, 14px);
+  
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 120px;
 }
 .compact-swatch {
   width: var(--compact-swatch); height: var(--compact-swatch); border-radius: 50%;
@@ -309,75 +314,50 @@ body {
   border: 1px solid var(--metal-line);
   box-sizing: border-box;
   transition: border-color 0.2s, box-shadow 0.2s;
-  /* .compact-side aligns to flex-start (not center) so the icon lines up
-     by its own height, not the taller .compact-icon-col box that also
-     reserves space for the "you" marker underneath it (see below) — this
-     margin re-centers the swatch against just the icon itself:
-     (icon height - swatch size) / 2. */
+  
   margin-top: calc((var(--compact-icon-h) - var(--compact-swatch)) / 2);
 }
 .compact-mode-icon {
-  /* fixed height, auto width — keeps each glyph (see
-     ModeIcons.buildSideIcon) undistorted instead of stretching to a
-     fixed box */
+  
   height: var(--compact-icon-h); width: auto;
   color: var(--metal-mid);
   flex-shrink: 0;
-  /* the transform part is the android getting back up (see .lost below):
-     quick start, gentle settle. transform-origin only snaps back to the
-     default once that is over (0.5s delay), so the rise pivots about the
-     same corner the fall did instead of jumping mid-motion. */
+  
   transition: color 0.2s, filter 0.2s,
               transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
               transform-origin 0s linear 0.5s;
 }
-/* The android knows it has lost (Game.cpuLost — see updateCompactBar()):
-   it topples to the left, head pointing left, like a figure that has
-   given up. It pivots about its bottom-left corner (its left foot), so
-   the fall is a real tip-over — a swinging arc that sweeps to the left
-   and ends resting on the same baseline it stood on — rather than a
-   spin in place. Pivoting about the foot alone would land it a whole
-   5h/6 to the left of where it stood; the translateX pulls it back so
-   it ends up only --lost-shift (default h/3) left of its standing
-   position: 5h/6 - h/3 = h/2 of it. The fall accelerates into the floor
-   (ease-in) instead of easing out like a controlled move.
-   Its left end sticks out --lost-shift + h/6 past its standing box; the
-   right-hand icon has the wide swap slot there, while a left-hand icon
-   (computerself) has its swatch only 10px away, so that one gets a
-   smaller shift that leaves ~4px clear of it. */
+
 .compact-mode-icon.lost {
-  --lost-shift: calc(var(--compact-icon-h) / 3);
+  --lost-shift: 0px; 
+  --lost-lift: calc(var(--compact-icon-h) * -0.2); 
   transform-origin: 0 100%;
-  transform: translateX(calc(var(--compact-icon-h) * 5 / 6 - var(--lost-shift))) rotate(-90deg);
+  transform: translate(calc(var(--compact-icon-h) * 5 / 6 - var(--lost-shift)), var(--lost-lift)) rotate(-90deg);
   transition: color 0.2s, filter 0.2s,
               transform 0.55s cubic-bezier(0.55, 0.055, 0.675, 0.19),
               transform-origin 0s;
 }
+
 .compact-side-left .compact-mode-icon.lost {
-  --lost-shift: calc(6px - var(--compact-icon-h) / 6);
+  --lost-pivot-x: 50%;
+  --lost-lift: calc(var(--compact-icon-h) * -0.4);
+  
+  --lost-back: calc(var(--compact-icon-h) * -0.333);
+  transform-origin: var(--lost-pivot-x) 100%;
+  transform: translate(var(--lost-back), var(--lost-lift)) rotate(90deg);
 }
 @media (prefers-reduced-motion: reduce) {
   .compact-mode-icon,
   .compact-mode-icon.lost { transition: color 0.2s, filter 0.2s; }
 }
-/* Wraps just the icon (not the swatch beside it) so the "this is you"
-   marker below can sit centered under the icon alone, in its own row,
-   without disturbing the swatch+icon's horizontal alignment. */
+
 .compact-icon-col {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
 }
-/* "Play online" only — identifies which of the two identical-looking
-   person icons is *this browser's* player (host and guest otherwise
-   can't tell each other apart at a glance). A little glowing underline
-   "tab" rather than plain text: reads as "you are here" without adding
-   a word, and doubles as a tiny brand accent rather than a dry UI
-   label. Empty/invisible by default (both sides render the element,
-   see index.html, so its layout space is always reserved and nothing
-   shifts when it turns on) — .shown is added by updateCompactBar() in
-   script.js to exactly one side, only in online2p. */
+
 .compact-you-mark {
   display: block;
   width: 16px;
@@ -394,20 +374,12 @@ body {
   transform: scaleX(1);
   opacity: 1;
 }
-/* Turn indicator: icon only (not the swatch/"ficha" next to it, which
-   stays a plain color swatch) — a blue tint + drop-shadow on whichever
-   side's person/tower glyph currently has the move. See
-   updateCompactBar(). */
+
 .compact-mode-icon.active-turn {
   color: var(--accent);
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
-/* Winner indicator: a blinking halo on the winning side's swatch, and
-   a little celebratory bounce on its icon, both looping until the
-   next game starts (see Game.winner reset in beginSetupPreview()) —
-   no trophy or other icon, just this animated glow/motion. Kept as
-   two separate keyframe sets (glow vs. transform) so they can run at
-   different speeds without interfering with each other. */
+
 .compact-swatch.winner {
   animation: compact-winner-halo 1.4s ease-in-out infinite;
 }
@@ -419,11 +391,7 @@ body {
   0%, 100% { border-color: var(--accent-dim); box-shadow: 0 0 6px 1px var(--accent-glow); }
   50% { border-color: var(--accent); box-shadow: 0 0 16px 4px var(--accent-glow); }
 }
-/* A proper "jump for joy" rather than a gentle bob: a beat of rest, a
-   big hop with a squash-and-stretch takeoff/landing, a smaller second
-   hop, then rest again before repeating — the held rest at 0%/20% and
-   80%/100% is what reads as discrete little jumps instead of continuous
-   swaying. */
+
 @keyframes compact-winner-bounce {
   0%, 20%, 100% {
     transform: translateY(0) scale(1);
@@ -442,53 +410,36 @@ body {
   80% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 4px var(--accent-glow)); }
 }
 
-/* Win/loss "challenge ladder" bar — see the HTML comment on #challengeBar
-   and applyChallengeOutcome()/renderChallengeBar() in script.js, which
-   build the segments and position the marker; nothing about the segment
-   count is hardcoded here. A plain divided track (segments alternate
-   subtle shading purely to make individual steps countable at a glance,
-   not to distinguish "sides") with a small diamond marker that slides
-   along it — deliberately understated compared to the winner-halo/bounce
-   above, since this is a persistent, always-visible progress indicator,
-   not a one-off celebration. */
 .challenge-bar {
   flex: 0 0 auto;
-  width: 100%;
-  max-width: 280px;
+  width: var(--board-w, 100%); 
+  max-width: 100%;
   margin: 0 auto;
-  /* A bit more side padding than the bar's own edge would otherwise need,
-     specifically so the marker — wider than the track's own rounded-strip
-     visuals, on purpose, so it's easy to see — has room to sit fully
-     inside this padding at either extreme instead of visually crowding
-     the panel's own edge right where it lands most often (a level just
-     changed). */
+  
   padding: 0 11px;
 }
 .challenge-bar[hidden] { display: none; }
-/* Unclipped, and exactly as wide as .challenge-segments-wrap below —
-   .challenge-marker/.challenge-marker-fx are positioned against *this*
-   element (their nearest positioned ancestor), not the wrap, precisely so
-   they aren't clipped by the wrap's own overflow:hidden (needed there
-   only for the segments' rounded corners) — without this split, the
-   marker was rendering half cut-off right at the two ends, since its own
-   box is wider than an exact 0%/100% track position leaves room for. */
+
 .challenge-track {
+  --challenge-marker-w: 18px; 
   position: relative;
-  height: 10px;
+  height: 8px; 
 }
 .challenge-segments-wrap {
   display: flex;
   height: 8px;
-  margin-top: 1px;
+  margin-top: 0; 
   border-radius: 4px;
   overflow: hidden;
-  border: 1px solid var(--metal-line);
-  background: #14171a;
+  
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  background: #04080e;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.15);
 }
 .challenge-segment {
   flex: 1 1 0;
   height: 100%;
-  border-right: 1px solid var(--metal-line);
+  border-right: 1px solid rgba(var(--table-line-rgb, 53, 224, 255), 0.06);
 }
 .challenge-segment:last-child { border-right: none; }
 .challenge-segment:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
@@ -496,23 +447,16 @@ body {
   position: absolute;
   top: 50%;
   left: 0%;
-  width: 18px;
-  height: 6px;
-  margin-left: -9px;
+  width: var(--challenge-marker-w);
+  height: 100%; 
+  margin-left: 0; 
   transform: translateY(-50%);
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent-glow);
-  border-radius: 3px;
+  border-radius: 4px;
   transition: left 0.4s ease;
 }
-/* Small "leveled up"/"leveled down" accent, separate from
-   .celebration-overlay's full-screen one for beating the whole ladder —
-   see playLevelChangeAnimation() in script.js, which positions this to
-   match the marker's own `left` and spawns .challenge-fx-piece children
-   into it (styled further down, after .celebration-piece, whose base
-   rules those overrides need to win against). Not nested inside
-   .challenge-marker itself so its rotate() transform doesn't rotate the
-   burst directions along with it. */
+
 .challenge-marker-fx {
   position: absolute;
   top: 50%;
@@ -522,18 +466,14 @@ body {
   pointer-events: none;
 }
 
-/* Challenge-complete celebration (beating the hardest level) — a burst of
-   accent-colored particles, no text, no icon shapes tied to any game
-   meaning (see applyChallengeOutcome()/playChallengeCompleteCelebration()
-   in script.js, which generates .celebration-piece elements here with
-   randomized angle/distance/delay so the burst never looks identical
-   twice). Sits on the shared .overlay backdrop but without a card —
-   the particles themselves are the whole content. */
-.celebration-overlay { background: rgba(4, 6, 8, 0.55); }
+.celebration-overlay { background: rgba(4, 6, 8, 0.55); backdrop-filter: none; -webkit-backdrop-filter: none; }
+
 .celebration-burst {
-  position: relative;
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none;
 }
 .celebration-piece {
   position: absolute;
@@ -549,20 +489,12 @@ body {
   animation-timing-function: ease-out;
   animation-fill-mode: forwards;
 }
-/* Smaller variant used for the in-bar level-up/down accents (see
-   .challenge-marker-fx above and playLevelChangeAnimation() in
-   script.js) — comes after .celebration-piece on purpose, so these
-   width/height overrides win the cascade against it. */
+
 .challenge-fx-piece {
   width: 4px;
   height: 4px;
 }
-/* "Leveled down" variant: muted/dim instead of accent-glowing.
-   playLevelChangeAnimation() also biases these particles' motion toward
-   drifting downward rather than radiating outward — the combination is
-   what reads as deflating/sad rather than celebratory, reusing
-   celebration-piece-burst's same keyframe with very different
-   --celebration-dx/dy/rot values rather than a whole second animation. */
+
 .challenge-fx-piece.sad {
   background: var(--metal-mid);
   box-shadow: none;
@@ -583,24 +515,180 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Icon-only, no label — padding shrunk just enough to offset the
-     larger icon below (17px vs. the original 13px) so the button's own
-     outer box stays the same overall size, just with a bigger, more
-     legible pair of arrows inside it. */
+  
   padding: 4px;
 }
-/* Replaces the [hidden] attribute for this one button: visibility
-   (not display) so the button keeps its layout box — see the comment
-   on .compact-players above for why that matters — while still being
-   untabbable/unclickable when the pie-rule window isn't open. */
+
+.compact-side-center { position: relative; }
+
+.compact-side-left { padding-right: var(--compact-inner-left); }
+.compact-side-right { padding-left: var(--compact-inner-right); }
+
+.compact-side-center { display: grid; place-items: center; }
+.compact-side-center > .compact-swap-btn { grid-area: 1 / 1; }
+
+.compact-mode-icon.shiver { animation: compact-icon-shiver 0.9s ease-in-out; }
+@keyframes compact-icon-shiver {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  8%  { transform: translateX(-3px) rotate(-6deg); }
+  18% { transform: translateX(3px)  rotate(6deg); }
+  28% { transform: translateX(-3px) rotate(-6deg); }
+  38% { transform: translateX(3px)  rotate(6deg); }
+  50% { transform: translateX(-2px) rotate(-4deg); }
+  62% { transform: translateX(2px)  rotate(4deg); }
+  75% { transform: translateX(-1px) rotate(-2deg); }
+  88% { transform: translateX(1px)  rotate(2deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-mode-icon.shiver { animation: none; }
+}
+
+.compact-abandon-btn {
+  color: #b58478;
+  border-color: #4a3b38;
+}
+.compact-abandon-btn:hover:not(:disabled) {
+  color: #d29a8c;
+  border-color: #7a5a52;
+}
+
+.swap-hint-bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 9px;
+  padding: 6px 7px;
+  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+  border: 1px solid #646c74;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 6;
+}
+.swap-hint-bubble[hidden] { display: none; }
+
+.swap-hint-bubble::before {
+  display: none;
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: #22272c;
+  border-bottom: 1px solid var(--metal-mid);
+  border-right: 1px solid var(--metal-mid);
+  transform: rotate(45deg);
+}
+.swap-hint-kb { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.swap-hint-row { display: flex; gap: 3px; }
+.swap-hint-key {
+  width: 9px;
+  height: 9px;
+  border: 1.3px solid #646c74;
+  border-radius: 2px;
+  background: transparent;
+  box-sizing: border-box;
+}
+.swap-hint-key-space {
+  width: 31px;
+  animation: swapHintBlink 1.1s ease-in-out infinite;
+}
+@keyframes swapHintBlink {
+  0%, 49% { background: #747c83; border-color: #747c83; }
+  50%, 100% { background: #646c74; border-color: #646c74; }
+}
+
+.pk-hint {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  padding: 6px 7px;
+  background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+  border: 1px solid #646c74;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0;
+  animation: pkHintLife 6.5s ease-in-out 1 forwards;
+}
+@keyframes pkHintLife {
+  0%   { opacity: 0; }
+  6%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .pk-hint { animation-duration: 6.5s; } }
+.pk-kb {
+  display: grid;
+  grid-template-columns: 19px 11px 11px 11px;
+  grid-template-rows: 11px 11px;
+  gap: 2px;
+  pointer-events: none;
+}
+.pk-key {
+  box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.3px solid #646c74;
+  border-radius: 2px;
+  color: #747c83;
+  font: 700 6px/1 var(--font-body), sans-serif;
+  letter-spacing: 0;
+  animation: 6s step-end infinite;
+}
+.pk-key svg { width: 7px; height: 7px; fill: currentColor; }
+.pk-ctrl  { grid-area: 2 / 1; animation-name: pk-ctrl; }
+.pk-left  { grid-area: 2 / 2; animation-name: pk-left; }
+.pk-down  { grid-area: 2 / 3; animation-name: pk-down; }
+.pk-right { grid-area: 2 / 4; animation-name: pk-right; }
+.pk-up    { grid-area: 1 / 3; animation-name: pk-up; }
+@keyframes pk-right {
+  0% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  16.667% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+  33.333% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  50% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+}
+@keyframes pk-left {
+  0% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+  16.667% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  33.333% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+  50% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  66.667% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+}
+@keyframes pk-ctrl {
+  0% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+  33.333% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  66.667% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+}
+@keyframes pk-up {
+  0% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+  66.667% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  83.333% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+}
+@keyframes pk-down {
+  0% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+  83.333% { border-color:var(--accent);color:var(--accent);background:rgba(120,220,255,.18);box-shadow:0 0 6px var(--accent-glow) }
+  100% { border-color:#646c74;color:#747c83;background:transparent;box-shadow:none }
+}
+@media (prefers-reduced-motion: reduce) { .pk-key { animation: none; } }
+
+.compact-draw-btn { color: #aeb5bb; border-color: #3d4348; }
+.compact-draw-btn:hover:not(:disabled) { color: #d7dde2; border-color: #6a737a; }
+.compact-side-center > .compact-draw-btn { grid-area: 1 / 1; }
+
+.chip-btn.icon-btn.onboarding-skip { display: flex; margin: 0 auto 12px; }
+.onboarding-skip[aria-checked="true"] { color: var(--accent); border-color: var(--accent-dim); box-shadow: 0 0 10px var(--accent-glow); }
+
 .compact-swap-btn.compact-swap-inactive {
   visibility: hidden;
   pointer-events: none;
 }
 
-/* ---------------------------------------------------------------
-   Options panel
-   --------------------------------------------------------------- */
 .players-box {
   display: flex;
   flex-direction: column;
@@ -680,8 +768,7 @@ body {
   font-size: 16px;
   line-height: 1;
 }
-/* Draw badge: red instead of the default accent (blue/cyan), so a draw
-   reads visually distinct from a win at a glance. */
+
 .player-badge.badge-draw {
   background: var(--danger);
   color: #330006;
@@ -701,11 +788,6 @@ body {
   line-height: 1.4;
 }
 
-/* CPU search log (?showAdvanced=true, vscomputer/computerself only — see
-   updateSetupVisibility()/logCpuSearch() in script.js). Styled like a
-   little terminal/log tail: monospace, dark inset well, fixed height
-   that scrolls rather than pushing the rest of the panel around as
-   entries pile up over a long game. */
 .cpu-log-block { margin-bottom: 16px; }
 .cpu-log {
   display: flex;
@@ -735,21 +817,19 @@ body {
 }
 .cpu-log-text { color: var(--metal-light); white-space: nowrap; }
 
-/* Shared "halo" hover glow — originally only on the support link, now
-   also used by the mode-menu toggle and the share button (see index.html)
-   so all three read as the same family of icon actions in the top bar. */
-.icon-halo:hover {
+@media (hover: hover) {
+  .icon-halo:hover {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+}
+.icon-halo:active:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent-dim);
   box-shadow: 0 0 10px var(--accent-glow);
 }
 
-/* Support heart — every so often it turns red and beats like a pulse
-   (script.js's SupportHeart adds/removes .beating at random times and sets
-   --beat-period / --beat-peak per episode, so no two look quite alike).
-   Red on its own color, not the link's, so hovering the chip (cyan halo)
-   doesn't wash the heart out mid-beat. The fill is transparent-red rather
-   than `none` so it can fade in: `none` can't be transitioned. */
 #supportLink .icon-wire {
   fill: rgba(255, 61, 84, 0);
   transition: color 0.35s ease, fill 0.35s ease;
@@ -759,8 +839,7 @@ body {
   fill: var(--heart-red-fill);
   animation: support-heartbeat var(--beat-period, 0.9s) ease-in-out infinite;
 }
-/* lub-dub: a strong beat, a short rest, a weaker second beat, a longer
-   rest. The glow swells with each beat. */
+
 @keyframes support-heartbeat {
   0%, 56%, 100% {
     transform: scale(1);
@@ -780,13 +859,10 @@ body {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  /* still turns red for the episode, just without the pulsing */
+  
   #supportLink .icon-wire.beating { animation: none; }
 }
 
-/* ---------------------------------------------------------------
-   Buttons
-   --------------------------------------------------------------- */
 .btn {
   font-family: var(--font-body), sans-serif;
   font-weight: 700;
@@ -836,29 +912,50 @@ body {
   color: var(--metal-mid);
   cursor: pointer;
 }
-.chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+@media (hover: hover) {
+  .chip-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
+}
+.chip-btn:active:not(:disabled) { color: var(--accent); border-color: var(--accent-dim); }
 .chip-btn.icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Fixed square box (not sized from padding+icon) so all four topbar
-     icon buttons (support, mode, difficulty, share) end up exactly the
-     same size regardless of how big or "inky" each one's own SVG is —
-     see the icon-specific width/height on each <svg> in index.html for
-     why those differ while this stays constant. */
+  
   width: 30px;
   height: 30px;
   padding: 0;
 }
 .chip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-/* The gauge/speedometer glyph's ink (arc + needle) sits in the lower
-   half of its own 24x24 viewBox, so at the same box size it reads
-   smaller and lower than the other topbar icons (mode's grid, share's
-   nodes, the heart) — nudged up a couple px so it looks centered like
-   they do. */
-.difficulty-toggle-icon { transform: translateY(-2px); }
 
-/* wireframe icons: stroke only, no fill, inherit color from the palette */
+.difficulty-toggle-icon { transform: translateY(-3px); }
+
+.init-level-toggle .init-needle {
+  transform-box: view-box;
+  transform-origin: 12px 18px;
+  transition: transform 0.25s ease;
+}
+.init-level-toggle[data-level="0"] .init-needle { transform: rotate(-60deg); }
+.init-level-toggle[data-level="2"] .init-needle { transform: rotate(60deg); }
+@media (prefers-reduced-motion: reduce) { .init-level-toggle .init-needle { transition: none; } }
+
+#initLevelWrap { --init-icon-k: calc(28 / 24); }
+.icon-wire.difficulty-toggle-icon { 
+  width: calc(24 * var(--init-icon-k) * 1px);
+  height: calc(24 * var(--init-icon-k) * 1px);
+  stroke-width: calc(1 / var(--init-icon-k));
+}
+
+#initLevelMenu {
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+#initLevelMenu .mode-icon {
+  height: calc(14 * var(--init-icon-k) * 1px);
+  width: auto;
+  stroke-width: calc(1 / var(--init-icon-k));
+}
+
 .icon-wire {
   fill: none;
   stroke: currentColor;
@@ -870,6 +967,11 @@ body {
 }
 
 .share-wrap { position: relative; display: inline-flex; }
+
+#fullscreenBtn[hidden] { display: none; } 
+#fullscreenBtn .fs-exit { display: none; }
+#fullscreenBtn.is-fullscreen .fs-enter { display: none; }
+#fullscreenBtn.is-fullscreen .fs-exit { display: block; }
 .share-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -904,9 +1006,6 @@ body {
 }
 .share-menu-item:hover { background: rgba(53, 224, 255, 0.1); color: var(--accent); }
 
-/* ---------------------------------------------------------------
-   Setup panel
-   --------------------------------------------------------------- */
 .setup-block { margin-bottom: 18px; }
 
 .setup-label {
@@ -933,10 +1032,7 @@ body {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
-/* Mode selector: a single toggle button opens this vertical dropdown of
-   icon-only mode buttons (title shown as a native tooltip on hover, same
-   as before — this only changes the container layout, .mode-btn itself
-   is untouched since .color-btn below shares that same base class). */
+
 .mode-menu-wrap { position: relative; display: inline-block; }
 .mode-menu-wrap[hidden] { display: none; }
 .mode-menu {
@@ -976,63 +1072,158 @@ body {
 .mode-btn.selected { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow) inset; color: var(--accent); }
 .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* Difficulty picker: same dropdown chrome as .mode-menu right next to
-   it (reused directly, just column layout + centered content instead
-   of a row of cards), holding one continuous vertical range slider
-   (#difficultyRange, see initDifficultyControl()/applyDifficultyLevel()
-   in script.js) rather than a button per level — so it looks and works
-   the same regardless of how many entries FeatureConfig.difficulty_levels
-   (config.js) ends up with. "Hard"/"Easy" text labels mark the two ends;
-   the actual r/f values behind each step are never shown anywhere here.
-   (.difficulty-range itself is styled further down, right after
-   .range-input, so its overrides of .range-input's width/margin win —
-   see the comment there.) */
-.difficulty-menu {
-  align-items: center;
-  /* No gap from .mode-menu's default top: calc(100% + 8px) — that gap is
-     a real dead zone the pointer briefly leaves both the button and this
-     panel while crossing, which fires the mouseleave the whole group
-     closes on (see dom.difficultyMenuWrap's listener in script.js). Sits
-     flush against the button instead, with the same visual breathing
-     room recreated as top padding (hoverable, part of this element),
-     so the pointer never actually leaves the group while moving from
-     one to the other. */
-  top: 100%;
-  padding: 18px 10px 12px;
-}
-.difficulty-end-icon {
-  color: var(--metal-mid);
-  flex-shrink: 0;
-}
-.difficulty-end-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 5px;
-  /* Firefox (notably on Android) keeps its own native button chrome —
-     a light/white background and border — unless appearance is reset
-     explicitly; background:transparent/border:none alone (below) isn't
-     enough there, even though it is in Chrome. */
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: transparent;
-  border: none;
-  border-radius: 5px;
-  color: inherit;
-  cursor: pointer;
-}
-.difficulty-end-btn:hover:not(:disabled) { background: rgba(53, 224, 255, 0.1); }
-.difficulty-end-btn:hover:not(:disabled) .difficulty-end-icon { color: var(--accent); }
-.difficulty-end-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.difficulty-range-track {
+.difficulty-wrap {
   position: relative;
-  width: 28px;
-  height: 160px;
+  flex: 0 0 auto;
+  width: var(--board-w, 100%); 
+  max-width: 100%;
+  margin: 6px auto 0;
+  --difficulty-pad: 10px; 
+  
+  padding: 7px var(--difficulty-pad);
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(2, 6, 12, 0.62) 0%, rgba(8, 16, 26, 0.5) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 3px 7px rgba(0, 0, 0, 0.65), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.14);
+}
+.difficulty-wrap[hidden] { display: none; }
+
+.difficulty-wrap.has-lock { margin-top: 16px; margin-bottom: 10px; } 
+.difficulty-bar {
+  display: flex;
+  flex-direction: row;
+  gap: 1px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: visible; 
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  background: #04080e;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(var(--table-line-rgb, 53, 224, 255), 0.15);
+}
+.difficulty-seg {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  background-color: var(--seg);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.22) 100%); 
+  forced-color-adjust: none;
+  cursor: pointer;
+  outline: none;
+}
+
+.difficulty-seg:first-child { border-radius: 3px 0 0 3px; }
+.difficulty-seg:last-child { border-radius: 0 3px 3px 0; }
+
+.difficulty-seg.current {
+  z-index: 2;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.95), 0 0 10px 2px rgba(255, 255, 255, 0.45);
+}
+.difficulty-seg:hover:not(.disabled) { filter: brightness(1.2); }
+.difficulty-seg.disabled { cursor: not-allowed; }
+.difficulty-bar.readonly .difficulty-seg { pointer-events: none; cursor: default; }
+
+.chip-btn.icon-btn.difficulty-lock {
+  position: absolute;
+  top: 12px; 
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px; 
+  z-index: 3;
+  border-color: var(--accent-dim); 
+}
+.chip-btn.icon-btn.difficulty-lock[hidden] { display: none; } 
+.difficulty-lock.pending { visibility: hidden; pointer-events: none; }
+#difficultyBuyLink .icon-wire { transition: color 0.35s ease; }
+#difficultyBuyLink .icon-wire.beating {
+  color: var(--accent);
+  animation: buy-beat var(--beat-period, 0.9s) ease-in-out infinite;
+}
+@keyframes buy-beat {
+  0%, 56%, 100% { transform: scale(1);   filter: drop-shadow(0 0 0 rgba(53, 224, 255, 0)); }
+  14%           { transform: scale(var(--beat-peak, 1.3)); filter: drop-shadow(0 0 3px var(--accent-glow)); }
+  28%           { transform: scale(1);   filter: drop-shadow(0 0 0 rgba(53, 224, 255, 0)); }
+  42%           { transform: scale(calc(1 + (var(--beat-peak, 1.3) - 1) * 0.6)); filter: drop-shadow(0 0 2px var(--accent-glow)); }
+}
+
+#difficultyBuyLink .lock-shackle-open { opacity: 0; }
+#difficultyBuyLink .icon-wire.beating .lock-shackle-closed { animation: lock-closed-cycle var(--beat-period, 0.9s) ease-in-out infinite; }
+#difficultyBuyLink .icon-wire.beating .lock-shackle-open   { animation: lock-open-cycle   var(--beat-period, 0.9s) ease-in-out infinite; }
+@keyframes lock-closed-cycle { 0%, 4% { opacity: 1; } 10%, 52% { opacity: 0; } 60%, 100% { opacity: 1; } }
+@keyframes lock-open-cycle   { 0%, 4% { opacity: 0; } 10%, 52% { opacity: 1; } 60%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #difficultyBuyLink .icon-wire.beating,
+  #difficultyBuyLink .icon-wire.beating .lock-shackle-closed,
+  #difficultyBuyLink .icon-wire.beating .lock-shackle-open { animation: none; }
+  #difficultyBuyLink .icon-wire.beating .lock-shackle-closed { opacity: 0; }
+  #difficultyBuyLink .icon-wire.beating .lock-shackle-open { opacity: 1; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .difficulty-lock:hover::after {
+    content: attr(data-label);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    white-space: nowrap;
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    letter-spacing: normal;
+    color: var(--accent);
+    background: linear-gradient(180deg, #22272c 0%, #16191c 100%);
+    border: 1px solid var(--metal-line);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+}
+
+.difficulty-seg.advance-glow { animation: difficulty-seg-glow 0.7s ease-out; }
+@keyframes difficulty-seg-glow {
+  0%, 100% { filter: brightness(1); }
+  40%      { filter: brightness(1.7); }
+}
+.difficulty-spark {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.25) 40%, rgba(255,255,255,0) 70%);
+  opacity: 0;
+  pointer-events: none;
+  transition: left 0.5s ease-in-out, opacity 0.2s ease;
+}
+.difficulty-spark.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .difficulty-seg.advance-glow { animation: none; }
+}
+
+.purchase-lock-effect {
+  position: fixed;
+  z-index: 60;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--accent);
+  pointer-events: none;
+  opacity: 0;
 }
+.purchase-lock-disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(12, 14, 16, 0.72);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+.purchase-lock-effect svg { position: relative; }
+
+.difficulty-range-state { display: none; }
 
 .online-choice { display: flex; gap: 8px; margin-bottom: 8px; }
 .join-code-wrap { display: flex; gap: 8px; margin-top: 6px; }
@@ -1059,19 +1250,6 @@ body {
   margin-bottom: 12px;
   cursor: pointer;
 }
-/* Standard rotated-<input type=range> vertical-slider technique: the
-   input keeps its normal horizontal layout box (100px x its native
-   thickness) in the flow and is only rotated visually, so the
-   flex-centered .difficulty-range-track (above) ends up centering it
-   correctly with no extra offset math. Comes after .range-input, whose
-   base rules it's overriding here (width/margin), so it wins the
-   cascade despite equal selector specificity. */
-.difficulty-range {
-  width: 160px;
-  margin: 0;
-  transform: rotate(-90deg);
-}
-.difficulty-range:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .cpu-params {
   border: 1px dashed var(--metal-line);
@@ -1087,59 +1265,62 @@ body {
 }
 .cpu-params:disabled, .cpu-params[disabled] { opacity: 0.4; }
 
-/* ---------------------------------------------------------------
-   Board cells / pieces (SVG)
-   --------------------------------------------------------------- */
-/* Sits behind .hex-cell, same gray, no stroke — see renderBoard() for how
-   its size is computed (minimal enclosing hexagon + a touch of padding).
-   It only shows through the small notches along the board's outer edge,
-   making the whole silhouette read as one clean hexagon; a light blur
-   just softens that outer edge instead of leaving it razor-sharp. */
-.board-bg-hex { fill: var(--cell-fill); filter: blur(2.5px); }
+.board-svg { overflow: visible; }
+.slab { pointer-events: none; }
+
+.slab-shadow { fill: #000; stroke: #000; stroke-linejoin: round; transform: translate(0, 12px); }
+.slab-shadow.s1 { stroke-width: 22; opacity: 0.05; }
+.slab-shadow.s2 { stroke-width: 12; opacity: 0.09; }
+.slab-shadow.s3 { stroke-width: 4; opacity: 0.16; }
+.slab-rim { fill: #08110f; }
+.slab-chamfer { fill: var(--cell-fill); }
+.slab-chamfer-shade { fill: url(#slabChamferShade); }
+.slab-face { fill: var(--cell-fill); stroke: rgba(0, 0, 0, 0.5); stroke-width: 1.6; }
+.slab-face-shade { fill: url(#slabFaceShade); }
+
+.board-svg.edge-win .slab-face   { animation: slabEdgeBlink 0.65s ease-in-out 4; --edge-color: var(--accent); --edge-glow: var(--accent-glow); }
+.board-svg.edge-draw .slab-face  { animation: slabEdgeBlink 0.65s ease-in-out 4; --edge-color: var(--danger); --edge-glow: var(--danger-glow); }
+.board-svg.edge-start .slab-face { animation: slabEdgeBlink 0.4s ease-in-out 2; --edge-color: rgb(110, 255, 150); --edge-glow: var(--start-glow); }
+@keyframes slabEdgeBlink {
+  0%, 100% { stroke: rgba(0, 0, 0, 0.5); stroke-width: 1.6; filter: none; }
+  45%      { stroke: var(--edge-color); stroke-width: 3.4; filter: drop-shadow(0 0 5px var(--edge-glow)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-svg.edge-win .slab-face, .board-svg.edge-draw .slab-face, .board-svg.edge-start .slab-face { animation: none; stroke: var(--edge-color); stroke-width: 2.6; }
+}
+.slab-vignette { fill: url(#slabVignette); }
+.slab-gloss { fill: url(#slabGloss); }
+.slab-edge-light { fill: none; stroke: rgba(255, 255, 255, 0.34); stroke-width: 2; }
 
 .hex-cell {
-  fill: var(--cell-fill);
+  fill: url(#cellShade);
   stroke: var(--cell-edge);
-  stroke-width: 0.5;
+  stroke-width: 1.1;
+  stroke-opacity: 0.8;
   transition: fill 0.15s ease;
 }
 .hex-cell.selectable { cursor: pointer; }
-.hex-cell.selectable:hover { fill: var(--cell-fill-hover); }
-.hex-cell.selected {
-  stroke: var(--accent);
-  stroke-width: 3;
-  filter: drop-shadow(0 0 6px var(--accent-glow));
-}
-.hex-cell.move-target {
-  fill: #8f9598; /* a touch lighter than the normal cell fill; edges stay untouched */
-}
-.hex-cell.last-move {
-  stroke: rgba(255, 208, 96, 0.65);
-  stroke-width: 2;
-}
-.piece { cursor: grab; }
-.piece.draggable { cursor: grab; }
-.piece.dragging { cursor: grabbing; opacity: 0.85; }
-.piece-black { fill: url(#pieceBlackGrad); stroke: #000; stroke-width: 1; }
-.piece-white { fill: url(#pieceWhiteGrad); stroke: #7c848a; stroke-width: 1; }
-.piece.own-piece { filter: drop-shadow(0 0 4px rgba(255,255,255,0.25)); }
-.piece.selected-piece { filter: drop-shadow(0 0 8px var(--accent-glow)); }
-/* Red halo marking a trapped piece at the end of a mutual-enclosure
-   draw — a glow on the piece itself now, rather than tinting the cell
-   underneath it (see Game.enclosedCells / applyHighlights() /
-   endGameDraw()). Stays applied for as long as the finished board is on
-   screen, not tied to the shorter end-of-game flash timing at all. */
-.piece.enclosed-piece { filter: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
-/* Blue halo marking the winning color's pieces once the game ends (see
-   Game.winner / applyHighlights()) — stays until the next game starts
-   (Game.winner is reset in beginSetupPreview()). Doubled drop-shadow
-   (same trick as .enclosed-piece above) for a visibly stronger glow
-   than the single-shadow .selected-piece/.own-piece treatments. */
-.piece.winning-piece { filter: drop-shadow(0 0 7px var(--accent-glow)) drop-shadow(0 0 7px var(--accent-glow)); }
+.hex-cell.selectable:hover { fill: rgba(255, 255, 255, 0.14); }
 
-/* ---------------------------------------------------------------
-   Overlays (winner announcement, first-run onboarding, help panel)
-   --------------------------------------------------------------- */
+.hex-cell.move-target {
+  fill: rgba(255, 255, 255, 0.16); 
+}
+
+.hex-cell.blocked-target {
+  fill: rgba(0, 0, 0, 0.32);
+}
+
+.piece { cursor: grab; paint-order: stroke fill; stroke-width: 14; pointer-events: fill; }
+.piece.draggable { cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+.piece.dragging { cursor: grabbing; } 
+.piece-black { fill: url(#pieceBlackGrad) #171a20; stroke: url(#pieceShadowGrad); }
+.piece-white { fill: url(#pieceWhiteGrad) #d9d3c6; stroke: url(#pieceShadowGrad); }
+.piece.selected-piece { stroke: none; filter: drop-shadow(0 0 8px var(--start-glow)); } 
+
+.piece.enclosed-piece { stroke: none; filter: drop-shadow(0 0 7px var(--danger-glow)) drop-shadow(0 0 7px var(--danger-glow)); }
+
+.piece.winning-piece { stroke: none; filter: drop-shadow(0 0 7px var(--accent-glow)) drop-shadow(0 0 7px var(--accent-glow)); }
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -1151,6 +1332,18 @@ body {
   backdrop-filter: blur(3px);
 }
 .overlay[hidden] { display: none; }
+
+#onboardingOverlay {
+  z-index: 100; 
+  background: #0a0604;
+  backdrop-filter: none;
+  transition: opacity 0.3s ease;
+}
+#onboardingOverlay.loading { animation: splashBootFailsafe 0s linear 12s forwards; }
+#onboardingOverlay.loading #onboardingCloseBtn { pointer-events: none; opacity: 0.45; }
+#onboardingOverlay.leaving { opacity: 0; pointer-events: none; }
+
+@keyframes splashBootFailsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
 .overlay-card {
   position: relative;
   background: var(--bg-panel);
@@ -1174,23 +1367,12 @@ body {
   line-height: 1.5;
   max-width: 340px;
 }
-.onboarding-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--metal-mid);
-  margin-bottom: 18px;
-  cursor: pointer;
-}
-.onboarding-check input { accent-color: var(--accent); cursor: pointer; }
 
-/* "?" help panel: reuses .overlay/.overlay-card wholesale (see above),
-   just left-aligned and scrollable instead of the short, centered
-   onboarding/winner cards — this one can hold a param-by-param list of
-   arbitrary length (see URL_PARAMS in config.js / buildHelpParamsList()
-   in script.js) plus the current game's CPU sliders. */
+.onboarding-demo { margin: 4px auto 20px; width: 220px; max-width: 100%; aspect-ratio: 1 / 1; }
+.onboarding-demo .board-svg { width: 100%; height: 100%; max-width: none; max-height: none; display: block; }
+
+.onboarding-brand { justify-content: center; margin: 0 auto 10px; font-size: 26px; }
+
 .overlay-close-btn {
   position: absolute;
   top: 10px;
@@ -1266,14 +1448,9 @@ body {
 }
 .setup-check input { accent-color: var(--accent); cursor: pointer; }
 
-/* ---------------------------------------------------------------
-   Responsive: mobile layout — setup on top, board middle, options bottom
-   --------------------------------------------------------------- */
-@media (max-width: 900px) {
+@media all {
   html, body { overflow: auto; }
 
-  /* Bigger players strip on phones: the fixed desktop sizes (22px icon,
-     18px swatch) read as tiny next to a board that fills the screen. */
   :root {
     --compact-icon-h: 31px;
     --compact-swatch: 25px;
@@ -1288,101 +1465,86 @@ body {
   .layout.no-setup-panel,
   .layout.no-options-panel,
   .layout.no-setup-panel.no-options-panel {
-    /* Each of these (one or two classes) is more specific than the
-       plain `.layout` rule above and would otherwise keep winning here
-       (desktop's row-of-columns grid), even inside this mobile query,
-       whenever the setup and/or options panel is hidden — which, for
-       the options panel, is every non-?showAdvanced session. Repeating
-       every combination with the same specificity, later in the source,
-       is what actually forces mobile's single-column stack in those
-       (very common) cases. Without this, mobile got squeezed into a
-       multi-column grid wider than the screen — Chrome overflowed it
-       (board visible but other panels shoved off to the side), Firefox
-       collapsed the board's 1fr track to ~0 and showed nothing. */
+    
     grid-template-columns: 1fr;
-    /* The board panel gets the 1fr row so it stretches to fill whatever
-       vertical space the setup/options panels (auto-sized, and usually
-       hidden entirely in the default minimalist mode) don't need — see
-       .panel-board's explicit grid-row below for why this alone isn't
-       enough to guarantee it lands in *this* row. */
+    
     grid-template-rows: auto 1fr auto;
     height: auto;
     min-height: calc(100% - 56px);
-    /* Desktop's 14px was eating a chunk of an already-narrow phone
-       screen on every side; down to a minimal edge margin so the board
-       (see .panel-board's own horizontal padding below) gets as much of
-       the screen's width as it reasonably can. */
-    padding: 6px 4px;
+    
+    padding: 6px 0;
     gap: 8px;
   }
 
-  /* Explicit grid-row (rather than relying on source order + the 1fr
-     track being "whichever row is left") so .panel-board always lands
-     in the middle, 1fr row even when panel-setup and/or panel-options
-     are hidden — which, in the default minimalist mode (no
-     ?showAdvanced=true), is the usual case. Without this, an
-     auto-placed .panel-board would slide into row 1 (an "auto" track)
-     whenever panel-setup isn't there ahead of it, and the 1fr row would
-     sit empty at the bottom instead of the board panel using it. */
   .panel-setup { order: 1; grid-row: 1; }
   .panel-board { order: 2; grid-row: 2; }
   .panel-options { order: 3; grid-row: 3; }
 
-  /* Fills the full 1fr row (see grid-template-rows above) instead of a
-     fixed 60vh guess, so the panel's gray background actually reaches
-     the bottom of the screen instead of leaving a blank strip below it.
-     justify-content: space-evenly then shares out whatever vertical
-     room that leaves between the panel's three stacked children (board,
-     compact players strip, challenge/progress bar) proportionally —
-     board-scroll, compactPlayers and challengeBar aren't flex-grown
-     (see .board-scroll below), so this space becomes visible gaps
-     rather than being swallowed by one of them stretching to fill it:
-     one gap above the board (pushing it down off the panel's top edge),
-     one between the board and the icon strip, and a third — since it's
-     the last gap before the panel's bottom edge, plus the icon strip's
-     own margin below (see .compact-players below) — between the icon
-     strip and the progress bar, which is what actually pushes the bar
-     down away from the icons rather than sitting right under them.
-     Horizontal padding stays minimal (not desktop's 10px each side) so
-     the board itself spans essentially the full screen width, per the
-     same reasoning as .layout's padding above. */
   .panel-board {
     height: 100%;
     justify-content: space-evenly;
-    padding: 10px 4px;
+    padding: 10px 0;
   }
-  /* Desktop's flex:1 1 auto (see .board-scroll's own rule) would absorb
-     all of .panel-board's leftover vertical space itself, leaving none
-     for justify-content: space-evenly above to share out as gaps —
-     shrink-to-content instead, sized purely by the board's own width
-     (100%, see .board-svg below) and its aspect ratio. */
+  
   .board-scroll { flex: 0 0 auto; }
-  /* .compact-players sits directly under the board; giving it its own
-     bottom margin (on top of the space-evenly gap after it) is what
-     actually separates it from the progress bar below more than from
-     the board above it — otherwise both gaps would come out equal. */
+  
   .compact-players { margin-bottom: 10px; }
 
   .panel { max-height: none; }
 
-  /* .board-svg's desktop rule (max-width/max-height with width/height:
-     auto) only ever lets the SVG shrink to fit — its intrinsic pixel
-     size is fixed by the board's radius (see renderBoard()'s explicit
-     width/height attributes), so a small radius (the default is 2)
-     renders far narrower than the phone screen, leaving empty space on
-     both sides instead of filling it. Switching to width:100% makes it
-     scale UP to the full width of .board-scroll too; height:auto keeps
-     the board's own aspect ratio (from its viewBox) intact, and
-     max-height:100% is kept as a safety net for landscape phones,
-     where .panel-board's available height could be narrower than the
-     screen is wide — there, the browser falls back to sizing by
-     max-height instead, so the board still can't overflow
-     .board-scroll vertically. */
   .board-svg {
-    width: 100%;
+    
+    width: min(100%, calc((100dvh - var(--board-reserve, 290px)) * var(--board-aspect, 1)));
     height: auto;
     max-width: 100%;
     max-height: 100%;
   }
 
 }
+
+:root { --frame-w: 440px; }
+
+html { background-color: var(--table-top, #050a14); }
+body {
+  width: min(100%, var(--frame-w));
+  margin: 0 auto;
+  border-left: 1px solid var(--metal-line);
+  border-right: 1px solid var(--metal-line);
+  
+  box-shadow: 0 0 0 100vmax rgba(0, 2, 6, 0.62), 0 0 60px rgba(0, 0, 0, 0.7);
+}
+html:has(.panel-setup:not([hidden])),
+html:has(.panel-options:not([hidden])) { --frame-w: 900px; }
+
+:root {
+  
+  --compact-icon-h: clamp(27px, 8vw, 34px);
+  --compact-swatch: clamp(22px, 6.6vw, 28px);
+  --compact-pad: clamp(9px, 3.6vw, 16px); 
+  
+  --compact-inner-left: calc(var(--compact-icon-h) * 0.333 + 8px);
+  --compact-inner-right: calc(var(--compact-icon-h) * 0.17 + 8px);
+}
+@supports (-moz-appearance: none) {
+  :root {
+    --compact-icon-h: clamp(24px, 7vw, 29px);
+    --compact-swatch: clamp(19px, 5.7vw, 23px);
+  }
+}
+
+.compact-swap-btn { padding: 0; width: 40px; height: 40px; }
+.chip-btn.icon-btn.onboarding-skip { width: 40px; height: 40px; }
+.compact-swap-btn .icon-wire { width: 23px; height: 23px; }
+.onboarding-skip .icon-wire { width: 22px; height: 22px; }
+
+html.skip-splash #onboardingOverlay { visibility: hidden; transition: none; animation: none; }
+
+@media (hover: hover) and (pointer: fine) {
+  :root { --board-reserve: 250px; }
+  .panel-board { justify-content: space-between; padding-top: 0; }
+}
+.share-menu-item[hidden] { display: none; }
+
+.winner-rest .compact-mode-icon.winner { animation: none; }
+
+.table-only #boardScroll, .table-only #compactPlayers, .table-only #challengeBar, .table-only #difficultyWrap { visibility: hidden; }
